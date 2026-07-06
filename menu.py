@@ -176,7 +176,7 @@ class SettingsMenu(MenuBase):
 
 
 class EndScreen(MenuBase):
-    """Écran de fin : game over ou victoire."""
+    """Écran de fin : game over (retour au niveau 1) ou victoire finale."""
 
     def __init__(self, sounds, victory):
         super().__init__(sounds)
@@ -184,13 +184,35 @@ class EndScreen(MenuBase):
         self.title = "VICTOIRE !" if victory else "GAME OVER"
 
     def items(self):
-        return [("play", "Rejouer"), ("menu", "Menu principal"), ("quit", "Quitter")]
+        label = "Rejouer" if self.victory else "Recommencer (niveau 1)"
+        return [("play", label), ("menu", "Menu principal"), ("quit", "Quitter")]
 
     def draw(self, screen):
         super().draw(screen)
         w, h = screen.get_size()
         font = self._font(h, small=True)
-        text = ("Tous les ennemis sont éliminés." if self.victory
-                else "Vous avez été abattu.")
+        text = ("Tous les niveaux sont terminés, félicitations !" if self.victory
+                else "Vous avez été abattu — vous repartez de zéro.")
+        surf = font.render(text, True, DIM_COLOR)
+        screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))
+
+
+class LevelCompleteScreen(MenuBase):
+    """Transition entre deux niveaux : annonce le suivant."""
+
+    def __init__(self, sounds, finished_index, next_name):
+        super().__init__(sounds)
+        self.title = f"Niveau {finished_index + 1} terminé !"
+        self.next_name = next_name
+
+    def items(self):
+        return [("continue", "Continuer"), ("menu", "Menu principal")]
+
+    def draw(self, screen):
+        super().draw(screen)
+        w, h = screen.get_size()
+        font = self._font(h, small=True)
+        text = (f"Prochain niveau : {self.next_name} — "
+                "vous gardez vos armes et récupérez de la vie.")
         surf = font.render(text, True, DIM_COLOR)
         screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))

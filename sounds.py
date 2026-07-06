@@ -41,6 +41,18 @@ def _enemy_shot(duration=0.14):
     return _pack(samples)
 
 
+def _shotgun(duration=0.28):
+    """Détonation lourde et longue du fusil à pompe."""
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    for i in range(n):
+        env = (1 - i / n) ** 2
+        noise = random.uniform(-1, 1)
+        low = 0.6 * math.sin(2 * math.pi * 60 * i / SAMPLE_RATE)
+        samples.append((noise * 0.8 + low) * env)
+    return _pack(samples)
+
+
 def _tone(freq, duration, slide=0.0):
     """Bip sinusoïdal, avec un éventuel glissement de fréquence."""
     n = int(SAMPLE_RATE * duration)
@@ -52,6 +64,11 @@ def _tone(freq, duration, slide=0.0):
         env = (1 - i / n) ** 1.5
         samples.append(math.sin(phase) * env * 0.7)
     return _pack(samples)
+
+
+def _jingle(freqs, note=0.11):
+    """Suite de notes (ramassage d'objet, niveau terminé)."""
+    return b"".join(_tone(f, note, slide=f * 0.05) for f in freqs)
 
 
 class SoundBank:
@@ -66,12 +83,18 @@ class SoundBank:
             return
         self.sounds = {
             "player_shot": pygame.mixer.Sound(buffer=_gunshot()),
+            "pistol_shot": pygame.mixer.Sound(buffer=_gunshot(0.08)),
+            "shotgun_shot": pygame.mixer.Sound(buffer=_shotgun()),
             "enemy_shot": pygame.mixer.Sound(buffer=_enemy_shot()),
             "player_hit": pygame.mixer.Sound(buffer=_tone(140, 0.18, slide=-60)),
             "enemy_hit": pygame.mixer.Sound(buffer=_tone(520, 0.08, slide=-120)),
             "enemy_die": pygame.mixer.Sound(buffer=_tone(300, 0.35, slide=-220)),
             "reload": pygame.mixer.Sound(buffer=_tone(700, 0.09, slide=200)),
             "click": pygame.mixer.Sound(buffer=_tone(900, 0.05)),
+            "pickup": pygame.mixer.Sound(buffer=_jingle([520, 660, 880])),
+            "heal": pygame.mixer.Sound(buffer=_jingle([440, 550])),
+            "level_complete": pygame.mixer.Sound(
+                buffer=_jingle([523, 659, 784, 1046], note=0.16)),
         }
 
     def play(self, name, volume_scale=1.0):

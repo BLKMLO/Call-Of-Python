@@ -1,13 +1,15 @@
 """Point d'entrée du jeu — lance : python main.py
 
-Machine à états très simple :
-    "menu"     → MainMenu
-    "settings" → SettingsMenu
-    "game"     → Game (la partie en cours)
-    "end"      → EndScreen (game over / victoire)
+Machine à états :
+    "menu"           → MainMenu
+    "settings"       → SettingsMenu
+    "game"           → Game (le niveau en cours)
+    "level_complete" → LevelCompleteScreen (transition vers le suivant)
+    "end"            → EndScreen (game over / victoire finale)
 
-Chaque état gère ses événements et son rendu ; les transitions sont les
-chaînes retournées par les menus et le jeu.
+Progression : un niveau est gagné quand tous ses ennemis sont morts ; le
+joueur passe alors au suivant en gardant son arsenal. S'il meurt, il
+repart de zéro (niveau 1, pistolet seul).
 """
 
 import sys
@@ -15,7 +17,8 @@ import sys
 import pygame
 
 from game import Game
-from menu import EndScreen, MainMenu, SettingsMenu
+from level import LEVELS
+from menu import EndScreen, LevelCompleteScreen, MainMenu, SettingsMenu
 from settings import Settings
 from sounds import SoundBank
 
@@ -47,10 +50,17 @@ def main():
 
     main_menu = MainMenu(sounds)
     settings_menu = SettingsMenu(sounds, settings)
-    end_screen = None
+    transition = None    # LevelCompleteScreen ou EndScreen courant
     game = None
     state = "menu"
     set_mouse_captured(False)
+
+    def start_level(index, carry=None):
+        """Crée le Game du niveau `index` et passe en état de jeu."""
+        nonlocal game, state
+        game = Game(screen, settings, sounds, index, carry_player=carry)
+        state = "game"
+        set_mouse_captured(True)
 
     running = True
     while running:
@@ -67,9 +77,7 @@ def main():
             if state == "menu":
                 action = main_menu.handle_event(event, screen)
                 if action == "play":
-                    game = Game(screen, settings, sounds)
-                    state = "game"
-                    set_mouse_captured(True)
+                    start_level(0)
                 elif action == "settings":
                     state = "settings"
                 elif action == "quit":
@@ -88,14 +96,15 @@ def main():
                     game = None
                     set_mouse_captured(False)
 
-            elif state == "end":
-                action = end_screen.handle_event(event, screen)
-                if action == "play":
-                    game = Game(screen, settings, sounds)
-                    state = "game"
-                    set_mouse_captured(True)
+            elif state in ("level_complete", "end"):
+                action = transition.handle_event(event, screen)
+                if action == "continue":     # niveau suivant, joueur conservé
+                    start_level(game.level_index + 1, carry=game.player)
+                elif action == "play":       # nouvelle partie de zéro
+                    start_level(0)
                 elif action == "menu":
                     state = "menu"
+                    game = None
                 elif action == "quit":
                     running = False
 
@@ -106,16 +115,24 @@ def main():
             game.update(dt)
             game.draw(screen)
             if game.finished:
-                end_screen = EndScreen(sounds, victory=(game.outcome == "victory"))
-                state = "end"
-                game = None
                 set_mouse_captured(False)
+                if game.outcome == "dead":
+                    transition = EndScreen(sounds, victory=False)
+                    state = "end"
+                elif game.level_index + 1 < len(LEVELS):
+                    transition = LevelCompleteScreen(
+                        sounds, game.level_index,
+                        LEVELS[game.level_index + 1]["name"])
+                    state = "level_complete"
+                else:                        # dernier niveau gagné
+                    transition = EndScreen(sounds, victory=True)
+                    state = "end"
         elif state == "menu":
             main_menu.draw(screen)
         elif state == "settings":
             settings_menu.draw(screen)
-        elif state == "end":
-            end_screen.draw(screen)
+        elif state in ("level_complete", "end"):
+            transition.draw(screen)
 
         pygame.display.flip()
 

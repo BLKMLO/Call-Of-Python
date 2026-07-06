@@ -1,15 +1,16 @@
-"""Entités du jeu : joueur et ennemis.
+"""Entités du jeu : joueur, ennemis (3 types), objets à ramasser.
 
-Les deux héritent d'`Entity` (position, vie, dégâts). Les sprites des
-ennemis sont dessinés procéduralement (aucun fichier image externe) :
-une silhouette de soldat, avec une variante "en train de tirer".
+Les sprites viennent d'`assets.py` (pixel-art façon Minecraft) : chaque
+ennemi possède trois poses (repos / marche / tir) affichées en billboard
+par le raycaster. Le joueur porte un inventaire d'armes interchangeables.
 """
 
 import math
 
 import pygame
 
-from weapons import Weapon
+import assets
+from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
 
 class Entity:
@@ -37,16 +38,58 @@ class Entity:
 
 
 class Player(Entity):
-    """Le personnage jouable : déplacement clavier, visée souris, tir."""
+    """Le personnage jouable : déplacement clavier, visée souris, arsenal."""
 
     SPEED = 3.2          # vitesse de déplacement (cases / s)
     RADIUS = 0.25        # rayon de collision
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
-        self.weapon = Weapon()
+        self.weapons = [Weapon(WEAPON_SPECS["pistol"])]  # arme de départ
+        self.weapon_index = 0
         self.hurt_flash = 0.0   # minuterie du flash rouge quand on est touché
 
+    # ------------------------------------------------------------------
+    # Arsenal
+    # ------------------------------------------------------------------
+    @property
+    def weapon(self):
+        return self.weapons[self.weapon_index]
+
+    def add_weapon(self, weapon_id, level):
+        """Ramasse une arme : nouvelle, amélioration, ou simple recharge.
+
+        Retourne "new", "upgrade" ou "ammo" pour le retour visuel/sonore.
+        """
+        for i, owned in enumerate(self.weapons):
+            if owned.spec.id != weapon_id:
+                continue
+            if level > owned.level:            # même arme, meilleur niveau
+                self.weapons[i] = Weapon(WEAPON_SPECS[weapon_id], level)
+                self.weapon_index = i
+                return "upgrade"
+            owned.ammo = owned.spec.magazine_size
+            owned.reloading = 0.0
+            return "ammo"
+        self.weapons.append(Weapon(WEAPON_SPECS[weapon_id], level))
+        # garde l'arsenal trié selon l'ordre des emplacements (touches 1..4)
+        self.weapons.sort(key=lambda w: WEAPON_ORDER.index(w.spec.id))
+        self.weapon_index = next(
+            i for i, w in enumerate(self.weapons) if w.spec.id == weapon_id)
+        return "new"
+
+    def select_weapon(self, slot):
+        """Sélectionne l'emplacement `slot` (0..3) si l'arme est possédée."""
+        for i, owned in enumerate(self.weapons):
+            if WEAPON_ORDER.index(owned.spec.id) == slot:
+                self.weapon_index = i
+                return True
+        return False
+
+    def cycle_weapon(self, direction):
+        self.weapon_index = (self.weapon_index + direction) % len(self.weapons)
+
+    # ------------------------------------------------------------------
     def rotate(self, mouse_dx, mouse_factor):
         """Tourne la vue selon le mouvement horizontal de la souris."""
         self.angle = (self.angle + mouse_dx * mouse_factor) % (2 * math.pi)
@@ -84,74 +127,107 @@ class Player(Entity):
 
 
 class Enemy(Entity):
-    """Ennemi de base : soldat au corps-à-distance, piloté par `ai.EnemyAI`.
+    """Ennemi de base, piloté par `ai.EnemyAI`.
 
-    Pour créer un nouveau type d'ennemi, hériter de cette classe et ajuster
-    les constantes (vitesse, dégâts, portées) et/ou les couleurs du sprite.
+    Les sous-classes (`Grunt`, `Soldier`, `Heavy`) ne changent que les
+    statistiques et la clé de sprite — l'IA est partagée.
     """
 
+    KIND = "soldier"       # préfixe des sprites : enemy_<KIND>_<pose>.png
     SPEED = 1.9            # vitesse de déplacement (cases / s)
     RADIUS = 0.3           # rayon de collision et de "hitbox"
     SPRITE_HEIGHT = 0.72   # hauteur du billboard (en unités monde)
+    MAX_HEALTH = 100
 
     DETECT_RANGE = 11.0    # distance de détection du joueur
     ATTACK_RANGE = 7.0     # distance à laquelle il ouvre le feu
     FIRE_DELAY = 1.1       # temps entre deux tirs (s)
     DAMAGE = (6, 13)       # dégâts min/max par balle
 
-    BODY_COLOR = (72, 92, 60)     # treillis vert
-    ACCENT_COLOR = (46, 58, 38)
-
-    _sprite_cache = {}
-
-    def __init__(self, x, y):
-        super().__init__(x, y, max_health=100)
-        self.flash_timer = 0.0   # affiche la variante "tir" du sprite
-        # L'état de l'IA est stocké sur l'ennemi mais piloté par ai.EnemyAI,
-        # ce qui permet de partager une même IA entre plusieurs types.
+    def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
+        super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
+        self.damage_mult = damage_mult
+        self.flash_timer = 0.0   # affiche la pose "tir" du sprite
+        self.moving = False      # l'IA le met à jour (pose "marche")
+        self.anim_time = 0.0
+        # État piloté par ai.EnemyAI :
         self.ai_state = "idle"
         self.ai_timer = 0.0
         self.fire_cooldown = 0.0
         self.last_seen = None    # dernière position connue du joueur
         self.cover_target = None # point de couverture visé
 
-    # ------------------------------------------------------------------
-    # Sprites procéduraux
-    # ------------------------------------------------------------------
-    @classmethod
-    def _build_sprites(cls):
-        """Dessine les deux poses (normale / en train de tirer) une seule fois."""
-        poses = []
-        for firing in (False, True):
-            surf = pygame.Surface((64, 96), pygame.SRCALPHA)
-            body, accent = cls.BODY_COLOR, cls.ACCENT_COLOR
-            skin = (196, 158, 122)
-            # jambes
-            pygame.draw.rect(surf, accent, (22, 62, 8, 30))
-            pygame.draw.rect(surf, accent, (34, 62, 8, 30))
-            # torse
-            pygame.draw.rect(surf, body, (18, 30, 28, 36), border_radius=4)
-            # tête + casque
-            pygame.draw.circle(surf, skin, (32, 20), 9)
-            pygame.draw.rect(surf, accent, (22, 8, 20, 9), border_radius=3)
-            # bras + arme pointée vers le joueur
-            pygame.draw.rect(surf, body, (12, 36, 10, 16), border_radius=3)
-            pygame.draw.rect(surf, (30, 30, 32), (8, 40, 26, 6))
-            if firing:
-                # éclair de bouche : signale au joueur qu'on lui tire dessus
-                pygame.draw.circle(surf, (255, 220, 90), (6, 43), 7)
-                pygame.draw.circle(surf, (255, 255, 200), (6, 43), 3)
-            poses.append(surf)
-        return poses
-
     def current_sprite(self):
-        if type(self) not in Enemy._sprite_cache:
-            Enemy._sprite_cache[type(self)] = self._build_sprites()
-        normal, firing = Enemy._sprite_cache[type(self)]
-        return firing if self.flash_timer > 0.0 else normal
+        """Pose selon l'état : tir > marche (alternée) > repos."""
+        if self.flash_timer > 0.0:
+            pose = "fire"
+        elif self.moving and int(self.anim_time * 5) % 2 == 0:
+            pose = "walk"
+        else:
+            pose = "idle"
+        return assets.get(f"enemy_{self.KIND}_{pose}")
 
-    # ------------------------------------------------------------------
+    def roll_damage(self, rng):
+        low, high = self.DAMAGE
+        return round(rng.randint(low, high) * self.damage_mult)
+
     def update_timers(self, dt):
         self.flash_timer = max(0.0, self.flash_timer - dt)
         self.fire_cooldown = max(0.0, self.fire_cooldown - dt)
         self.ai_timer += dt
+        if self.moving:
+            self.anim_time += dt
+
+
+class Grunt(Enemy):
+    """Milicien : faible et lent, mais tenace."""
+    KIND = "grunt"
+    SPEED = 1.7
+    MAX_HEALTH = 80
+    DAMAGE = (5, 10)
+    FIRE_DELAY = 1.3
+
+
+class Soldier(Enemy):
+    """Soldat entraîné : l'ennemi de référence."""
+    KIND = "soldier"
+
+
+class Heavy(Enemy):
+    """Soldat lourd : lent, blindé, frappe fort."""
+    KIND = "heavy"
+    SPEED = 1.3
+    MAX_HEALTH = 180
+    SPRITE_HEIGHT = 0.8
+    DAMAGE = (10, 18)
+    FIRE_DELAY = 0.9
+    ATTACK_RANGE = 6.0
+
+
+ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy}
+
+
+class Pickup:
+    """Objet posé au sol (arme ou trousse de soins), rendu en billboard
+    flottant qui oscille doucement."""
+
+    SPRITE_HEIGHT = 0.34
+
+    def __init__(self, x, y, kind, level_index):
+        self.x = x
+        self.y = y
+        self.kind = kind              # "weapon:<id>" ou "medkit"
+        self.level_index = level_index
+        self.taken = False
+        self.bob = (x * 7 + y * 13) % 6.28  # phase d'oscillation propre
+        if kind == "medkit":
+            self.sprite_name = "pickup_medkit"
+        else:
+            self.sprite_name = "pickup_" + kind.split(":", 1)[1]
+
+    def current_sprite(self):
+        return assets.get(self.sprite_name)
+
+    def bob_offset(self, time_s):
+        """Décalage vertical (unités monde) pour l'oscillation."""
+        return 0.06 * math.sin(time_s * 2.5 + self.bob)

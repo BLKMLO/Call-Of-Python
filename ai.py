@@ -36,8 +36,10 @@ class EnemyAI:
         enemy = self.enemy
         events = []
         if not enemy.alive or not player.alive:
+            enemy.moving = False
             return events
 
+        enemy.moving = False  # remis à True par _move_towards (pose "marche")
         enemy.update_timers(dt)
         dist = enemy.distance_to(player)
         sees_player = (
@@ -114,6 +116,7 @@ class EnemyAI:
         enemy.x, enemy.y = level.move_with_collisions(
             enemy.x, enemy.y, dx * step, dy * step, enemy.RADIUS
         )
+        enemy.moving = True
 
     def _try_shoot(self, player, dist):
         """Tire sur le joueur si le temps de recharge est écoulé."""
@@ -127,7 +130,7 @@ class EnemyAI:
         # à ~25 % à la portée maximale.
         hit_chance = max(0.25, 0.75 - 0.5 * dist / enemy.ATTACK_RANGE)
         if random.random() < hit_chance:
-            damage = random.randint(*enemy.DAMAGE)
+            damage = enemy.roll_damage(random)  # tient compte du niveau
             player.take_damage(damage)
             events.append(("player_hit", damage))
         return events

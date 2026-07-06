@@ -1,56 +1,152 @@
-"""Carte du jeu.
+"""Cartes et niveaux du jeu.
 
-La carte est une grille de caractères :
-    '1', '2', '3' : murs (différentes couleurs)
+Une carte est une grille de caractères :
+    '1', '2', '3' : murs — leur texture dépend du thème du niveau
     '.'           : sol praticable
-    'P'           : point d'apparition du joueur
-    'E'           : point d'apparition d'un ennemi
+    'P'           : apparition du joueur
+    'E'           : apparition d'un ennemi (type selon la composition du niveau)
+    'W'           : arme à ramasser (type selon la liste `weapons` du niveau)
+    'H'           : trousse de soins
 
-Pour ajouter une nouvelle map, il suffit de définir une autre liste de
-chaînes (toutes les lignes de même longueur) et de la passer au
-constructeur de `Level`.
+Chaque niveau (`LEVELS`) définit sa carte, son thème visuel (textures de
+murs, couleurs du ciel et du sol), sa composition d'ennemis et ses armes
+au sol. Les ennemis et les armes deviennent plus puissants au fil des
+niveaux. Pour ajouter un niveau : une grille + une entrée dans `LEVELS`.
 """
 
-# Map de test (22 x 16) : une arène avec des salles, couloirs et piliers
-# qui servent de couverture aux ennemis.
-TEST_MAP = [
+MAP_WAREHOUSE = [
     "1111111111111111111111",
-    "1P...........2......E1",
-    "1....11......2.......1",
-    "1....11......2..333..1",
-    "1............2..3.3..1",
+    "1P.......2.......2...1",
+    "1........2..222..2.E.1",
+    "1..22....2....2..2...1",
+    "1...2....2.W..2..222.1",
+    "1...2....22222.......1",
+    "1...2................1",
+    "1.........33.........1",
+    "1....E....33....E....1",
     "1....................1",
-    "1..22222.....11..11..1",
-    "1..2...2.............1",
-    "1..2...2....E........1",
-    "1..22.22.............1",
-    "1............33333...1",
-    "1...E............3...1",
-    "1........11......3..E1",
-    "1........11..........1",
-    "1..E.................1",
+    "1..222..........222..1",
+    "1..2..............2..1",
+    "1..2..H....E......2.E1",
+    "1..2..............2..1",
+    "1....................1",
     "1111111111111111111111",
+]
+
+MAP_BASE = [
+    "111111111111111111111111",
+    "1P....2.........2......1",
+    "1.....2....E....2..E...1",
+    "1..W..2.........2......1",
+    "1.....2..33333..2......1",
+    "122.222..3...3..222.2221",
+    "1........3.H.3.........1",
+    "1...E....33.33....E....1",
+    "1......................1",
+    "1..33..............33..1",
+    "1..33....E....E....33..1",
+    "1......................1",
+    "122.222.........222.2221",
+    "1.....2....W....2......1",
+    "1..E..2..111111.2...E..1",
+    "1.....2..1....1.2......1",
+    "1..H..2..1....1.2......1",
+    "111111111111111111111111",
+]
+
+MAP_LAB = [
+    "11111111111111111111111111",
+    "1P...2..........2........1",
+    "1....2....E.....2...E....1",
+    "1.W..2..........2........1",
+    "1....22.3333.3333.22.....1",
+    "1........................1",
+    "1..E.....................1",
+    "1....33..2.E..W.2..33....1",
+    "1....3...2......2...3.E..1",
+    "1....3...22.11.22...3....1",
+    "1....33.....11.....33....1",
+    "1..H.....................1",
+    "1.........E....E.........1",
+    "1..222.222......222.222..1",
+    "1..2.....................1",
+    "1..2..E......H.......E...1",
+    "1..2.....................1",
+    "11111111111111111111111111",
+]
+
+# Chaque niveau : carte, thème visuel, composition des ennemis (cyclée sur
+# les 'E' de la carte), armes au sol (cyclées sur les 'W'), multiplicateurs.
+LEVELS = [
+    {
+        "name": "Entrepôt",
+        "grid": MAP_WAREHOUSE,
+        "theme": {"1": "wall_brick", "2": "wall_crate", "3": "wall_metal"},
+        "sky": ((30, 32, 48), (66, 60, 70)),      # dégradé haut -> horizon
+        "floor": ((60, 54, 48), (34, 32, 30)),    # dégradé horizon -> bas
+        "enemies": ["grunt"],
+        "weapons": ["shotgun"],
+        "enemy_health_mult": 1.0,
+        "enemy_damage_mult": 1.0,
+    },
+    {
+        "name": "Base militaire",
+        "grid": MAP_BASE,
+        "theme": {"1": "wall_stone", "2": "wall_metal", "3": "wall_crate"},
+        "sky": ((22, 26, 40), (52, 60, 84)),
+        "floor": ((58, 60, 56), (30, 32, 30)),
+        "enemies": ["grunt", "soldier", "soldier"],
+        "weapons": ["rifle", "shotgun"],
+        "enemy_health_mult": 1.25,
+        "enemy_damage_mult": 1.2,
+    },
+    {
+        "name": "Laboratoire",
+        "grid": MAP_LAB,
+        "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone"},
+        "sky": ((12, 16, 26), (34, 52, 66)),
+        "floor": ((44, 50, 58), (22, 26, 32)),
+        "enemies": ["soldier", "heavy", "soldier"],
+        "weapons": ["minigun", "rifle"],
+        "enemy_health_mult": 1.5,
+        "enemy_damage_mult": 1.4,
+    },
 ]
 
 
 class Level:
-    """Grille de collision + points d'apparition, construits depuis la map ASCII."""
+    """Grille de collision + points d'apparition, construits depuis la carte."""
 
-    def __init__(self, grid=None):
-        grid = grid if grid is not None else TEST_MAP
-        self.grid = [list(row) for row in grid]
+    def __init__(self, level_index=0):
+        self.index = level_index
+        self.config = LEVELS[level_index]
+        self.name = self.config["name"]
+        self.grid = [list(row) for row in self.config["grid"]]
         self.height = len(self.grid)
         self.width = len(self.grid[0])
 
         self.player_spawn = (1.5, 1.5)
-        self.enemy_spawns = []
+        self.enemy_spawns = []     # [(x, y, type_d_ennemi)]
+        self.pickup_spawns = []    # [(x, y, "weapon:<id>" | "medkit")]
+        enemy_kinds = self.config["enemies"]
+        weapon_ids = self.config["weapons"]
+        n_enemy, n_weapon = 0, 0
         for y, row in enumerate(self.grid):
             for x, char in enumerate(row):
+                cx, cy = x + 0.5, y + 0.5
                 if char == "P":
-                    self.player_spawn = (x + 0.5, y + 0.5)
-                    self.grid[y][x] = "."
+                    self.player_spawn = (cx, cy)
                 elif char == "E":
-                    self.enemy_spawns.append((x + 0.5, y + 0.5))
+                    kind = enemy_kinds[n_enemy % len(enemy_kinds)]
+                    self.enemy_spawns.append((cx, cy, kind))
+                    n_enemy += 1
+                elif char == "W":
+                    wid = weapon_ids[n_weapon % len(weapon_ids)]
+                    self.pickup_spawns.append((cx, cy, "weapon:" + wid))
+                    n_weapon += 1
+                elif char == "H":
+                    self.pickup_spawns.append((cx, cy, "medkit"))
+                if char in "PEWH":
                     self.grid[y][x] = "."
 
     # ------------------------------------------------------------------
