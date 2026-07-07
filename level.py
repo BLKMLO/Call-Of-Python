@@ -10,6 +10,7 @@ Une carte est une grille de caractères :
     'S'           : point d'apparition de la horde (mode Déferlement)
     'W'           : arme à ramasser (type selon la liste `weapons` du niveau)
     'H'           : trousse de soins
+    '+'           : pack de vie caché (rare, soin complet, hors minimap)
 
 Chaque niveau (`LEVELS`) définit sa carte, son thème visuel (textures de
 murs, couleurs du ciel et du sol), sa composition d'ennemis et ses armes
@@ -32,7 +33,7 @@ MAP_WAREHOUSE = [
     "1..2..............2..1",
     "1..2..H....E......2.E1",
     "1..2..............2..1",
-    "1....................1",
+    "1...................+1",
     "1111111111111111111111",
 ]
 
@@ -51,8 +52,8 @@ MAP_BASE = [
     "1......................1",
     "122D222.........222D2221",
     "1.....2....W....2......1",
-    "1..E..2..111111.2...E..1",
-    "1.....2..1....1.2......1",
+    "1..E..2..11D111.2...E..1",
+    "1.....2..1.+..1.2......1",
     "1..H..2..1....1.2......1",
     "111111111111111111111111",
 ]
@@ -74,7 +75,7 @@ MAP_LAB = [
     "1..222D222......222D222..1",
     "1..2.....................1",
     "1..2..E......H.......E...1",
-    "1..2.....................1",
+    "1..2....................+1",
     "11111111111111111111111111",
 ]
 
@@ -97,7 +98,7 @@ MAP_FINAL = [
     "1..2.....22....22.....2..1",
     "1..2..H..2......2..E..2..1",
     "1..2.....2......2.....2..1",
-    "1........................1",
+    "1+.......................1",
     "11111111111111111111111111",
 ]
 
@@ -115,7 +116,7 @@ MAP_HORDE = [
     "1......333......333......1",
     "1......3..........3......1",
     "1......3....P.....3......1",
-    "1......3..........3......1",
+    "1......3.........+3......1",
     "1......333......333......1",
     "1........................1",
     "1...33......W.......33...1",
@@ -160,7 +161,7 @@ LEVELS = [
         "theme": {"1": "wall_stone", "2": "wall_metal", "3": "wall_crate"},
         "sky": ((22, 26, 40), (52, 60, 84)),
         "floor": ((58, 60, 56), (30, 32, 30)),
-        "enemies": ["grunt", "soldier", "soldier"],
+        "enemies": ["grunt", "soldier", "kamikaze"],
         "weapons": ["rifle", "shotgun"],
         "enemy_health_mult": 1.25,
         "enemy_damage_mult": 1.2,
@@ -171,7 +172,7 @@ LEVELS = [
         "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone"},
         "sky": ((12, 16, 26), (34, 52, 66)),
         "floor": ((44, 50, 58), (22, 26, 32)),
-        "enemies": ["soldier", "heavy", "soldier"],
+        "enemies": ["soldier", "heavy", "sniper"],
         "weapons": ["minigun", "rifle"],
         "enemy_health_mult": 1.5,
         "enemy_damage_mult": 1.4,
@@ -182,7 +183,7 @@ LEVELS = [
         "theme": {"1": "wall_metal", "2": "wall_tech", "3": "wall_brick"},
         "sky": ((16, 10, 14), (66, 30, 26)),      # ciel rougeoyant
         "floor": ((52, 42, 40), (26, 22, 22)),
-        "enemies": ["heavy", "soldier", "heavy"],
+        "enemies": ["heavy", "sniper", "kamikaze"],
         "weapons": ["minigun", "rifle"],
         "enemy_health_mult": 1.7,
         "enemy_damage_mult": 1.5,
@@ -232,9 +233,11 @@ class Level:
                     n_weapon += 1
                 elif char == "H":
                     self.pickup_spawns.append((cx, cy, "medkit"))
+                elif char == "+":
+                    self.pickup_spawns.append((cx, cy, "lifepack"))
                 elif char == "D":
                     self.doors[(x, y)] = {"open": 0.0, "opening": False}
-                if char in "PEBSWH":
+                if char in "PEBSWH+":
                     self.grid[y][x] = "."
 
     # ------------------------------------------------------------------

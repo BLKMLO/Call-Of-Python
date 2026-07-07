@@ -33,19 +33,29 @@ ALERT_PULSE = 2.5          # la horde re-flaire le joueur à cette fréquence (s
 
 
 def wave_composition(wave):
-    """Liste des types d'ennemis de la vague `wave` (1-indexée)."""
+    """Liste des types d'ennemis de la vague `wave` (1-indexée).
+
+    Le bestiaire s'élargit avec les vagues : kamikazes dès la 3e,
+    snipers dès la 6e, de plus en plus de lourds et de soldats.
+    """
     count = min(4 + math.ceil(wave * 0.6), 20)
     kinds = []
     if wave % 10 == 0:          # un Colosse toutes les 10 vagues
         kinds.append("boss")
         count -= 3
-    heavy_w = min(0.30, wave * 0.015)           # de plus en plus de lourds
-    soldier_w = min(0.50, 0.10 + wave * 0.03)   # ... et de soldats
+    heavy_w = min(0.30, wave * 0.015)
+    kamikaze_w = 0.0 if wave < 3 else min(0.18, 0.04 + wave * 0.006)
+    sniper_w = 0.0 if wave < 6 else min(0.14, 0.03 + wave * 0.004)
+    soldier_w = min(0.45, 0.10 + wave * 0.03)
     for _ in range(max(0, count)):
         roll = random.random()
         if roll < heavy_w:
             kinds.append("heavy")
-        elif roll < heavy_w + soldier_w:
+        elif roll < heavy_w + kamikaze_w:
+            kinds.append("kamikaze")
+        elif roll < heavy_w + kamikaze_w + sniper_w:
+            kinds.append("sniper")
+        elif roll < heavy_w + kamikaze_w + sniper_w + soldier_w:
             kinds.append("soldier")
         else:
             kinds.append("grunt")
@@ -146,6 +156,9 @@ class SurvivalGame(Game):
         for pickup in self.pickups:
             if pickup.kind == "medkit":
                 if wave % 3 == 0:
+                    pickup.taken = False
+            elif pickup.kind == "lifepack":
+                if wave % 10 == 0:       # rare : un pack complet par Colosse
                     pickup.taken = False
             elif wave % 5 == 0:
                 pickup.taken = False

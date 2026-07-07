@@ -203,6 +203,22 @@ ENEMY_PALETTES = {
         "legs": (52, 44, 50), "boots": (26, 24, 28), "accent": (255, 150, 40),
         "bulk": True,
     },
+    "kamikaze": {  # fanatique au gilet explosif, fonce sur le joueur
+        "skin": (206, 160, 118), "top": (120, 44, 30),
+        "suit": (168, 84, 42), "dark": (128, 60, 30),
+        "legs": (96, 58, 36), "boots": (42, 32, 26), "accent": None,
+        "chest": (216, 40, 36),   # pains d'explosif sur le torse
+    },
+    "sniper": {    # tireur d'élite, lunette turquoise
+        "skin": (198, 156, 118), "top": (96, 106, 96),
+        "suit": (112, 122, 106), "dark": (86, 94, 82),
+        "legs": (92, 100, 88), "boots": (36, 38, 34), "accent": (90, 210, 200),
+    },
+    "ally": {      # coéquipier (multijoueur LAN) : uniforme bleu
+        "skin": (200, 158, 120), "top": (40, 56, 92),
+        "suit": (62, 86, 132), "dark": (46, 66, 104),
+        "legs": (52, 70, 106), "boots": (30, 34, 44), "accent": None,
+    },
 }
 
 
@@ -235,6 +251,11 @@ def _enemy_sprite(kind, pose):
     if heavy:                                    # épaulières
         _rect(s, 2, 5, 3, 2, p["dark"])
         _rect(s, 11, 5, 3, 2, p["dark"])
+    if p.get("chest"):                           # gilet explosif (kamikaze)
+        for cx_ in (5, 7, 9):
+            _rect(s, cx_, 7, 2, 3, p["chest"])
+            s.set_at((cx_, 7), (255, 220, 120))  # détonateurs
+
 
     # --- bras et jambes selon la pose ---
     if pose == "fire":
@@ -457,6 +478,19 @@ def _pickup_medkit():
     return _upscale(s, 4)
 
 
+def _pickup_lifepack():
+    """Pack de vie caché : gros bloc blanc, grande croix rouge, lueur verte."""
+    s = _pk_base()
+    _rect(s, 1, 2, 14, 12, (242, 242, 244))
+    _rect(s, 1, 2, 14, 1, (190, 190, 194))       # arête supérieure
+    _rect(s, 1, 13, 14, 1, (200, 200, 204))
+    _rect(s, 6, 4, 4, 8, (206, 32, 32))          # grande croix
+    _rect(s, 4, 6, 8, 4, (206, 32, 32))
+    for px, py in ((0, 1), (15, 1), (0, 14), (15, 14)):
+        s.set_at((px, py), (120, 235, 130))      # lueur verte aux coins
+    return _upscale(s, 4)
+
+
 # ----------------------------------------------------------------------
 _BUILDERS = {
     "wall_brick": _tex_brick,
@@ -474,6 +508,7 @@ _BUILDERS = {
     "pickup_rifle": _pickup_rifle,
     "pickup_minigun": _pickup_minigun,
     "pickup_medkit": _pickup_medkit,
+    "pickup_lifepack": _pickup_lifepack,
 }
 for _kind in ENEMY_PALETTES:
     for _pose in ("idle", "walk", "fire", "dead",

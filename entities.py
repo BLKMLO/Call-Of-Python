@@ -156,8 +156,16 @@ class Enemy(Entity):
     ATTACK_RANGE = 7.0     # distance à laquelle il ouvre le feu
     FIRE_DELAY = 1.1       # temps entre deux tirs (s)
     DAMAGE = (6, 13)       # dégâts min/max par balle
+    ACCURACY = 0.75        # chance de toucher à bout portant
+    ACCURACY_FALLOFF = 0.5 # perte de précision avec la distance
     TAKES_COVER = True     # cherche un abri quand il est blessé
     IS_BOSS = False
+    MELEE = False          # fonce au contact au lieu de tirer (kamikaze)
+    EXPLODES = False       # explose à la mort / au contact
+    EXPLOSION_RADIUS = 1.8
+    EXPLOSION_DAMAGE = 34
+    KEEP_DISTANCE = False  # recule si le joueur approche (sniper)
+    MIN_RANGE = 0.0
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
@@ -165,6 +173,8 @@ class Enemy(Entity):
         self.flash_timer = 0.0   # affiche la pose "tir" du sprite
         self.moving = False      # l'IA le met à jour (pose "marche")
         self.anim_time = 0.0
+        self.exploded = False    # un kamikaze ne détone qu'une fois
+        self.net_id = None       # identifiant réseau (coop LAN, côté hôte)
         # État piloté par ai.EnemyAI :
         self.ai_state = "idle"
         self.ai_timer = 0.0
@@ -208,6 +218,12 @@ class Enemy(Entity):
         low, high = self.DAMAGE
         return round(rng.randint(low, high) * self.damage_mult)
 
+    def hit_chance(self, dist):
+        """Chance de toucher à cette distance (les snipers la surchargent
+        via ACCURACY / ACCURACY_FALLOFF)."""
+        return max(0.25, self.ACCURACY
+                   - self.ACCURACY_FALLOFF * dist / self.ATTACK_RANGE)
+
     def update_timers(self, dt):
         self.flash_timer = max(0.0, self.flash_timer - dt)
         self.fire_cooldown = max(0.0, self.fire_cooldown - dt)
@@ -241,6 +257,34 @@ class Heavy(Enemy):
     ATTACK_RANGE = 6.0
 
 
+class Kamikaze(Enemy):
+    """Fanatique au gilet explosif : fragile mais très rapide, il fonce
+    sur le joueur et explose au contact — ou quand on l'abat (les
+    explosions blessent aussi les autres ennemis : visez la grappe)."""
+    KIND = "kamikaze"
+    SPEED = 3.4            # plus vite que la marche du joueur (3.2)
+    MAX_HEALTH = 40
+    DAMAGE = (0, 0)        # ne tire jamais
+    TAKES_COVER = False
+    MELEE = True
+    EXPLODES = True
+
+
+class Sniper(Enemy):
+    """Tireur d'élite : mortel de loin, il recule si on s'approche."""
+    KIND = "sniper"
+    SPEED = 1.5
+    MAX_HEALTH = 70
+    DETECT_RANGE = 14.0
+    ATTACK_RANGE = 12.0
+    FIRE_DELAY = 2.3
+    DAMAGE = (18, 30)
+    ACCURACY = 0.9         # redoutable même à longue portée...
+    ACCURACY_FALLOFF = 0.25
+    KEEP_DISTANCE = True
+    MIN_RANGE = 5.0        # ... mais fébrile au corps à corps
+
+
 class Boss(Enemy):
     """Le Colosse : boss du dernier niveau. Énorme, implacable, ne se
     cache jamais — il avance."""
@@ -258,24 +302,41 @@ class Boss(Enemy):
     IS_BOSS = True
 
 
-ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy, "boss": Boss}
+class RemotePlayer(Enemy):
+    """Coéquipier du multijoueur LAN : rendu comme un billboard directionnel
+    (uniforme bleu), piloté par le réseau — aucune IA attachée."""
+    KIND = "ally"
+    MAX_HEALTH = 100
+
+    def __init__(self, pid, x, y):
+        super().__init__(x, y)
+        self.pid = pid
+
+
+ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
+               "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss}
 
 
 class Pickup:
-    """Objet posé au sol (arme ou trousse de soins), rendu en billboard
-    flottant qui oscille doucement."""
+    """Objet posé au sol (arme, trousse de soins ou pack de vie caché),
+    rendu en billboard flottant qui oscille doucement.
+
+    Les packs de vie ("lifepack") sont rares et cachés : ils n'apparaissent
+    pas sur la minimap, soignent entièrement, et scintillent de particules
+    vertes qui les trahissent quand on passe à proximité."""
 
     SPRITE_HEIGHT = 0.34
 
     def __init__(self, x, y, kind, level_index):
         self.x = x
         self.y = y
-        self.kind = kind              # "weapon:<id>" ou "medkit"
+        self.kind = kind              # "weapon:<id>", "medkit" ou "lifepack"
         self.level_index = level_index
         self.taken = False
+        self.hidden = kind == "lifepack"     # absent de la minimap
         self.bob = (x * 7 + y * 13) % 6.28  # phase d'oscillation propre
-        if kind == "medkit":
-            self.sprite_name = "pickup_medkit"
+        if kind in ("medkit", "lifepack"):
+            self.sprite_name = "pickup_" + kind
         else:
             self.sprite_name = "pickup_" + kind.split(":", 1)[1]
 

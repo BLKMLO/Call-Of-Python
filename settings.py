@@ -48,6 +48,7 @@ class Settings:
         self.best_level = 0              # meilleur niveau atteint (affiché au menu)
         self.survival_unlocked = False   # le Déferlement (après la mort du Sceau)
         self.best_wave = 0               # record de vagues en survie
+        self.last_ip = "127.0.0.1"       # dernière adresse rejointe (LAN)
         self.load()
 
     # ------------------------------------------------------------------
@@ -81,6 +82,7 @@ class Settings:
             self.best_level = max(0, int(data.get("best_level", 0)))
             self.survival_unlocked = bool(data.get("survival_unlocked", False))
             self.best_wave = max(0, int(data.get("best_wave", 0)))
+            self.last_ip = str(data.get("last_ip", self.last_ip))[:40]
             for action, code in data.get("keys", {}).items():
                 if action in self.keys:
                     self.keys[action] = int(code)
@@ -96,6 +98,7 @@ class Settings:
             "best_level": self.best_level,
             "survival_unlocked": self.survival_unlocked,
             "best_wave": self.best_wave,
+            "last_ip": self.last_ip,
             "keys": self.keys,
         }
         try:

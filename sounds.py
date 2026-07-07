@@ -85,6 +85,20 @@ def _jingle(freqs, note=0.11):
     return b"".join(_tone(f, note, slide=f * 0.05) for f in freqs)
 
 
+def _explosion(duration=0.55):
+    """Déflagration d'un kamikaze : souffle grave + gravats."""
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    phase = 0.0
+    for i in range(n):
+        t = i / n
+        env = (1 - t) ** 1.6
+        phase += 2 * math.pi * (55 - 25 * t) / SAMPLE_RATE
+        samples.append((math.sin(phase) * 0.7
+                        + random.uniform(-0.8, 0.8) * (1 - t) ** 3) * env)
+    return _pack(samples)
+
+
 def _door_slide(duration=0.35):
     """Chuintement pneumatique d'une porte coulissante."""
     n = int(SAMPLE_RATE * duration)
@@ -210,6 +224,7 @@ class SoundBank:
             "door": pygame.mixer.Sound(buffer=_door_slide()),
             "spawn": pygame.mixer.Sound(buffer=_spawn_whoosh()),
             "wave": pygame.mixer.Sound(buffer=_horn()),
+            "explosion": pygame.mixer.Sound(buffer=_explosion()),
         }
 
     # ------------------------------------------------------------------

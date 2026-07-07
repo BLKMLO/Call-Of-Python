@@ -16,6 +16,17 @@ HOVER_COLOR = (255, 210, 90)
 DIM_COLOR = (130, 130, 140)
 
 
+def format_stats(stats):
+    """Ligne de bilan : éliminations, précision, temps de jeu."""
+    if stats is None:
+        return None
+    accuracy = (100.0 * stats["hits"] / stats["shots"]) if stats["shots"] else 0.0
+    minutes, seconds = divmod(int(stats["time"]), 60)
+    return (f"Éliminations : {stats['kills']}   "
+            f"Précision : {accuracy:.0f} %   "
+            f"Temps : {minutes} min {seconds:02d} s")
+
+
 class MenuBase:
     """Mécanique commune : lignes centrées, survol à la souris, clic."""
 
@@ -83,7 +94,7 @@ class MenuBase:
 
 
 class MainMenu(MenuBase):
-    title = "PyFPS"
+    title = "Call of Python"
 
     def __init__(self, sounds, settings):
         super().__init__(sounds)
@@ -93,7 +104,8 @@ class MainMenu(MenuBase):
         rows = [("play", "Jouer")]
         if self.settings.survival_unlocked:
             rows.append(("survival", "Le Déferlement (survie)"))
-        rows += [("settings", "Paramètres"), ("quit", "Quitter")]
+        rows += [("multiplayer", "Multijoueur LAN (coop)"),
+                 ("settings", "Paramètres"), ("quit", "Quitter")]
         return rows
 
     def draw(self, screen):
@@ -205,10 +217,11 @@ class EndScreen(MenuBase):
     """
 
     def __init__(self, sounds, victory, title=None, subtitle=None,
-                 survival=False):
+                 survival=False, stats=None):
         super().__init__(sounds)
         self.victory = victory
         self.survival = survival
+        self.stats_line = format_stats(stats)
         self.title = title or ("VICTOIRE !" if victory else "GAME OVER")
         if subtitle is not None:
             self.subtitle = subtitle
@@ -232,6 +245,71 @@ class EndScreen(MenuBase):
         font = self._font(h, small=True)
         surf = font.render(self.subtitle, True, DIM_COLOR)
         screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))
+        if self.stats_line:
+            stat = font.render(self.stats_line, True, (200, 180, 130))
+            screen.blit(stat, stat.get_rect(
+                center=(w // 2, h // 5 + h // 9 + int(font.get_height() * 1.5))))
+
+
+class MultiplayerMenu(MenuBase):
+    """Multijoueur LAN : héberger une partie du Déferlement en coop, ou
+    rejoindre un hôte en saisissant son adresse IP."""
+
+    title = "Multijoueur LAN"
+
+    def __init__(self, sounds, settings):
+        super().__init__(sounds)
+        self.settings = settings
+        self.editing = False    # saisie de l'adresse en cours
+        self.error = ""         # dernier message d'erreur réseau
+
+    def items(self):
+        if self.editing:
+            ip_label = f"Adresse de l'hôte : {self.settings.last_ip}_"
+        else:
+            ip_label = f"Adresse de l'hôte : {self.settings.last_ip}"
+        return [
+            ("host", "Héberger (Le Déferlement en coop)"),
+            ("ip", ip_label),
+            ("join", "Rejoindre cette adresse"),
+            ("back", "Retour"),
+        ]
+
+    def handle_event(self, event, screen):
+        if self.editing and event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER,
+                             pygame.K_ESCAPE):
+                self.editing = False
+                self.settings.save()
+            elif event.key == pygame.K_BACKSPACE:
+                self.settings.last_ip = self.settings.last_ip[:-1]
+            elif event.unicode and (event.unicode.isdigit()
+                                    or event.unicode == "."):
+                if len(self.settings.last_ip) < 15:   # xxx.xxx.xxx.xxx
+                    self.settings.last_ip += event.unicode
+            return None
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            return "back"
+        return super().handle_event(event, screen)
+
+    def on_click(self, ident, _pos, _rect):
+        if ident == "ip":
+            self.editing = True
+            self.error = ""
+            return None
+        self.editing = False
+        return ident
+
+    def _draw_footer(self, screen):
+        w, h = screen.get_size()
+        font = self._font(h, small=True)
+        if self.error:
+            surf = font.render(self.error, True, (230, 110, 90))
+            screen.blit(surf, surf.get_rect(center=(w // 2, h - h // 9)))
+        hint = font.render(
+            "L'hôte fait tourner la partie ; les autres le rejoignent par "
+            "son adresse IP locale (port 5577).", True, DIM_COLOR)
+        screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
 
 
 class SealBrokenScreen(MenuBase):
@@ -262,12 +340,13 @@ class SealBrokenScreen(MenuBase):
 
 
 class LevelCompleteScreen(MenuBase):
-    """Transition entre deux niveaux : annonce le suivant."""
+    """Transition entre deux niveaux : annonce le suivant + bilan chiffré."""
 
-    def __init__(self, sounds, finished_index, next_name):
+    def __init__(self, sounds, finished_index, next_name, stats=None):
         super().__init__(sounds)
         self.title = f"Niveau {finished_index + 1} terminé !"
         self.next_name = next_name
+        self.stats_line = format_stats(stats)
 
     def items(self):
         return [("continue", "Continuer"), ("menu", "Menu principal")]
@@ -280,3 +359,7 @@ class LevelCompleteScreen(MenuBase):
                 "vous gardez vos armes et récupérez de la vie.")
         surf = font.render(text, True, DIM_COLOR)
         screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))
+        if self.stats_line:
+            stat = font.render(self.stats_line, True, (200, 180, 130))
+            screen.blit(stat, stat.get_rect(
+                center=(w // 2, h // 5 + h // 9 + int(font.get_height() * 1.5))))

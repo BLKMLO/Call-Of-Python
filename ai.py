@@ -122,7 +122,7 @@ class EnemyAI:
                 enemy.ai_state = "chase"
                 events.append(("spotted", enemy))  # crie pour alerter les alliés
         elif state == "chase":
-            if sees_player and dist < enemy.ATTACK_RANGE:
+            if sees_player and dist < enemy.ATTACK_RANGE and not enemy.MELEE:
                 enemy.ai_state = "attack"
             elif not sees_player:
                 # N'abandonne l'enquête qu'une fois arrivé sur la dernière
@@ -150,8 +150,16 @@ class EnemyAI:
                 self._navigate_towards(dt, target, level)
         elif state == "attack":
             enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
-            self._strafe(dt, player, level)
+            if enemy.KEEP_DISTANCE and dist < enemy.MIN_RANGE:
+                self._back_away(dt, player, level)   # le sniper se replie
+            else:
+                self._strafe(dt, player, level)
             events += self._try_shoot(player, dist)
+
+        # Kamikaze : au contact, il se déclenche (game.py gère l'explosion).
+        if (enemy.MELEE and enemy.EXPLODES and enemy.ai_state == "chase"
+                and dist < enemy.EXPLOSION_RADIUS * 0.5):
+            events.append(("explode", enemy))
         elif state == "cover":
             if enemy.cover_target is not None:
                 self._navigate_towards(dt, enemy.cover_target, level)
@@ -218,6 +226,19 @@ class EnemyAI:
             waypoint = self.path[0]
         self._move_towards(dt, waypoint, level, speed_mult)
 
+    def _back_away(self, dt, player, level):
+        """Recule face au joueur (sniper trop près) sans lui tourner le dos."""
+        enemy = self.enemy
+        away = math.atan2(enemy.y - player.y, enemy.x - player.x)
+        step = enemy.SPEED * 0.8 * dt
+        old = (enemy.x, enemy.y)
+        enemy.x, enemy.y = level.move_with_collisions(
+            enemy.x, enemy.y, math.cos(away) * step, math.sin(away) * step,
+            enemy.RADIUS)
+        if (enemy.x, enemy.y) != old:
+            enemy.moving = True
+        enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
+
     def _strafe(self, dt, player, level):
         """Pas latéraux pendant le combat : plus dur à toucher."""
         enemy = self.enemy
@@ -270,18 +291,17 @@ class EnemyAI:
     def _try_shoot(self, player, dist):
         """Tire sur le joueur si le temps de recharge est écoulé."""
         enemy = self.enemy
-        if enemy.fire_cooldown > 0.0:
+        if enemy.fire_cooldown > 0.0 or enemy.MELEE:
             return []
         enemy.fire_cooldown = enemy.FIRE_DELAY * random.uniform(0.85, 1.3)
         enemy.flash_timer = 0.12
         events = [("enemy_shot", enemy)]
-        # Précision décroissante avec la distance : de ~75 % au contact
-        # à ~25 % à la portée maximale.
-        hit_chance = max(0.25, 0.75 - 0.5 * dist / enemy.ATTACK_RANGE)
-        if random.random() < hit_chance:
+        # Précision propre au type d'ennemi, décroissante avec la distance
+        # (le sniper reste précis de loin mais paie le corps à corps).
+        if random.random() < enemy.hit_chance(dist):
             damage = enemy.roll_damage(random)  # tient compte du niveau
             player.take_damage(damage)
-            events.append(("player_hit", enemy))
+            events.append(("player_hit", (enemy, player)))
         return events
 
     def _find_cover(self, player, level):

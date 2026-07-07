@@ -77,12 +77,12 @@ class HUD:
     # Rendu
     # ------------------------------------------------------------------
     def draw(self, screen, player, enemies, level, pickups=(), fps=None,
-             survival=None):
+             survival=None, stats=None):
         self._draw_weapon(screen, player)
         self._draw_crosshair(screen)
         self._draw_hit_marker(screen)
         self._draw_damage_dirs(screen)
-        self._draw_status(screen, player, enemies, survival)
+        self._draw_status(screen, player, enemies, survival, stats)
         self._draw_slots(screen, player)
         self._draw_level_label(screen, level)
         if survival is not None:
@@ -162,8 +162,8 @@ class HUD:
             pygame.draw.polygon(overlay, (215, 40, 35, alpha), points)
         screen.blit(overlay, (0, 0))
 
-    def _draw_status(self, screen, player, enemies, survival=None):
-        """Barre de vie + arme/munitions + compteur d'ennemis restants."""
+    def _draw_status(self, screen, player, enemies, survival=None, stats=None):
+        """Barre de vie + arme/munitions + ennemis restants + éliminations."""
         margin = 14
         bar_w, bar_h = int(self.width * 0.22), 16
         y = self.height - bar_h - margin
@@ -194,6 +194,11 @@ class HUD:
             remaining = sum(1 for e in enemies if e.alive)
         info = self.font.render(f"Ennemis restants : {remaining}", True, (220, 220, 160))
         screen.blit(info, (self.width - info.get_width() - margin, margin))
+        if stats is not None:
+            kills = self.font.render(f"Éliminations : {stats['kills']}",
+                                     True, (200, 200, 200))
+            screen.blit(kills, (self.width - kills.get_width() - margin,
+                                margin + info.get_height() + 2))
 
     def _draw_slots(self, screen, player, box=44):
         """Emplacements d'armes (touches 1..4), l'arme active surlignée."""
@@ -294,7 +299,8 @@ class HUD:
                     pygame.draw.rect(surf, (170, 170, 180, 200),
                                      (x * scale, y * scale, scale, scale))
         for pickup in pickups:
-            if not pickup.taken:
+            # Les packs de vie cachés ne trahissent pas leur position ici.
+            if not pickup.taken and not pickup.hidden:
                 pygame.draw.circle(surf, (240, 210, 90),
                                    (int(pickup.x * scale), int(pickup.y * scale)), 2)
         for enemy in enemies:
@@ -317,6 +323,19 @@ class HUD:
         alpha = int(120 * (player.hurt_flash / 0.35))
         overlay.fill((180, 20, 20, alpha))
         screen.blit(overlay, (0, 0))
+
+    def draw_dead_overlay(self, screen):
+        """Voile sombre pendant l'attente de réapparition (coop LAN)."""
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((60, 0, 0, 130))
+        screen.blit(overlay, (0, 0))
+        title = self.big_font.render("VOUS ÊTES À TERRE", True, (240, 200, 190))
+        hint = self.font.render("Réapparition dans quelques secondes...",
+                                True, (220, 200, 200))
+        screen.blit(title, ((self.width - title.get_width()) // 2,
+                            self.height // 2 - 60))
+        screen.blit(hint, ((self.width - hint.get_width()) // 2,
+                           self.height // 2 + 10))
 
     def draw_pause(self, screen):
         """Voile + texte de pause par-dessus la scène figée."""
