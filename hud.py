@@ -22,6 +22,12 @@ class HUD:
         self.sway_time = 0.0   # horloge du balancement
         self.message = ""
         self.message_timer = 0.0
+        self.spread = 0.0      # écartement du viseur (tirs récents)
+        self.hit_timer = 0.0   # marqueur de touche
+        self.hit_kill = False
+        self.damage_dirs = []  # [(angle_relatif, minuterie)] dégâts reçus
+        self.announce_text = ""
+        self.announce_timer = 0.0
 
     def resize(self, size):
         self.width, self.height = size
@@ -34,29 +40,59 @@ class HUD:
     def on_player_shot(self):
         self.kick = 1.0
         self.flash = 0.06
+        self.spread = min(10.0, self.spread + 3.5)
+
+    def on_enemy_hit(self, killed):
+        """Marqueur de touche au centre du viseur (rouge si l'ennemi meurt)."""
+        self.hit_timer = 0.18
+        self.hit_kill = killed
+
+    def on_player_hit(self, rel_angle):
+        """Mémorise la direction d'où viennent les dégâts (indicateur)."""
+        self.damage_dirs.append([rel_angle, 0.8])
 
     def show_message(self, text):
         self.message = text
         self.message_timer = 2.2
 
+    def announce(self, text):
+        """Grande annonce centrale (début de vague...)."""
+        self.announce_text = text
+        self.announce_timer = 2.2
+
     def update(self, dt, moving):
         self.kick = max(0.0, self.kick - dt * 8)
         self.flash = max(0.0, self.flash - dt)
+        self.spread = max(0.0, self.spread - dt * 18)
+        self.hit_timer = max(0.0, self.hit_timer - dt)
         self.message_timer = max(0.0, self.message_timer - dt)
+        self.announce_timer = max(0.0, self.announce_timer - dt)
+        for entry in self.damage_dirs:
+            entry[1] -= dt
+        self.damage_dirs = [e for e in self.damage_dirs if e[1] > 0]
         if moving:
             self.sway_time += dt
 
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
-    def draw(self, screen, player, enemies, level):
+    def draw(self, screen, player, enemies, level, pickups=(), fps=None,
+             survival=None, stats=None):
         self._draw_weapon(screen, player)
         self._draw_crosshair(screen)
-        self._draw_status(screen, player, enemies)
+        self._draw_hit_marker(screen)
+        self._draw_damage_dirs(screen)
+        self._draw_status(screen, player, enemies, survival, stats)
         self._draw_slots(screen, player)
         self._draw_level_label(screen, level)
+        if survival is not None:
+            self._draw_survival(screen, survival)
+        self._draw_boss_bar(screen, enemies)
         self._draw_message(screen)
-        self._draw_minimap(screen, player, enemies, level)
+        self._draw_announce(screen)
+        self._draw_minimap(screen, player, enemies, level, pickups)
+        if fps is not None:
+            self._draw_fps(screen, fps)
         self._draw_hurt_flash(screen, player)
 
     def _draw_weapon(self, screen, player):
@@ -82,16 +118,52 @@ class HUD:
             pygame.draw.circle(screen, (255, 255, 210), tip, self.height // 52)
 
     def _draw_crosshair(self, screen):
+        """Viseur dynamique : s'écarte quand on tire (dispersion)."""
         cx, cy = self.width // 2, self.height // 2
-        gap, size = 5, 11
+        gap = 5 + int(self.spread)
+        size = gap + 6
         color = (230, 230, 230)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             pygame.draw.line(screen, color,
                              (cx + dx * gap, cy + dy * gap),
                              (cx + dx * size, cy + dy * size), 2)
 
-    def _draw_status(self, screen, player, enemies):
-        """Barre de vie + arme/munitions + compteur d'ennemis restants."""
+    def _draw_hit_marker(self, screen):
+        """Croix diagonale brève quand une balle touche un ennemi."""
+        if self.hit_timer <= 0.0:
+            return
+        cx, cy = self.width // 2, self.height // 2
+        color = (255, 70, 60) if self.hit_kill else (255, 235, 160)
+        for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+            pygame.draw.line(screen, color,
+                             (cx + dx * 7, cy + dy * 7),
+                             (cx + dx * 14, cy + dy * 14), 3)
+
+    def _draw_damage_dirs(self, screen):
+        """Flèches rouges autour du centre indiquant d'où viennent les tirs."""
+        if not self.damage_dirs:
+            return
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        cx, cy = self.width // 2, self.height // 2
+        radius = self.height * 0.17
+        for rel, timer in self.damage_dirs:
+            alpha = max(0, min(255, int(300 * timer)))
+            # rel = 0 -> devant (haut de l'écran) ; croît vers la droite.
+            px = cx + math.sin(rel) * radius
+            py = cy - math.cos(rel) * radius
+            # petit triangle pointant vers l'extérieur
+            out_x, out_y = math.sin(rel), -math.cos(rel)
+            side_x, side_y = math.cos(rel), math.sin(rel)
+            points = [
+                (px + out_x * 14, py + out_y * 14),
+                (px + side_x * 9, py + side_y * 9),
+                (px - side_x * 9, py - side_y * 9),
+            ]
+            pygame.draw.polygon(overlay, (215, 40, 35, alpha), points)
+        screen.blit(overlay, (0, 0))
+
+    def _draw_status(self, screen, player, enemies, survival=None, stats=None):
+        """Barre de vie + arme/munitions + ennemis restants + éliminations."""
         margin = 14
         bar_w, bar_h = int(self.width * 0.22), 16
         y = self.height - bar_h - margin
@@ -116,9 +188,17 @@ class HUD:
         screen.blit(name_text, (self.width - name_text.get_width() - margin,
                                 ay - name_text.get_height() - 2))
 
-        remaining = sum(1 for e in enemies if e.alive)
+        if survival is not None:
+            remaining = survival["remaining"]   # inclut la file d'attente
+        else:
+            remaining = sum(1 for e in enemies if e.alive)
         info = self.font.render(f"Ennemis restants : {remaining}", True, (220, 220, 160))
         screen.blit(info, (self.width - info.get_width() - margin, margin))
+        if stats is not None:
+            kills = self.font.render(f"Éliminations : {stats['kills']}",
+                                     True, (200, 200, 200))
+            screen.blit(kills, (self.width - kills.get_width() - margin,
+                                margin + info.get_height() + 2))
 
     def _draw_slots(self, screen, player, box=44):
         """Emplacements d'armes (touches 1..4), l'arme active surlignée."""
@@ -145,9 +225,61 @@ class HUD:
                 screen.blit(icon, (x + 5, y + 5))
 
     def _draw_level_label(self, screen, level):
-        label = self.font.render(
-            f"Niveau {level.index + 1} — {level.name}", True, (235, 235, 235))
+        if level.is_survival:
+            text = level.name       # "Le Déferlement" (les vagues suivent)
+        else:
+            text = f"Niveau {level.index + 1} — {level.name}"
+        label = self.font.render(text, True, (235, 235, 235))
         screen.blit(label, ((self.width - label.get_width()) // 2, 10))
+
+    def _draw_survival(self, screen, info):
+        """Sous le titre : vague courante, et compte à rebours (répit ou
+        submersion imminente)."""
+        if info["wave"] <= 0:
+            text = f"La horde arrive dans {math.ceil(info['next_in'])} s..."
+            color = (240, 200, 160)
+        elif info["intermission"]:
+            text = (f"Vague {info['wave']} / {info['final']} nettoyée — "
+                    f"suivante dans {math.ceil(info['next_in'])} s")
+            color = (170, 230, 170)
+        else:
+            text = (f"Vague {info['wave']} / {info['final']}   "
+                    f"Prochaine vague : {math.ceil(info['next_in'])} s")
+            # le compte à rebours vire au rouge quand la submersion menace
+            color = (230, 90, 70) if info["next_in"] < 15 else (220, 220, 160)
+        label = self.font.render(text, True, color)
+        screen.blit(label, ((self.width - label.get_width()) // 2, 36))
+
+    def _draw_announce(self, screen):
+        """Grande annonce centrale fugace ("VAGUE 12")."""
+        if self.announce_timer <= 0.0:
+            return
+        alpha = min(1.0, self.announce_timer / 0.6)
+        surf = self.big_font.render(self.announce_text, True, (255, 170, 60))
+        surf.set_alpha(int(255 * alpha))
+        screen.blit(surf, ((self.width - surf.get_width()) // 2,
+                           self.height // 3 - surf.get_height() // 2))
+
+    def _draw_boss_bar(self, screen, enemies):
+        """Grande barre de vie du boss en haut de l'écran (s'il est en vie)."""
+        boss = next((e for e in enemies if e.IS_BOSS and e.alive), None)
+        if boss is None:
+            return
+        bar_w = int(self.width * 0.44)
+        bar_h = 14
+        x = (self.width - bar_w) // 2
+        y = 40
+        frac = boss.health / boss.max_health
+        pygame.draw.rect(screen, (30, 12, 12), (x, y, bar_w, bar_h))
+        pygame.draw.rect(screen, (235, 120, 40), (x, y, int(bar_w * frac), bar_h))
+        pygame.draw.rect(screen, (240, 200, 160), (x, y, bar_w, bar_h), 1)
+        name = self.font.render("LE COLOSSE", True, (240, 200, 160))
+        screen.blit(name, ((self.width - name.get_width()) // 2,
+                           y + bar_h + 2))
+
+    def _draw_fps(self, screen, fps):
+        text = self.font.render(f"{fps:.0f} FPS", True, (160, 230, 160))
+        screen.blit(text, (12, self.height - text.get_height() * 3 - 40))
 
     def _draw_message(self, screen):
         """Message temporaire (arme ramassée...) au-dessus du viseur."""
@@ -157,8 +289,8 @@ class HUD:
         screen.blit(surf, ((self.width - surf.get_width()) // 2,
                            self.height // 2 - self.height // 8))
 
-    def _draw_minimap(self, screen, player, enemies, level, scale=6):
-        """Petite carte en haut à gauche (murs, joueur, ennemis vivants)."""
+    def _draw_minimap(self, screen, player, enemies, level, pickups=(), scale=6):
+        """Petite carte en haut à gauche (murs, joueur, ennemis, objets)."""
         surf = pygame.Surface((level.width * scale, level.height * scale), pygame.SRCALPHA)
         surf.fill((10, 10, 14, 150))
         for y in range(level.height):
@@ -166,10 +298,16 @@ class HUD:
                 if level.grid[y][x] != ".":
                     pygame.draw.rect(surf, (170, 170, 180, 200),
                                      (x * scale, y * scale, scale, scale))
+        for pickup in pickups:
+            # Les packs de vie cachés ne trahissent pas leur position ici.
+            if not pickup.taken and not pickup.hidden:
+                pygame.draw.circle(surf, (240, 210, 90),
+                                   (int(pickup.x * scale), int(pickup.y * scale)), 2)
         for enemy in enemies:
             if enemy.alive:
+                radius = 3 if enemy.IS_BOSS else 2
                 pygame.draw.circle(surf, (230, 70, 60),
-                                   (int(enemy.x * scale), int(enemy.y * scale)), 2)
+                                   (int(enemy.x * scale), int(enemy.y * scale)), radius)
         px, py = int(player.x * scale), int(player.y * scale)
         pygame.draw.circle(surf, (90, 220, 90), (px, py), 3)
         tip = (px + int(math.cos(player.angle) * scale * 1.5),
@@ -185,6 +323,19 @@ class HUD:
         alpha = int(120 * (player.hurt_flash / 0.35))
         overlay.fill((180, 20, 20, alpha))
         screen.blit(overlay, (0, 0))
+
+    def draw_dead_overlay(self, screen):
+        """Voile sombre pendant l'attente de réapparition (coop LAN)."""
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((60, 0, 0, 130))
+        screen.blit(overlay, (0, 0))
+        title = self.big_font.render("VOUS ÊTES À TERRE", True, (240, 200, 190))
+        hint = self.font.render("Réapparition dans quelques secondes...",
+                                True, (220, 200, 200))
+        screen.blit(title, ((self.width - title.get_width()) // 2,
+                            self.height // 2 - 60))
+        screen.blit(hint, ((self.width - hint.get_width()) // 2,
+                           self.height // 2 + 10))
 
     def draw_pause(self, screen):
         """Voile + texte de pause par-dessus la scène figée."""

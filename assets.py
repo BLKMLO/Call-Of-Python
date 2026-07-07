@@ -24,20 +24,28 @@ _cache = {}
 _avg_cache = {}
 
 
-def get(name):
-    """Retourne la surface de l'asset `name` (chargée du PNG ou générée)."""
-    if name in _cache:
-        return _cache[name]
-    path = os.path.join(ASSET_DIR, name + ".png")
-    if os.path.exists(path):
-        surf = pygame.image.load(path)
+def get(name, flipped=False):
+    """Retourne la surface de l'asset `name` (chargée du PNG ou générée).
+
+    `flipped=True` retourne la version miroir horizontal (mise en cache) —
+    utilisée pour les sprites de profil vus de l'autre côté.
+    """
+    key = (name, flipped)
+    if key in _cache:
+        return _cache[key]
+    if flipped:
+        surf = pygame.transform.flip(get(name), True, False)
     else:
-        surf = _BUILDERS[name]()
-        os.makedirs(ASSET_DIR, exist_ok=True)
-        pygame.image.save(surf, path)
-    if pygame.display.get_init() and pygame.display.get_surface():
-        surf = surf.convert_alpha()  # accélère les blits une fois l'écran créé
-    _cache[name] = surf
+        path = os.path.join(ASSET_DIR, name + ".png")
+        if os.path.exists(path):
+            surf = pygame.image.load(path)
+        else:
+            surf = _BUILDERS[name]()
+            os.makedirs(ASSET_DIR, exist_ok=True)
+            pygame.image.save(surf, path)
+        if pygame.display.get_init() and pygame.display.get_surface():
+            surf = surf.convert_alpha()  # accélère les blits une fois l'écran créé
+    _cache[key] = surf
     return surf
 
 
@@ -151,6 +159,23 @@ def _tex_tech():
     return _upscale(s, 4)
 
 
+def _tex_door():
+    """Porte coulissante métallique avec bandes de signalisation."""
+    rng = random.Random(106)
+    s = _tex_base()
+    _rect(s, 0, 0, 16, 16, (86, 92, 104), rng, 5)         # panneau
+    _rect(s, 7, 0, 2, 16, (56, 60, 70), rng, 3)           # jointure centrale
+    _rect(s, 0, 0, 1, 16, (120, 126, 140))                # rails latéraux
+    _rect(s, 15, 0, 1, 16, (120, 126, 140))
+    for x in range(1, 15, 2):                             # bandes jaune/noir
+        _rect(s, x, 2, 1, 2, (214, 176, 40))
+        _rect(s, x + 1, 2, 1, 2, (40, 38, 30))
+        _rect(s, x, 12, 1, 2, (214, 176, 40))
+        _rect(s, x + 1, 12, 1, 2, (40, 38, 30))
+    s.set_at((3, 8), (110, 235, 130))                     # voyant d'ouverture
+    return _upscale(s, 4)
+
+
 # ----------------------------------------------------------------------
 # Sprites d'ennemis (16x24, agrandis x4 -> 64x96) : style bonhomme
 # Minecraft, trois poses : repos, marche, tir.
@@ -170,13 +195,44 @@ ENEMY_PALETTES = {
         "skin": (70, 72, 84), "top": (78, 80, 94),
         "suit": (84, 86, 100), "dark": (60, 62, 74),
         "legs": (64, 66, 78), "boots": (32, 32, 38), "accent": (222, 62, 52),
+        "bulk": True,
+    },
+    "boss": {     # le Colosse : armure noire, visière orange incandescente
+        "skin": (44, 42, 48), "top": (52, 50, 58),
+        "suit": (66, 56, 62), "dark": (46, 38, 44),
+        "legs": (52, 44, 50), "boots": (26, 24, 28), "accent": (255, 150, 40),
+        "bulk": True,
+    },
+    "kamikaze": {  # fanatique au gilet explosif, fonce sur le joueur
+        "skin": (206, 160, 118), "top": (120, 44, 30),
+        "suit": (168, 84, 42), "dark": (128, 60, 30),
+        "legs": (96, 58, 36), "boots": (42, 32, 26), "accent": None,
+        "chest": (216, 40, 36),   # pains d'explosif sur le torse
+    },
+    "sniper": {    # tireur d'élite, lunette turquoise
+        "skin": (198, 156, 118), "top": (96, 106, 96),
+        "suit": (112, 122, 106), "dark": (86, 94, 82),
+        "legs": (92, 100, 88), "boots": (36, 38, 34), "accent": (90, 210, 200),
+    },
+    "ally": {      # coéquipier (multijoueur LAN) : uniforme bleu
+        "skin": (200, 158, 120), "top": (40, 56, 92),
+        "suit": (62, 86, 132), "dark": (46, 66, 104),
+        "legs": (52, 70, 106), "boots": (30, 34, 44), "accent": None,
     },
 }
 
 
 def _enemy_sprite(kind, pose):
+    """Sprite d'ennemi : poses de face (idle/walk/fire), de dos
+    (idle_back/walk_back), de profil (idle_side/walk_side) et au sol (dead)."""
     p = ENEMY_PALETTES[kind]
-    heavy = kind == "heavy"
+    if pose == "dead":
+        return _enemy_dead_sprite(p)
+    if pose.endswith("_back"):
+        return _enemy_back_sprite(p, walk=pose.startswith("walk"))
+    if pose.endswith("_side"):
+        return _enemy_side_sprite(p, walk=pose.startswith("walk"))
+    heavy = p.get("bulk", False)
     s = pygame.Surface((16, 24), pygame.SRCALPHA)
 
     # --- tête : casque/cheveux, visage, yeux (ou visière) ---
@@ -195,6 +251,11 @@ def _enemy_sprite(kind, pose):
     if heavy:                                    # épaulières
         _rect(s, 2, 5, 3, 2, p["dark"])
         _rect(s, 11, 5, 3, 2, p["dark"])
+    if p.get("chest"):                           # gilet explosif (kamikaze)
+        for cx_ in (5, 7, 9):
+            _rect(s, cx_, 7, 2, 3, p["chest"])
+            s.set_at((cx_, 7), (255, 220, 120))  # détonateurs
+
 
     # --- bras et jambes selon la pose ---
     if pose == "fire":
@@ -224,6 +285,91 @@ def _enemy_sprite(kind, pose):
         _rect(s, 8, 14, 3, 7, p["legs"])
         _rect(s, 5, 21, 3, 3, p["boots"])
         _rect(s, 8, 21, 3, 3, p["boots"])
+    return _upscale(s, 4)
+
+
+def _enemy_back_sprite(p, walk):
+    """Vue de dos : casque plein (pas de visage), sac à dos, arme invisible."""
+    heavy = p.get("bulk", False)
+    s = pygame.Surface((16, 24), pygame.SRCALPHA)
+    # tête : casque/cheveux pleins + nuque
+    _rect(s, 5, 0, 6, 4, p["top"])
+    _rect(s, 5, 4, 6, 2, p["skin"])
+    # torse + sac à dos
+    bx, bw = (3, 10) if heavy else (4, 8)
+    _rect(s, bx, 6, bw, 7, p["suit"])
+    _rect(s, 6, 7, 4, 5, p["dark"])              # sac
+    _rect(s, bx, 12, bw, 1, p["dark"])
+    if heavy:
+        _rect(s, 2, 5, 3, 2, p["dark"])
+        _rect(s, 11, 5, 3, 2, p["dark"])
+    swing = 1 if walk else 0
+    _rect(s, 2, 6 + swing, 2, 6, p["dark"])      # bras
+    _rect(s, 12, 6 - swing, 2, 6, p["dark"])
+    if walk:
+        _rect(s, 4, 14, 3, 7, p["legs"])
+        _rect(s, 9, 14, 3, 7, p["legs"])
+        _rect(s, 4, 21, 3, 3, p["boots"])
+        _rect(s, 9, 21, 3, 3, p["boots"])
+    else:
+        _rect(s, 5, 14, 3, 7, p["legs"])
+        _rect(s, 8, 14, 3, 7, p["legs"])
+        _rect(s, 5, 21, 3, 3, p["boots"])
+        _rect(s, 8, 21, 3, 3, p["boots"])
+    return _upscale(s, 4)
+
+
+def _enemy_side_sprite(p, walk):
+    """Profil (tourné vers la droite) : arme pointée vers l'avant.
+
+    La vue de l'autre profil est obtenue par miroir (assets.get flipped).
+    """
+    heavy = p.get("bulk", False)
+    s = pygame.Surface((16, 24), pygame.SRCALPHA)
+    # tête de profil
+    _rect(s, 6, 0, 6, 2, p["top"])
+    _rect(s, 6, 2, 6, 4, p["skin"])
+    if p["accent"]:
+        _rect(s, 9, 3, 3, 1, p["accent"])        # visière vers l'avant
+    else:
+        s.set_at((10, 3), (28, 28, 28))          # œil vers l'avant
+    # torse (plus étroit de profil)
+    bw = 8 if heavy else 6
+    _rect(s, 5, 6, bw, 7, p["suit"])
+    _rect(s, 5, 12, bw, 1, p["dark"])
+    if heavy:
+        _rect(s, 5, 5, 4, 2, p["dark"])          # épaulière visible
+    # bras visible + arme vers l'avant
+    _rect(s, 7, 7, 3, 5, p["dark"])
+    _rect(s, 9, 9, 6, 2, (34, 34, 38))           # canon
+    _rect(s, 8, 11, 2, 2, p["skin"])             # main
+    # jambes de profil (ciseaux en marche)
+    if walk:
+        _rect(s, 4, 14, 3, 7, p["legs"])
+        _rect(s, 9, 14, 3, 7, p["legs"])
+        _rect(s, 3, 21, 3, 3, p["boots"])
+        _rect(s, 10, 21, 3, 3, p["boots"])
+    else:
+        _rect(s, 6, 14, 3, 7, p["legs"])
+        _rect(s, 8, 14, 2, 7, p["dark"])
+        _rect(s, 6, 21, 4, 3, p["boots"])
+    return _upscale(s, 4)
+
+
+def _enemy_dead_sprite(p):
+    """Cadavre allongé au sol (24x12) : flaque de sang + silhouette couchée."""
+    s = pygame.Surface((24, 12), pygame.SRCALPHA)
+    # flaque de sang
+    _rect(s, 3, 8, 19, 3, (96, 14, 16))
+    _rect(s, 5, 7, 14, 1, (96, 14, 16))
+    _rect(s, 6, 11, 12, 1, (70, 10, 12))
+    # corps couché : jambes à gauche, tête à droite
+    _rect(s, 2, 6, 7, 3, p["legs"])
+    _rect(s, 1, 6, 2, 3, p["boots"])
+    _rect(s, 9, 5, 8, 4, p["suit"])
+    _rect(s, 12, 3, 3, 2, p["dark"])       # bras replié
+    _rect(s, 17, 5, 4, 4, p["skin"])       # tête
+    _rect(s, 20, 5, 1, 4, p["top"])
     return _upscale(s, 4)
 
 
@@ -332,6 +478,19 @@ def _pickup_medkit():
     return _upscale(s, 4)
 
 
+def _pickup_lifepack():
+    """Pack de vie caché : gros bloc blanc, grande croix rouge, lueur verte."""
+    s = _pk_base()
+    _rect(s, 1, 2, 14, 12, (242, 242, 244))
+    _rect(s, 1, 2, 14, 1, (190, 190, 194))       # arête supérieure
+    _rect(s, 1, 13, 14, 1, (200, 200, 204))
+    _rect(s, 6, 4, 4, 8, (206, 32, 32))          # grande croix
+    _rect(s, 4, 6, 8, 4, (206, 32, 32))
+    for px, py in ((0, 1), (15, 1), (0, 14), (15, 14)):
+        s.set_at((px, py), (120, 235, 130))      # lueur verte aux coins
+    return _upscale(s, 4)
+
+
 # ----------------------------------------------------------------------
 _BUILDERS = {
     "wall_brick": _tex_brick,
@@ -339,6 +498,7 @@ _BUILDERS = {
     "wall_stone": _tex_stone,
     "wall_metal": _tex_metal,
     "wall_tech": _tex_tech,
+    "wall_door": _tex_door,
     "fp_pistol": _fp_pistol,
     "fp_shotgun": _fp_shotgun,
     "fp_rifle": _fp_rifle,
@@ -348,9 +508,11 @@ _BUILDERS = {
     "pickup_rifle": _pickup_rifle,
     "pickup_minigun": _pickup_minigun,
     "pickup_medkit": _pickup_medkit,
+    "pickup_lifepack": _pickup_lifepack,
 }
 for _kind in ENEMY_PALETTES:
-    for _pose in ("idle", "walk", "fire"):
+    for _pose in ("idle", "walk", "fire", "dead",
+                  "idle_back", "walk_back", "idle_side", "walk_side"):
         _BUILDERS[f"enemy_{_kind}_{_pose}"] = (
             lambda k=_kind, p=_pose: _enemy_sprite(k, p)
         )
