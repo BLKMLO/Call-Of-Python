@@ -26,6 +26,8 @@ class HUD:
         self.hit_timer = 0.0   # marqueur de touche
         self.hit_kill = False
         self.damage_dirs = []  # [(angle_relatif, minuterie)] dégâts reçus
+        self.announce_text = ""
+        self.announce_timer = 0.0
 
     def resize(self, size):
         self.width, self.height = size
@@ -53,12 +55,18 @@ class HUD:
         self.message = text
         self.message_timer = 2.2
 
+    def announce(self, text):
+        """Grande annonce centrale (début de vague...)."""
+        self.announce_text = text
+        self.announce_timer = 2.2
+
     def update(self, dt, moving):
         self.kick = max(0.0, self.kick - dt * 8)
         self.flash = max(0.0, self.flash - dt)
         self.spread = max(0.0, self.spread - dt * 18)
         self.hit_timer = max(0.0, self.hit_timer - dt)
         self.message_timer = max(0.0, self.message_timer - dt)
+        self.announce_timer = max(0.0, self.announce_timer - dt)
         for entry in self.damage_dirs:
             entry[1] -= dt
         self.damage_dirs = [e for e in self.damage_dirs if e[1] > 0]
@@ -68,16 +76,20 @@ class HUD:
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
-    def draw(self, screen, player, enemies, level, pickups=(), fps=None):
+    def draw(self, screen, player, enemies, level, pickups=(), fps=None,
+             survival=None):
         self._draw_weapon(screen, player)
         self._draw_crosshair(screen)
         self._draw_hit_marker(screen)
         self._draw_damage_dirs(screen)
-        self._draw_status(screen, player, enemies)
+        self._draw_status(screen, player, enemies, survival)
         self._draw_slots(screen, player)
         self._draw_level_label(screen, level)
+        if survival is not None:
+            self._draw_survival(screen, survival)
         self._draw_boss_bar(screen, enemies)
         self._draw_message(screen)
+        self._draw_announce(screen)
         self._draw_minimap(screen, player, enemies, level, pickups)
         if fps is not None:
             self._draw_fps(screen, fps)
@@ -150,7 +162,7 @@ class HUD:
             pygame.draw.polygon(overlay, (215, 40, 35, alpha), points)
         screen.blit(overlay, (0, 0))
 
-    def _draw_status(self, screen, player, enemies):
+    def _draw_status(self, screen, player, enemies, survival=None):
         """Barre de vie + arme/munitions + compteur d'ennemis restants."""
         margin = 14
         bar_w, bar_h = int(self.width * 0.22), 16
@@ -176,7 +188,10 @@ class HUD:
         screen.blit(name_text, (self.width - name_text.get_width() - margin,
                                 ay - name_text.get_height() - 2))
 
-        remaining = sum(1 for e in enemies if e.alive)
+        if survival is not None:
+            remaining = survival["remaining"]   # inclut la file d'attente
+        else:
+            remaining = sum(1 for e in enemies if e.alive)
         info = self.font.render(f"Ennemis restants : {remaining}", True, (220, 220, 160))
         screen.blit(info, (self.width - info.get_width() - margin, margin))
 
@@ -205,9 +220,40 @@ class HUD:
                 screen.blit(icon, (x + 5, y + 5))
 
     def _draw_level_label(self, screen, level):
-        label = self.font.render(
-            f"Niveau {level.index + 1} — {level.name}", True, (235, 235, 235))
+        if level.is_survival:
+            text = level.name       # "Le Déferlement" (les vagues suivent)
+        else:
+            text = f"Niveau {level.index + 1} — {level.name}"
+        label = self.font.render(text, True, (235, 235, 235))
         screen.blit(label, ((self.width - label.get_width()) // 2, 10))
+
+    def _draw_survival(self, screen, info):
+        """Sous le titre : vague courante, et compte à rebours (répit ou
+        submersion imminente)."""
+        if info["wave"] <= 0:
+            text = f"La horde arrive dans {math.ceil(info['next_in'])} s..."
+            color = (240, 200, 160)
+        elif info["intermission"]:
+            text = (f"Vague {info['wave']} / {info['final']} nettoyée — "
+                    f"suivante dans {math.ceil(info['next_in'])} s")
+            color = (170, 230, 170)
+        else:
+            text = (f"Vague {info['wave']} / {info['final']}   "
+                    f"Prochaine vague : {math.ceil(info['next_in'])} s")
+            # le compte à rebours vire au rouge quand la submersion menace
+            color = (230, 90, 70) if info["next_in"] < 15 else (220, 220, 160)
+        label = self.font.render(text, True, color)
+        screen.blit(label, ((self.width - label.get_width()) // 2, 36))
+
+    def _draw_announce(self, screen):
+        """Grande annonce centrale fugace ("VAGUE 12")."""
+        if self.announce_timer <= 0.0:
+            return
+        alpha = min(1.0, self.announce_timer / 0.6)
+        surf = self.big_font.render(self.announce_text, True, (255, 170, 60))
+        surf.set_alpha(int(255 * alpha))
+        screen.blit(surf, ((self.width - surf.get_width()) // 2,
+                           self.height // 3 - surf.get_height() // 2))
 
     def _draw_boss_bar(self, screen, enemies):
         """Grande barre de vie du boss en haut de l'écran (s'il est en vie)."""

@@ -90,16 +90,23 @@ class MainMenu(MenuBase):
         self.settings = settings
 
     def items(self):
-        return [("play", "Jouer"), ("settings", "Paramètres"), ("quit", "Quitter")]
+        rows = [("play", "Jouer")]
+        if self.settings.survival_unlocked:
+            rows.append(("survival", "Le Déferlement (survie)"))
+        rows += [("settings", "Paramètres"), ("quit", "Quitter")]
+        return rows
 
     def draw(self, screen):
         super().draw(screen)
+        parts = []
         if self.settings.best_level > 0:
+            parts.append(f"Meilleur niveau : {self.settings.best_level}")
+        if self.settings.best_wave > 0:
+            parts.append(f"Record du Déferlement : vague {self.settings.best_wave}")
+        if parts:
             w, h = screen.get_size()
             font = self._font(h, small=True)
-            text = font.render(
-                f"Meilleur niveau atteint : {self.settings.best_level}",
-                True, DIM_COLOR)
+            text = font.render("   —   ".join(parts), True, DIM_COLOR)
             screen.blit(text, text.get_rect(center=(w // 2, h // 5 + h // 9)))
 
     def _draw_footer(self, screen):
@@ -191,25 +198,67 @@ class SettingsMenu(MenuBase):
 
 
 class EndScreen(MenuBase):
-    """Écran de fin : game over (retour au niveau 1) ou victoire finale."""
+    """Écran de fin : game over (retour au niveau 1) ou victoire.
 
-    def __init__(self, sounds, victory):
+    En mode survie, "Rejouer" relance le Déferlement et le sous-titre
+    affiche la vague atteinte.
+    """
+
+    def __init__(self, sounds, victory, title=None, subtitle=None,
+                 survival=False):
         super().__init__(sounds)
         self.victory = victory
-        self.title = "VICTOIRE !" if victory else "GAME OVER"
+        self.survival = survival
+        self.title = title or ("VICTOIRE !" if victory else "GAME OVER")
+        if subtitle is not None:
+            self.subtitle = subtitle
+        elif victory:
+            self.subtitle = "Tous les niveaux sont terminés, félicitations !"
+        else:
+            self.subtitle = "Vous avez été abattu — vous repartez de zéro."
 
     def items(self):
-        label = "Rejouer" if self.victory else "Recommencer (niveau 1)"
-        return [("play", label), ("menu", "Menu principal"), ("quit", "Quitter")]
+        if self.survival:
+            label = "Rejouer le Déferlement"
+            action = "survival"
+        else:
+            label = "Rejouer" if self.victory else "Recommencer (niveau 1)"
+            action = "play"
+        return [(action, label), ("menu", "Menu principal"), ("quit", "Quitter")]
 
     def draw(self, screen):
         super().draw(screen)
         w, h = screen.get_size()
         font = self._font(h, small=True)
-        text = ("Tous les niveaux sont terminés, félicitations !" if self.victory
-                else "Vous avez été abattu — vous repartez de zéro.")
-        surf = font.render(text, True, DIM_COLOR)
+        surf = font.render(self.subtitle, True, DIM_COLOR)
         screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))
+
+
+class SealBrokenScreen(MenuBase):
+    """Révélation après la mort du Colosse : il était le Sceau."""
+
+    title = "LE SCEAU EST BRISÉ"
+
+    LORE = [
+        "Le Colosse s'effondre... et le sol tremble encore.",
+        "Trop tard, vous comprenez : il n'était pas leur champion.",
+        "Il était le Sceau — le bastion qui retenait la horde.",
+        "Derrière les portes, le Déferlement gronde. Tenez 50 vagues.",
+    ]
+
+    def items(self):
+        return [("survival", "Affronter le Déferlement"),
+                ("menu", "Fuir (menu principal)")]
+
+    def draw(self, screen):
+        super().draw(screen)
+        w, h = screen.get_size()
+        font = self._font(h, small=True)
+        y = h // 5 + h // 12
+        for line in self.LORE:
+            surf = font.render(line, True, (200, 160, 130))
+            screen.blit(surf, surf.get_rect(center=(w // 2, y)))
+            y += int(font.get_height() * 1.35)
 
 
 class LevelCompleteScreen(MenuBase):

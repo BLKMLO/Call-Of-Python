@@ -34,6 +34,14 @@ python main.py
 Le menu **Paramètres** règle la résolution, le volume, la sensibilité de
 la souris et les touches (WASD possible). Sauvegardé dans `settings.json`.
 
+## Histoire
+
+Quatre niveaux pour atteindre le cœur du bastion... et son gardien, le
+Colosse. Mais en l'abattant, vous comprenez trop tard : il n'était pas
+leur champion, il était **le Sceau** qui retenait la horde. Sa mort
+déclenche **le Déferlement** — un mode survie où les vagues déferlent
+par les sas de l'arène, jusqu'à la cinquantième.
+
 ## Gameplay
 
 - **4 niveaux** à thèmes différents (Entrepôt, Base militaire,
@@ -42,14 +50,27 @@ la souris et les touches (WASD possible). Sauvegardé dans `settings.json`.
   **tous les ennemis sont éliminés** ; le joueur y conserve son arsenal
   et récupère de la vie. **S'il meurt, il repart de zéro** (niveau 1,
   pistolet seul). Le meilleur niveau atteint est mémorisé.
+- **Le Déferlement (mode survie)** : débloqué en brisant le Sceau (et
+  ensuite accessible depuis le menu). Des vagues de plus en plus grosses
+  et dures, **jusqu'à la vague 50** ; un Colosse accompagne la horde
+  toutes les 10 vagues. Une vague nettoyée accorde un répit et un peu de
+  vie ; mais **si elle n'est pas nettoyée en 60 secondes, la suivante
+  déferle par-dessus** — la submersion guette. Trousses de soins toutes
+  les 3 vagues, armes au sol de plus en plus améliorées toutes les 5.
+  Le record de vagues est sauvegardé.
+- **Portes coulissantes automatiques** sur les cartes : elles s'ouvrent
+  à l'approche (du joueur comme des ennemis — l'IA les traverse), les
+  balles et les regards passent par l'entrebâillement.
 - **3 types d'ennemis** (milicien, soldat, soldat lourd) **plus un boss**
   (le Colosse, 550 PV, barre de vie dédiée) au dernier niveau. IA :
-  détection à vue, **pathfinding BFS** (ils contournent murs et piliers),
-  **strafe latéral en combat**, **alerte des alliés** (un ennemi qui vous
-  repère crie, un coup de feu attire le secteur), patrouille au repos,
-  repli vers un point de couverture quand ils sont blessés. Leurs vie et
-  dégâts augmentent avec les niveaux. Sprites animés (marche, tir),
-  barres de vie flottantes, **cadavres persistants** au sol.
+  détection à vue, **pathfinding BFS** (ils contournent murs, piliers et
+  portes), **strafe latéral en combat**, **alerte des alliés** (un ennemi
+  qui vous repère crie, un coup de feu attire le secteur), patrouille au
+  repos, repli vers un point de couverture quand ils sont blessés. Leurs
+  vie et dégâts augmentent avec les niveaux. **Sprites directionnels**
+  (on les voit de face, de dos ou de profil selon leur orientation),
+  animations de marche/tir, barres de vie flottantes, **cadavres
+  persistants** au sol.
 - **4 armes** : pistolet de départ, puis fusil à pompe, fusil d'assaut et
   minigun **à ramasser sur les cartes**. Une arme trouvée à un niveau
   supérieur est plus puissante (« Mk. II », « Mk. III »...) ; ramasser
@@ -74,17 +95,18 @@ la souris et les touches (WASD possible). Sauvegardé dans `settings.json`.
 
 | Fichier        | Rôle |
 |----------------|------|
-| `main.py`      | Point d'entrée, machine à états (menu / paramètres / jeu / transition / fin), musique |
-| `settings.py`  | Paramètres + persistance JSON (résolution, volume, sensibilité, touches, progression) |
-| `menu.py`      | Menu principal, paramètres, fin de niveau, game over / victoire |
-| `game.py`      | Boucle de gameplay : entrées, tir hitscan multi-plombs, ramassages, alertes, fins |
-| `level.py`     | Cartes ASCII + définition des niveaux (thème, ennemis, armes, difficulté) |
-| `raycaster.py` | Rendu : murs texturés (DDA + z-buffer), y-shearing, billboards, particules, ligne de vue |
-| `entities.py`  | `Player` (arsenal, pitch), `Grunt`/`Soldier`/`Heavy`/`Boss`, `Pickup` |
+| `main.py`      | Point d'entrée, machine à états (menu / jeu / Sceau / Déferlement / fin), musique |
+| `settings.py`  | Paramètres + persistance JSON (résolution, volume, touches, progression, records) |
+| `menu.py`      | Menu principal, paramètres, fin de niveau, écran du Sceau, game over / victoire |
+| `game.py`      | Boucle de gameplay : entrées, tir hitscan multi-plombs, ramassages, alertes, portes |
+| `survival.py`  | Le Déferlement : vagues, submersion à 60 s, apparitions par les sas, ravitaillement |
+| `level.py`     | Cartes ASCII + niveaux (thème, ennemis, armes, difficulté) + portes coulissantes |
+| `raycaster.py` | Rendu : murs texturés (DDA + z-buffer), portes, y-shearing, billboards, particules |
+| `entities.py`  | `Player` (arsenal, pitch), `Grunt`/`Soldier`/`Heavy`/`Boss`, `Pickup`, sprites directionnels |
 | `ai.py`        | Machine à états des ennemis (idle / chase / attack / cover) + pathfinding BFS |
 | `weapons.py`   | Specs des armes + niveaux d'amélioration (Mk. II...) |
-| `hud.py`       | Arme FP, viseur dynamique, marqueurs, vie, munitions, minimap, barre de boss |
-| `particles.py` | Particules 3D (sang, impacts, poussière) |
+| `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss |
+| `particles.py` | Particules 3D (sang, impacts, poussière, surgissements) |
 | `sounds.py`    | Effets + musique d'ambiance synthétisés en pur Python, stéréo positionnelle |
 | `assets.py`    | Génération/chargement des PNG pixel-art (`assets/`) |
 

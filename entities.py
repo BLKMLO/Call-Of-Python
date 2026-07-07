@@ -172,17 +172,29 @@ class Enemy(Entity):
         self.last_seen = None    # dernière position connue du joueur
         self.cover_target = None # point de couverture visé
 
-    def current_sprite(self):
-        """Pose selon l'état : mort > tir > marche (alternée) > repos."""
+    def current_sprite(self, player=None):
+        """Pose selon l'état ET l'angle de vue : on voit les ennemis de
+        face, de dos ou de profil selon leur orientation par rapport au
+        joueur (le profil opposé est obtenu par miroir)."""
         if not self.alive:
-            pose = "dead"
-        elif self.flash_timer > 0.0:
-            pose = "fire"
-        elif self.moving and int(self.anim_time * 5) % 2 == 0:
-            pose = "walk"
-        else:
-            pose = "idle"
-        return assets.get(f"enemy_{self.KIND}_{pose}")
+            return assets.get(f"enemy_{self.KIND}_dead")
+        if self.flash_timer > 0.0:
+            # Quand il tire, il fait face au joueur : pose de face armée.
+            return assets.get(f"enemy_{self.KIND}_fire")
+
+        walking = self.moving and int(self.anim_time * 5) % 2 == 0
+        pose = "walk" if walking else "idle"
+        suffix, flipped = "", False
+        if player is not None:
+            # Angle entre la direction regardée par l'ennemi et le joueur.
+            to_player = math.atan2(player.y - self.y, player.x - self.x)
+            diff = (self.angle - to_player + math.pi) % (2 * math.pi) - math.pi
+            if abs(diff) > 3 * math.pi / 4:
+                suffix = "_back"            # il nous tourne le dos
+            elif abs(diff) > math.pi / 4:
+                suffix = "_side"            # profil (miroir selon le côté)
+                flipped = diff > 0
+        return assets.get(f"enemy_{self.KIND}_{pose}{suffix}", flipped)
 
     def take_damage(self, amount):
         died = super().take_damage(amount)
@@ -267,7 +279,7 @@ class Pickup:
         else:
             self.sprite_name = "pickup_" + kind.split(":", 1)[1]
 
-    def current_sprite(self):
+    def current_sprite(self, player=None):
         return assets.get(self.sprite_name)
 
     def bob_offset(self, time_s):

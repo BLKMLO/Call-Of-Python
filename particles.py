@@ -67,6 +67,12 @@ class ParticleSystem:
         self._burst(x, y, 0.5, 7, [color, dark],
                     speed=1.1, size=0.03, life=0.4, upward=0.9)
 
+    def spawn_portal(self, x, y):
+        """Déchirure incandescente : un ennemi de la horde surgit."""
+        self._burst(x, y, 0.4, 18,
+                    [(255, 150, 40), (200, 60, 30), (120, 30, 60)],
+                    speed=1.4, size=0.04, life=0.8, upward=1.6)
+
     # ------------------------------------------------------------------
     def update(self, dt):
         alive = []

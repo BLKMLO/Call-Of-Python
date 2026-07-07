@@ -32,6 +32,10 @@ def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
     du point d'impact le long du mur (colonne de texture à afficher).
     Méthode classique des intersections avec les lignes horizontales et
     verticales de la grille.
+
+    Portes ('D') : le panneau coulisse latéralement ; le rayon passe dans
+    l'ouverture (offset < fraction d'ouverture) et frappe le panneau
+    au-delà, avec la texture décalée d'autant.
     """
     sin_a = math.sin(angle) or 1e-8
     cos_a = math.cos(angle) or 1e-8
@@ -47,9 +51,17 @@ def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
     delta_v = dx / cos_a
     dy_v = delta_v * sin_a
     tile_v = "1"
+    off_v = 0.0
     for _ in range(max_depth):
         tile_v = level.tile(x_v, y_v)
-        if tile_v != ".":
+        if tile_v == "D":
+            gap = level.door_open_at(x_v, y_v)
+            off_v = y_v % 1.0
+            if off_v >= gap:      # frappe le panneau (texture décalée)
+                off_v -= gap
+                break
+        elif tile_v != ".":
+            off_v = y_v % 1.0
             break
         x_v += dx
         y_v += dy_v
@@ -65,9 +77,17 @@ def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
     delta_h = dy / sin_a
     dx_h = delta_h * cos_a
     tile_h = "1"
+    off_h = 0.0
     for _ in range(max_depth):
         tile_h = level.tile(x_h, y_h)
-        if tile_h != ".":
+        if tile_h == "D":
+            gap = level.door_open_at(x_h, y_h)
+            off_h = x_h % 1.0
+            if off_h >= gap:
+                off_h -= gap
+                break
+        elif tile_h != ".":
+            off_h = x_h % 1.0
             break
         x_h += dx_h
         y_h += dy
@@ -75,8 +95,8 @@ def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
 
     # On garde l'intersection la plus proche.
     if depth_v < depth_h:
-        return depth_v, tile_v, True, y_v % 1.0
-    return depth_h, tile_h, False, x_h % 1.0
+        return depth_v, tile_v, True, off_v
+    return depth_h, tile_h, False, off_h
 
 
 def has_line_of_sight(level, x0, y0, x1, y1):
@@ -113,8 +133,10 @@ class Raycaster:
         self.level_config = level.config
         self._build_background()
         # tex_cols[char][niveau_d_ombre][x] -> colonne de texture (1 px de large)
+        # La texture de porte est ajoutée automatiquement à chaque thème.
+        theme = {**self.level_config["theme"], "D": "wall_door"}
         self.tex_cols = {}
-        for char, tex_name in self.level_config["theme"].items():
+        for char, tex_name in theme.items():
             texture = assets.get(tex_name)
             shades = []
             for i in range(SHADE_LEVELS):
@@ -224,7 +246,7 @@ class Raycaster:
 
         for proj_dist, delta, obj in visibles:
             proj = self.screen_dist / proj_dist
-            sprite = obj.current_sprite()
+            sprite = obj.current_sprite(player)  # pose selon l'angle de vue
             ratio = sprite.get_width() / sprite.get_height()
             h = int(proj * obj.SPRITE_HEIGHT)
             w = max(1, int(h * ratio))

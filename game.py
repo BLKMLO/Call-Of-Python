@@ -29,10 +29,11 @@ SLOT_SCANCODES = {30: 0, 31: 1, 32: 2, 33: 3}
 
 
 class Game:
-    def __init__(self, screen, settings, sounds, level_index=0, carry_player=None):
+    def __init__(self, screen, settings, sounds, level_index=0,
+                 carry_player=None, level_config=None):
         self.settings = settings
         self.sounds = sounds
-        self.level = Level(level_index)
+        self.level = Level(level_index, config=level_config)
         self.level_index = level_index
 
         # Le joueur repart du spawn ; s'il vient du niveau précédent, il
@@ -138,17 +139,35 @@ class Game:
                                        exclude=data)
 
         self._separate_enemies()
+
+        # Portes automatiques : s'ouvrent pour le joueur ET les ennemis.
+        movers = [player] + [e for e in self.enemies if e.alive]
+        for door_pos in self.level.update_doors(dt, movers):
+            self.sounds.play("door", volume_scale=0.7,
+                             pos=door_pos, listener=player)
+
         self.particles.update(dt)
 
         # Conditions de fin (avec un léger délai pour "encaisser" la scène).
         if self.outcome is None:
-            if not player.alive:
-                self.outcome = "dead"
-            elif all(not enemy.alive for enemy in self.enemies):
-                self.outcome = "victory"
-                self.sounds.play("level_complete")
+            self._check_outcome()
         else:
             self.end_delay += dt
+
+    def _check_outcome(self):
+        """Fin de partie standard ; surchargé par le mode survie."""
+        if not self.player.alive:
+            self.outcome = "dead"
+        elif all(not enemy.alive for enemy in self.enemies):
+            self.outcome = "victory"
+            self.sounds.play("level_complete")
+
+    def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
+        """Ajoute un ennemi en cours de partie (vagues du Déferlement)."""
+        enemy = ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
+        self.enemies.append(enemy)
+        self.ais.append(EnemyAI(enemy))
+        return enemy
 
     @property
     def finished(self):
@@ -284,6 +303,11 @@ class Game:
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
         self.hud.draw(screen, self.player, self.enemies, self.level,
-                      self.pickups, fps=self.fps if self.show_fps else None)
+                      self.pickups, fps=self.fps if self.show_fps else None,
+                      survival=self.survival_info())
         if self.paused:
             self.hud.draw_pause(screen)
+
+    def survival_info(self):
+        """Infos de vagues pour le HUD ; None hors mode survie."""
+        return None

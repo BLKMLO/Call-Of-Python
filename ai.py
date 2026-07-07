@@ -41,7 +41,9 @@ def find_path(level, sx, sy, tx, ty):
         x, y = current
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             nxt = (x + dx, y + dy)
-            if nxt not in prev and not level.is_wall(nxt[0] + 0.5, nxt[1] + 0.5):
+            # blocks_path traite les portes comme traversables : elles
+            # s'ouvriront automatiquement à l'approche de l'ennemi.
+            if nxt not in prev and not level.blocks_path(nxt[0] + 0.5, nxt[1] + 0.5):
                 prev[nxt] = current
                 queue.append(nxt)
     if goal not in prev:

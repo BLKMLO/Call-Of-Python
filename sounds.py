@@ -85,6 +85,51 @@ def _jingle(freqs, note=0.11):
     return b"".join(_tone(f, note, slide=f * 0.05) for f in freqs)
 
 
+def _door_slide(duration=0.35):
+    """Chuintement pneumatique d'une porte coulissante."""
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    for i in range(n):
+        t = i / n
+        env = math.sin(math.pi * t) * 0.5          # monte puis redescend
+        samples.append(random.uniform(-1, 1) * env * (0.4 + 0.3 * t))
+    return _pack(samples)
+
+
+def _spawn_whoosh(duration=0.45):
+    """Déchirure grave : un ennemi de la horde surgit."""
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    phase = 0.0
+    for i in range(n):
+        t = i / n
+        f = 320 - 240 * t                          # sifflement descendant
+        phase += 2 * math.pi * f / SAMPLE_RATE
+        env = math.sin(math.pi * t)
+        samples.append((math.sin(phase) * 0.5
+                        + random.uniform(-0.35, 0.35)) * env)
+    return _pack(samples)
+
+
+def _horn():
+    """Cor de guerre grave : une nouvelle vague déferle."""
+    parts = []
+    for f, dur in ((110.0, 0.35), (82.4, 0.5)):
+        n = int(SAMPLE_RATE * dur)
+        phase = 0.0
+        samples = []
+        for i in range(n):
+            t = i / n
+            phase += 2 * math.pi * f / SAMPLE_RATE
+            env = min(1.0, t * 8) * (1 - t) ** 0.7
+            # onde riche (fondamentale + harmoniques) façon cuivre
+            s = (math.sin(phase) + 0.5 * math.sin(2 * phase)
+                 + 0.25 * math.sin(3 * phase))
+            samples.append(s * env * 0.5)
+        parts.append(_pack(samples))
+    return b"".join(parts)
+
+
 def _ambient_loop(base_freq, seed, duration=12.0):
     """Nappe d'ambiance bouclable : bourdon + quinte + octave détunée.
 
@@ -128,6 +173,7 @@ MUSIC_KEYS = {
     "level1": (46.25, 3),   # F#1
     "level2": (41.2, 4),    # E1
     "level3": (36.7, 5),    # D1
+    "survival": (32.7, 6),  # C1 : l'abîme du Déferlement
 }
 MUSIC_VOLUME = 0.35         # part du volume global réservée à la musique
 
@@ -161,6 +207,9 @@ class SoundBank:
             "heal": pygame.mixer.Sound(buffer=_jingle([440, 550])),
             "level_complete": pygame.mixer.Sound(
                 buffer=_jingle([523, 659, 784, 1046], note=0.16)),
+            "door": pygame.mixer.Sound(buffer=_door_slide()),
+            "spawn": pygame.mixer.Sound(buffer=_spawn_whoosh()),
+            "wave": pygame.mixer.Sound(buffer=_horn()),
         }
 
     # ------------------------------------------------------------------

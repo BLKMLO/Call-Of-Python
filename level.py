@@ -2,10 +2,12 @@
 
 Une carte est une grille de caractères :
     '1', '2', '3' : murs — leur texture dépend du thème du niveau
+    'D'           : porte coulissante automatique (s'ouvre à l'approche)
     '.'           : sol praticable
     'P'           : apparition du joueur
     'E'           : apparition d'un ennemi (type selon la composition du niveau)
-    'B'           : apparition du boss (le Colosse)
+    'B'           : apparition du boss (le Colosse, alias le Sceau)
+    'S'           : point d'apparition de la horde (mode Déferlement)
     'W'           : arme à ramasser (type selon la liste `weapons` du niveau)
     'H'           : trousse de soins
 
@@ -18,7 +20,7 @@ niveaux. Pour ajouter un niveau : une grille + une entrée dans `LEVELS`.
 MAP_WAREHOUSE = [
     "1111111111111111111111",
     "1P.......2.......2...1",
-    "1........2..222..2.E.1",
+    "1........22D222..2.E.1",
     "1..22....2....2..2...1",
     "1...2....2.W..2..222.1",
     "1...2....22222.......1",
@@ -40,14 +42,14 @@ MAP_BASE = [
     "1.....2....E....2..E...1",
     "1..W..2.........2......1",
     "1.....2..33333..2......1",
-    "122.222..3...3..222.2221",
+    "122D222..3...3..222D2221",
     "1........3.H.3.........1",
     "1...E....33.33....E....1",
     "1......................1",
     "1..33..............33..1",
     "1..33....E....E....33..1",
     "1......................1",
-    "122.222.........222.2221",
+    "122D222.........222D2221",
     "1.....2....W....2......1",
     "1..E..2..111111.2...E..1",
     "1.....2..1....1.2......1",
@@ -60,7 +62,7 @@ MAP_LAB = [
     "1P...2..........2........1",
     "1....2....E.....2...E....1",
     "1.W..2..........2........1",
-    "1....22.3333.3333.22.....1",
+    "1....22.3333D3333.22.....1",
     "1........................1",
     "1..E.....................1",
     "1....33..2.E..W.2..33....1",
@@ -69,7 +71,7 @@ MAP_LAB = [
     "1....33.....11.....33....1",
     "1..H.....................1",
     "1.........E....E.........1",
-    "1..222.222......222.222..1",
+    "1..222D222......222D222..1",
     "1..2.....................1",
     "1..2..E......H.......E...1",
     "1..2.....................1",
@@ -82,7 +84,7 @@ MAP_FINAL = [
     "1......2....E.....2..E...1",
     "1..W...2..........2......1",
     "1......2...33..33.2......1",
-    "1222.222...3....3.222.2221",
+    "1222D222...3....3.222D2221",
     "1..........3..B.3........1",
     "1...E......3....3....E...1",
     "1..........33..33........1",
@@ -98,6 +100,45 @@ MAP_FINAL = [
     "1........................1",
     "11111111111111111111111111",
 ]
+
+# Arène du Déferlement (mode survie) : quatre sas d'invasion aux coins
+# (poches de 'S' fermées par des portes), abri central, armes au milieu.
+MAP_HORDE = [
+    "11111111111111111111111111",
+    "1SS2..................2SS1",
+    "1SSD.......W..........DSS1",
+    "1222..................2221",
+    "1........................1",
+    "1...33..............33...1",
+    "1...33......H.......33...1",
+    "1........................1",
+    "1......333......333......1",
+    "1......3..........3......1",
+    "1......3....P.....3......1",
+    "1......3..........3......1",
+    "1......333......333......1",
+    "1........................1",
+    "1...33......W.......33...1",
+    "1...33..............33...1",
+    "1222..................2221",
+    "1SSD..................DSS1",
+    "1SS2.......H..........2SS1",
+    "11111111111111111111111111",
+]
+
+# Configuration du mode survie (hors progression des LEVELS).
+SURVIVAL_LEVEL = {
+    "name": "Le Déferlement",
+    "survival": True,
+    "grid": MAP_HORDE,
+    "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone"},
+    "sky": ((10, 6, 16), (74, 24, 30)),        # ciel d'apocalypse
+    "floor": ((48, 38, 42), (22, 18, 22)),
+    "enemies": [],                              # gérés par les vagues
+    "weapons": ["rifle", "minigun"],
+    "enemy_health_mult": 1.0,                   # écrasés par la vague
+    "enemy_damage_mult": 1.0,
+}
 
 # Chaque niveau : carte, thème visuel, composition des ennemis (cyclée sur
 # les 'E' de la carte), armes au sol (cyclées sur les 'W'), multiplicateurs.
@@ -150,12 +191,16 @@ LEVELS = [
 
 
 class Level:
-    """Grille de collision + points d'apparition, construits depuis la carte."""
+    """Grille de collision + points d'apparition + portes, depuis la carte."""
 
-    def __init__(self, level_index=0):
+    DOOR_SPEED = 1.6        # vitesse d'ouverture (fraction / s)
+    DOOR_TRIGGER = 1.6      # distance de déclenchement automatique
+
+    def __init__(self, level_index=0, config=None):
         self.index = level_index
-        self.config = LEVELS[level_index]
+        self.config = config if config is not None else LEVELS[level_index]
         self.name = self.config["name"]
+        self.is_survival = bool(self.config.get("survival"))
         self.grid = [list(row) for row in self.config["grid"]]
         self.height = len(self.grid)
         self.width = len(self.grid[0])
@@ -163,6 +208,8 @@ class Level:
         self.player_spawn = (1.5, 1.5)
         self.enemy_spawns = []     # [(x, y, type_d_ennemi)]
         self.pickup_spawns = []    # [(x, y, "weapon:<id>" | "medkit")]
+        self.horde_spawns = []     # [(x, y)] points d'invasion (survie)
+        self.doors = {}            # {(x, y): {"open": 0..1, "opening": bool}}
         enemy_kinds = self.config["enemies"]
         weapon_ids = self.config["weapons"]
         n_enemy, n_weapon = 0, 0
@@ -177,14 +224,47 @@ class Level:
                     n_enemy += 1
                 elif char == "B":
                     self.enemy_spawns.append((cx, cy, "boss"))
+                elif char == "S":
+                    self.horde_spawns.append((cx, cy))
                 elif char == "W":
                     wid = weapon_ids[n_weapon % len(weapon_ids)]
                     self.pickup_spawns.append((cx, cy, "weapon:" + wid))
                     n_weapon += 1
                 elif char == "H":
                     self.pickup_spawns.append((cx, cy, "medkit"))
-                if char in "PEBWH":
+                elif char == "D":
+                    self.doors[(x, y)] = {"open": 0.0, "opening": False}
+                if char in "PEBSWH":
                     self.grid[y][x] = "."
+
+    # ------------------------------------------------------------------
+    # Portes coulissantes
+    # ------------------------------------------------------------------
+    def door_open_at(self, x, y):
+        """Fraction d'ouverture (0 fermée → 1 ouverte) de la porte en (x, y)."""
+        door = self.doors.get((int(x), int(y)))
+        return door["open"] if door else 0.0
+
+    def update_doors(self, dt, entities):
+        """Ouvre les portes à l'approche d'une entité, les referme sinon.
+
+        Retourne les positions des portes qui commencent à bouger (sons).
+        """
+        events = []
+        for (x, y), door in self.doors.items():
+            cx, cy = x + 0.5, y + 0.5
+            near = any(
+                abs(e.x - cx) < self.DOOR_TRIGGER and abs(e.y - cy) < self.DOOR_TRIGGER
+                for e in entities)
+            if near != door["opening"]:
+                door["opening"] = near
+                events.append((cx, cy))
+            target = 1.0 if near else 0.0
+            if door["open"] < target:
+                door["open"] = min(1.0, door["open"] + self.DOOR_SPEED * dt)
+            elif door["open"] > target:
+                door["open"] = max(0.0, door["open"] - self.DOOR_SPEED * dt)
+        return events
 
     # ------------------------------------------------------------------
     # Requêtes sur la grille
@@ -197,7 +277,19 @@ class Level:
         return "1"
 
     def is_wall(self, x, y):
-        return self.tile(x, y) != "."
+        """Bloque les déplacements : une porte compte tant qu'elle n'est pas
+        presque entièrement ouverte."""
+        t = self.tile(x, y)
+        if t == ".":
+            return False
+        if t == "D":
+            return self.door_open_at(x, y) < 0.9
+        return True
+
+    def blocks_path(self, x, y):
+        """Pour le pathfinding : les portes sont traversables (elles
+        s'ouvriront à l'approche de l'ennemi)."""
+        return self.tile(x, y) not in (".", "D")
 
     def can_stand(self, x, y, radius=0.25):
         """Vrai si un cercle de rayon donné centré en (x, y) ne touche aucun mur."""
