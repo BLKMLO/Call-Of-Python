@@ -21,6 +21,8 @@ from raycaster import Raycaster, cast_ray
 MEDKIT_HEAL = 35
 PICKUP_RADIUS = 0.55         # distance de ramassage
 LEVEL_HEAL = 40              # PV rendus en passant au niveau suivant
+GUNSHOT_HEARING = 9.0        # rayon dans lequel un tir alerte les ennemis
+SHOUT_HEARING = 5.0          # rayon du cri d'alerte d'un ennemi
 
 # Scancodes des touches 1..4 (indépendants de la disposition AZERTY/QWERTY).
 SLOT_SCANCODES = {30: 0, 31: 1, 32: 2, 33: 3}
@@ -57,6 +59,9 @@ class Game:
         self.outcome = None      # None (en cours), "dead" ou "victory"
         self.end_delay = 0.0     # petit délai avant l'écran de fin
         self.time = 0.0
+        self.shake = 0.0         # amplitude du tremblement d'écran (0 → 1)
+        self.show_fps = False    # bascule F3
+        self.fps = 60.0          # FPS lissés (affichage)
         pygame.mouse.get_rel()   # purge le mouvement accumulé dans les menus
 
     # ------------------------------------------------------------------
@@ -70,6 +75,8 @@ class Game:
                 pygame.mouse.get_rel()  # évite un saut de caméra à la reprise
             elif self.paused and event.key == pygame.K_m:
                 return "menu"
+            elif event.key == pygame.K_F3:
+                self.show_fps = not self.show_fps
             elif event.key == self.settings.keys["recharger"]:
                 self.player.weapon.start_reload()
                 if self.player.weapon.reloading > 0.0:
@@ -93,18 +100,18 @@ class Game:
         if self.paused or (self.outcome is not None and self.end_delay > 0.8):
             return
         self.time += dt
+        self.fps = self.fps * 0.95 + (1.0 / max(dt, 1e-4)) * 0.05
+        self.shake = max(0.0, self.shake - dt * 3.5)
 
         player = self.player
         if player.alive:
             # Visée à la souris (mouvement relatif, curseur capturé).
-            mouse_dx, _ = pygame.mouse.get_rel()
-            player.rotate(mouse_dx, self.settings.mouse_factor())
+            mouse_dx, mouse_dy = pygame.mouse.get_rel()
+            player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
 
-            # Déplacements clavier.
+            # Déplacements clavier (sprint compris).
             keys = pygame.key.get_pressed()
-            old_pos = (player.x, player.y)
-            player.move(dt, keys, self.settings.keys, self.level)
-            moving = (player.x, player.y) != old_pos
+            moving = player.move(dt, keys, self.settings.keys, self.level)
 
             # Tir maintenu (armes automatiques uniquement).
             if pygame.mouse.get_pressed()[0] and player.weapon.spec.automatic:
@@ -114,14 +121,23 @@ class Game:
             self.hud.update(dt, moving)
             self._check_pickups()
 
-        # IA des ennemis → événements convertis en sons/effets.
+        # IA des ennemis → événements convertis en sons/effets/alertes.
         for ai in self.ais:
-            for event, _data in ai.update(dt, player, self.level):
+            for event, data in ai.update(dt, player, self.level):
                 if event == "enemy_shot":
-                    self.sounds.play("enemy_shot", volume_scale=0.8)
+                    self.sounds.play("enemy_shot", volume_scale=0.9,
+                                     pos=(data.x, data.y), listener=player)
                 elif event == "player_hit":
                     self.sounds.play("player_hit")
+                    self.shake = min(1.0, self.shake + 0.5)
+                    rel = math.atan2(data.y - player.y,
+                                     data.x - player.x) - player.angle
+                    self.hud.on_player_hit(rel)
+                elif event == "spotted":
+                    self._alert_allies((data.x, data.y), SHOUT_HEARING,
+                                       exclude=data)
 
+        self._separate_enemies()
         self.particles.update(dt)
 
         # Conditions de fin (avec un léger délai pour "encaisser" la scène).
@@ -138,6 +154,31 @@ class Game:
     def finished(self):
         """Vrai quand l'écran de fin peut être affiché."""
         return self.outcome is not None and self.end_delay > 0.8
+
+    def _alert_allies(self, position, radius, exclude=None):
+        """Réveille les ennemis inactifs proches d'un bruit (tir, cri)."""
+        for ai in self.ais:
+            enemy = ai.enemy
+            if enemy is exclude:
+                continue
+            if math.hypot(enemy.x - position[0], enemy.y - position[1]) < radius:
+                ai.alert((self.player.x, self.player.y))
+
+    def _separate_enemies(self):
+        """Empêche les ennemis de s'empiler les uns sur les autres."""
+        alive = [e for e in self.enemies if e.alive]
+        for i, a in enumerate(alive):
+            for b in alive[i + 1:]:
+                dx, dy = b.x - a.x, b.y - a.y
+                dist = math.hypot(dx, dy)
+                min_dist = a.RADIUS + b.RADIUS
+                if 1e-6 < dist < min_dist:
+                    push = (min_dist - dist) / 2
+                    ux, uy = dx / dist, dy / dist
+                    a.x, a.y = self.level.move_with_collisions(
+                        a.x, a.y, -ux * push, -uy * push, a.RADIUS)
+                    b.x, b.y = self.level.move_with_collisions(
+                        b.x, b.y, ux * push, uy * push, b.RADIUS)
 
     # ------------------------------------------------------------------
     # Objets à ramasser
@@ -174,11 +215,16 @@ class Game:
             return
         self.sounds.play(weapon.spec.sound, volume_scale=0.9)
         self.hud.on_player_shot()
+        if weapon.spec.id in ("shotgun", "minigun"):
+            self.shake = min(1.0, self.shake + 0.18)
 
         for _ in range(weapon.spec.pellets):
             angle = self.player.angle + random.uniform(-weapon.spec.spread,
                                                        weapon.spec.spread)
             self._fire_ray(angle, weapon)
+
+        # Le bruit du coup de feu attire les ennemis du secteur.
+        self._alert_allies((self.player.x, self.player.y), GUNSHOT_HEARING)
 
     def _fire_ray(self, angle, weapon):
         """Résout une balle : ennemi touché, ou impact de poussière au mur."""
@@ -201,16 +247,15 @@ class Game:
 
         if best is not None:
             died = best.take_damage(weapon.damage)
+            self.hud.on_enemy_hit(died)
             if died:
                 self.particles.spawn_death(best.x, best.y)
-                self.sounds.play("enemy_die", volume_scale=0.7)
+                self.sounds.play("enemy_die", volume_scale=0.8,
+                                 pos=(best.x, best.y), listener=self.player)
             else:
                 self.particles.spawn_blood(best.x, best.y)
-                self.sounds.play("enemy_hit", volume_scale=0.5)
-                if best.ai_state == "idle":
-                    # Se faire tirer dessus réveille l'ennemi même sans le voir.
-                    best.ai_state = "chase"
-                    best.last_seen = (self.player.x, self.player.y)
+                self.sounds.play("enemy_hit", volume_scale=0.6,
+                                 pos=(best.x, best.y), listener=self.player)
         else:
             # Impact sur un mur : poussière teintée de la texture touchée.
             hx = self.player.x + math.cos(angle) * (wall_dist - 0.05)
@@ -223,16 +268,22 @@ class Game:
     # Rendu
     # ------------------------------------------------------------------
     def draw(self, screen):
-        # Billboards à afficher : ennemis vivants + objets non ramassés
-        # (qui flottent en oscillant doucement).
-        sprites = [e for e in self.enemies if e.alive]
+        # Billboards : cadavres (dessous), ennemis vivants, objets au sol.
+        sprites = [e for e in self.enemies]
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
                 sprites.append(pickup)
 
+        # Horizon : visée verticale + secousse aléatoire du tremblement.
+        pitch_px = int(self.player.pitch * self.raycaster.height)
+        if self.shake > 0.0:
+            pitch_px += int(random.uniform(-1, 1) * self.shake
+                            * self.raycaster.height * 0.02)
+
         self.raycaster.render(screen, self.player, self.level, sprites,
-                              self.particles)
-        self.hud.draw(screen, self.player, self.enemies, self.level)
+                              self.particles, pitch_px)
+        self.hud.draw(screen, self.player, self.enemies, self.level,
+                      self.pickups, fps=self.fps if self.show_fps else None)
         if self.paused:
             self.hud.draw_pause(screen)

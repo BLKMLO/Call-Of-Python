@@ -85,14 +85,29 @@ class MenuBase:
 class MainMenu(MenuBase):
     title = "PyFPS"
 
+    def __init__(self, sounds, settings):
+        super().__init__(sounds)
+        self.settings = settings
+
     def items(self):
         return [("play", "Jouer"), ("settings", "Paramètres"), ("quit", "Quitter")]
+
+    def draw(self, screen):
+        super().draw(screen)
+        if self.settings.best_level > 0:
+            w, h = screen.get_size()
+            font = self._font(h, small=True)
+            text = font.render(
+                f"Meilleur niveau atteint : {self.settings.best_level}",
+                True, DIM_COLOR)
+            screen.blit(text, text.get_rect(center=(w // 2, h // 5 + h // 9)))
 
     def _draw_footer(self, screen):
         w, h = screen.get_size()
         font = self._font(h, small=True)
         hint = font.render(
-            "Déplacement : ZQSD (re-mappable)   Visée : souris   Tir : clic gauche",
+            "ZQSD : déplacement (re-mappable)   Souris : visée   Clic : tir   "
+            "Maj : sprint   1-4 : armes",
             True, DIM_COLOR)
         screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
 

@@ -5,6 +5,7 @@ Une carte est une grille de caractères :
     '.'           : sol praticable
     'P'           : apparition du joueur
     'E'           : apparition d'un ennemi (type selon la composition du niveau)
+    'B'           : apparition du boss (le Colosse)
     'W'           : arme à ramasser (type selon la liste `weapons` du niveau)
     'H'           : trousse de soins
 
@@ -75,6 +76,29 @@ MAP_LAB = [
     "11111111111111111111111111",
 ]
 
+MAP_FINAL = [
+    "11111111111111111111111111",
+    "1P.....2..........2......1",
+    "1......2....E.....2..E...1",
+    "1..W...2..........2......1",
+    "1......2...33..33.2......1",
+    "1222.222...3....3.222.2221",
+    "1..........3..B.3........1",
+    "1...E......3....3....E...1",
+    "1..........33..33........1",
+    "1.....33..........33.....1",
+    "1..H..33....WH....33..H..1",
+    "1........................1",
+    "1..2222....1111....2222..1",
+    "1..2..........E.......2..1",
+    "1..2..E...............2..1",
+    "1..2.....22....22.....2..1",
+    "1..2..H..2......2..E..2..1",
+    "1..2.....2......2.....2..1",
+    "1........................1",
+    "11111111111111111111111111",
+]
+
 # Chaque niveau : carte, thème visuel, composition des ennemis (cyclée sur
 # les 'E' de la carte), armes au sol (cyclées sur les 'W'), multiplicateurs.
 LEVELS = [
@@ -111,6 +135,17 @@ LEVELS = [
         "enemy_health_mult": 1.5,
         "enemy_damage_mult": 1.4,
     },
+    {
+        "name": "Assaut final",
+        "grid": MAP_FINAL,
+        "theme": {"1": "wall_metal", "2": "wall_tech", "3": "wall_brick"},
+        "sky": ((16, 10, 14), (66, 30, 26)),      # ciel rougeoyant
+        "floor": ((52, 42, 40), (26, 22, 22)),
+        "enemies": ["heavy", "soldier", "heavy"],
+        "weapons": ["minigun", "rifle"],
+        "enemy_health_mult": 1.7,
+        "enemy_damage_mult": 1.5,
+    },
 ]
 
 
@@ -140,13 +175,15 @@ class Level:
                     kind = enemy_kinds[n_enemy % len(enemy_kinds)]
                     self.enemy_spawns.append((cx, cy, kind))
                     n_enemy += 1
+                elif char == "B":
+                    self.enemy_spawns.append((cx, cy, "boss"))
                 elif char == "W":
                     wid = weapon_ids[n_weapon % len(weapon_ids)]
                     self.pickup_spawns.append((cx, cy, "weapon:" + wid))
                     n_weapon += 1
                 elif char == "H":
                     self.pickup_spawns.append((cx, cy, "medkit"))
-                if char in "PEWH":
+                if char in "PEBWH":
                     self.grid[y][x] = "."
 
     # ------------------------------------------------------------------

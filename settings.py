@@ -27,11 +27,12 @@ DEFAULT_KEYS = {
     "reculer": pygame.K_s,
     "gauche": pygame.K_q,
     "droite": pygame.K_d,
+    "sprint": pygame.K_LSHIFT,
     "recharger": pygame.K_r,
 }
 
 # L'ordre d'affichage des actions dans le menu des paramètres.
-KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "recharger"]
+KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "sprint", "recharger"]
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
@@ -44,6 +45,7 @@ class Settings:
         self.volume = 0.7                # volume global (0.0 → 1.0)
         self.sensitivity = 0.5           # sensibilité souris (0.1 → 1.0)
         self.keys = dict(DEFAULT_KEYS)   # keycodes pygame par action
+        self.best_level = 0              # meilleur niveau atteint (affiché au menu)
         self.load()
 
     # ------------------------------------------------------------------
@@ -74,6 +76,7 @@ class Settings:
                 self.resolution_index = idx
             self.volume = min(1.0, max(0.0, float(data.get("volume", self.volume))))
             self.sensitivity = min(1.0, max(0.1, float(data.get("sensitivity", self.sensitivity))))
+            self.best_level = max(0, int(data.get("best_level", 0)))
             for action, code in data.get("keys", {}).items():
                 if action in self.keys:
                     self.keys[action] = int(code)
@@ -86,6 +89,7 @@ class Settings:
             "resolution_index": self.resolution_index,
             "volume": self.volume,
             "sensitivity": self.sensitivity,
+            "best_level": self.best_level,
             "keys": self.keys,
         }
         try:

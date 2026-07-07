@@ -105,6 +105,7 @@ class Raycaster:
         self.delta_angle = FOV / self.num_rays
         self.screen_dist = (self.width / 2) / math.tan(HALF_FOV)
         self.z_buffer = [MAX_DEPTH] * self.num_rays
+        self.horizon = self.height // 2
         self._build_background()
 
     def set_level(self, level):
@@ -126,26 +127,36 @@ class Raycaster:
             self.tex_cols[char] = shades
 
     def _build_background(self):
-        """Pré-calcule le dégradé ciel/sol aux couleurs du niveau."""
+        """Pré-calcule le dégradé ciel/sol aux couleurs du niveau.
+
+        La surface est plus haute que l'écran : elle est blittée décalée
+        selon la visée verticale (y-shearing) et le tremblement d'écran.
+        """
         (sky_top, sky_bot) = self.level_config["sky"]
         (floor_top, floor_bot) = self.level_config["floor"]
-        self.background = pygame.Surface((self.width, self.height))
-        half = self.height // 2
+        self.bg_margin = int(self.height * 0.45) + 8
+        total = self.height + 2 * self.bg_margin
+        half = total // 2
+        self.background = pygame.Surface((self.width, total))
         for y in range(half):
             t = y / max(1, half)
             color = [int(a + (b - a) * t) for a, b in zip(sky_top, sky_bot)]
             pygame.draw.line(self.background, color, (0, y), (self.width, y))
-        for y in range(half, self.height):
-            t = (y - half) / max(1, self.height - half)
+        for y in range(half, total):
+            t = (y - half) / max(1, total - half)
             color = [int(a + (b - a) * t) for a, b in zip(floor_top, floor_bot)]
             pygame.draw.line(self.background, color, (0, y), (self.width, y))
 
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
-    def render(self, screen, player, level, sprites, particles):
-        """`sprites` : entités billboard (ennemis vivants, objets au sol)."""
-        screen.blit(self.background, (0, 0))
+    def render(self, screen, player, level, sprites, particles, pitch_px=0):
+        """`sprites` : entités billboard ; `pitch_px` : décalage vertical de
+        l'horizon (visée verticale + tremblement d'écran)."""
+        # L'horizon monte quand on vise vers le bas, et inversement.
+        self.horizon = self.height // 2 + pitch_px
+        bg_center = self.bg_margin + self.height // 2
+        screen.blit(self.background, (0, self.horizon - bg_center))
         self._render_walls(screen, player, level)
         self._render_sprites(screen, player, sprites)
         self._render_particles(screen, player, particles)
@@ -172,18 +183,21 @@ class Raycaster:
             column = shades[self._shade_index(depth, vertical)][
                 min(TEX_SIZE - 1, int(offset * TEX_SIZE))]
 
-            if wall_height <= self.height:
-                # Mur entier visible : la colonne de texture est étirée.
-                scaled = pygame.transform.scale(column, (COLUMN_WIDTH, wall_height))
-                screen.blit(scaled, (ray * COLUMN_WIDTH, (self.height - wall_height) // 2))
-            else:
-                # Mur plus haut que l'écran : on ne plie que la partie visible
-                # de la texture (évite de créer des surfaces géantes).
-                visible = TEX_SIZE * self.height / wall_height
-                tex_y = (TEX_SIZE - visible) / 2
-                sub = column.subsurface((0, int(tex_y), 1, max(1, int(visible))))
-                scaled = pygame.transform.scale(sub, (COLUMN_WIDTH, self.height))
-                screen.blit(scaled, (ray * COLUMN_WIDTH, 0))
+            # Le mur est centré sur l'horizon ; on ne plie que la partie de
+            # la texture réellement visible à l'écran (évite les surfaces
+            # géantes quand on colle un mur).
+            top = self.horizon - wall_height // 2
+            draw_top = max(0, top)
+            draw_bottom = min(self.height, top + wall_height)
+            if draw_bottom <= draw_top:
+                angle += self.delta_angle
+                continue
+            tex_y0 = (draw_top - top) * TEX_SIZE / wall_height
+            tex_y1 = (draw_bottom - top) * TEX_SIZE / wall_height
+            tex_h = max(1, min(TEX_SIZE - int(tex_y0), int(tex_y1 - tex_y0) + 1))
+            sub = column.subsurface((0, int(tex_y0), 1, tex_h))
+            scaled = pygame.transform.scale(sub, (COLUMN_WIDTH, draw_bottom - draw_top))
+            screen.blit(scaled, (ray * COLUMN_WIDTH, draw_top))
             angle += self.delta_angle
 
     def _project(self, player, x, y):
@@ -220,9 +234,9 @@ class Raycaster:
 
             screen_x = int((0.5 + delta / FOV) * self.width) - w // 2
             # Les pieds reposent sur la ligne de sol (bas d'un mur de hauteur
-            # 1 = milieu + proj/2) ; les objets flottants ont un décalage.
+            # 1 = horizon + proj/2) ; les objets flottants ont un décalage.
             lift = getattr(obj, "v_offset", 0.0)
-            bottom = self.height // 2 + int(proj * (0.5 - lift))
+            bottom = self.horizon + int(proj * (0.5 - lift))
             top = bottom - h
 
             # Occlusion par les murs : blit en tranches verticales, comparées
@@ -242,7 +256,7 @@ class Raycaster:
                 screen.blit(strip, (strip_x, top))
                 drawn = True
 
-            if drawn and getattr(obj, "max_health", None):
+            if drawn and getattr(obj, "max_health", None) and obj.alive:
                 self._draw_health_bar(screen, obj, screen_x, top, w)
 
     def _render_particles(self, screen, player, particles):
@@ -258,7 +272,7 @@ class Raycaster:
             proj = self.screen_dist / proj_dist
             size = max(1, int(p.size * proj))
             sx = int((0.5 + delta / FOV) * self.width) - size // 2
-            sy = self.height // 2 + int(proj * (0.5 - p.z)) - size // 2
+            sy = self.horizon + int(proj * (0.5 - p.z)) - size // 2
             screen.fill(p.color, (sx, sy, size, size))
 
     def _draw_health_bar(self, screen, enemy, x, top, w):

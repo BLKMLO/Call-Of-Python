@@ -170,13 +170,22 @@ ENEMY_PALETTES = {
         "skin": (70, 72, 84), "top": (78, 80, 94),
         "suit": (84, 86, 100), "dark": (60, 62, 74),
         "legs": (64, 66, 78), "boots": (32, 32, 38), "accent": (222, 62, 52),
+        "bulk": True,
+    },
+    "boss": {     # le Colosse : armure noire, visière orange incandescente
+        "skin": (44, 42, 48), "top": (52, 50, 58),
+        "suit": (66, 56, 62), "dark": (46, 38, 44),
+        "legs": (52, 44, 50), "boots": (26, 24, 28), "accent": (255, 150, 40),
+        "bulk": True,
     },
 }
 
 
 def _enemy_sprite(kind, pose):
     p = ENEMY_PALETTES[kind]
-    heavy = kind == "heavy"
+    if pose == "dead":
+        return _enemy_dead_sprite(p)
+    heavy = p.get("bulk", False)
     s = pygame.Surface((16, 24), pygame.SRCALPHA)
 
     # --- tête : casque/cheveux, visage, yeux (ou visière) ---
@@ -224,6 +233,23 @@ def _enemy_sprite(kind, pose):
         _rect(s, 8, 14, 3, 7, p["legs"])
         _rect(s, 5, 21, 3, 3, p["boots"])
         _rect(s, 8, 21, 3, 3, p["boots"])
+    return _upscale(s, 4)
+
+
+def _enemy_dead_sprite(p):
+    """Cadavre allongé au sol (24x12) : flaque de sang + silhouette couchée."""
+    s = pygame.Surface((24, 12), pygame.SRCALPHA)
+    # flaque de sang
+    _rect(s, 3, 8, 19, 3, (96, 14, 16))
+    _rect(s, 5, 7, 14, 1, (96, 14, 16))
+    _rect(s, 6, 11, 12, 1, (70, 10, 12))
+    # corps couché : jambes à gauche, tête à droite
+    _rect(s, 2, 6, 7, 3, p["legs"])
+    _rect(s, 1, 6, 2, 3, p["boots"])
+    _rect(s, 9, 5, 8, 4, p["suit"])
+    _rect(s, 12, 3, 3, 2, p["dark"])       # bras replié
+    _rect(s, 17, 5, 4, 4, p["skin"])       # tête
+    _rect(s, 20, 5, 1, 4, p["top"])
     return _upscale(s, 4)
 
 
@@ -350,7 +376,7 @@ _BUILDERS = {
     "pickup_medkit": _pickup_medkit,
 }
 for _kind in ENEMY_PALETTES:
-    for _pose in ("idle", "walk", "fire"):
+    for _pose in ("idle", "walk", "fire", "dead"):
         _BUILDERS[f"enemy_{_kind}_{_pose}"] = (
             lambda k=_kind, p=_pose: _enemy_sprite(k, p)
         )

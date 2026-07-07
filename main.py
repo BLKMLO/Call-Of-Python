@@ -34,11 +34,12 @@ def set_mouse_captured(captured):
 
 
 def main():
-    # Mixer mono 22 kHz : format des sons synthétisés dans sounds.py.
-    pygame.mixer.pre_init(22050, -16, 1, 256)
+    # Mixer stéréo 22 kHz : format des sons synthétisés dans sounds.py
+    # (la stéréo permet le panoramique gauche/droite des sons du monde).
+    pygame.mixer.pre_init(22050, -16, 2, 256)
     pygame.init()
     try:
-        pygame.mixer.init(22050, -16, 1, 256)
+        pygame.mixer.init(22050, -16, 2, 256)
     except pygame.error:
         pass  # pas de carte son : le jeu tourne en silence
 
@@ -48,12 +49,13 @@ def main():
     clock = pygame.time.Clock()
     sounds = SoundBank(settings)
 
-    main_menu = MainMenu(sounds)
+    main_menu = MainMenu(sounds, settings)
     settings_menu = SettingsMenu(sounds, settings)
     transition = None    # LevelCompleteScreen ou EndScreen courant
     game = None
     state = "menu"
     set_mouse_captured(False)
+    sounds.play_music("menu")
 
     def start_level(index, carry=None):
         """Crée le Game du niveau `index` et passe en état de jeu."""
@@ -61,6 +63,10 @@ def main():
         game = Game(screen, settings, sounds, index, carry_player=carry)
         state = "game"
         set_mouse_captured(True)
+        sounds.play_music(f"level{index}")
+        if index + 1 > settings.best_level:     # mémorise la progression
+            settings.best_level = index + 1
+            settings.save()
 
     running = True
     while running:
@@ -95,6 +101,7 @@ def main():
                     state = "menu"
                     game = None
                     set_mouse_captured(False)
+                    sounds.play_music("menu")
 
             elif state in ("level_complete", "end"):
                 action = transition.handle_event(event, screen)
@@ -105,12 +112,15 @@ def main():
                 elif action == "menu":
                     state = "menu"
                     game = None
+                    sounds.play_music("menu")
                 elif action == "quit":
                     running = False
 
         # ------------------------------------------------------------------
         # Mise à jour + rendu de l'état courant
         # ------------------------------------------------------------------
+        sounds.refresh_music_volume()   # suit le réglage de volume en direct
+
         if state == "game":
             game.update(dt)
             game.draw(screen)
@@ -119,6 +129,7 @@ def main():
                 if game.outcome == "dead":
                     transition = EndScreen(sounds, victory=False)
                     state = "end"
+                    sounds.play_music("menu")
                 elif game.level_index + 1 < len(LEVELS):
                     transition = LevelCompleteScreen(
                         sounds, game.level_index,
@@ -127,6 +138,7 @@ def main():
                 else:                        # dernier niveau gagné
                     transition = EndScreen(sounds, victory=True)
                     state = "end"
+                    sounds.play_music("menu")
         elif state == "menu":
             main_menu.draw(screen)
         elif state == "settings":

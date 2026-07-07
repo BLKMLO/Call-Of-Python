@@ -41,10 +41,13 @@ class Player(Entity):
     """Le personnage jouable : déplacement clavier, visée souris, arsenal."""
 
     SPEED = 3.2          # vitesse de déplacement (cases / s)
+    SPRINT_MULT = 1.5    # multiplicateur de vitesse en sprint
     RADIUS = 0.25        # rayon de collision
+    MAX_PITCH = 0.35     # amplitude de la visée verticale (fraction d'écran)
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
+        self.pitch = 0.0        # visée verticale (fraction d'écran, +haut)
         self.weapons = [Weapon(WEAPON_SPECS["pistol"])]  # arme de départ
         self.weapon_index = 0
         self.hurt_flash = 0.0   # minuterie du flash rouge quand on est touché
@@ -90,12 +93,17 @@ class Player(Entity):
         self.weapon_index = (self.weapon_index + direction) % len(self.weapons)
 
     # ------------------------------------------------------------------
-    def rotate(self, mouse_dx, mouse_factor):
-        """Tourne la vue selon le mouvement horizontal de la souris."""
+    def rotate(self, mouse_dx, mouse_dy, mouse_factor):
+        """Tourne la vue avec la souris : horizontal = cap, vertical = tangage."""
         self.angle = (self.angle + mouse_dx * mouse_factor) % (2 * math.pi)
+        self.pitch = max(-self.MAX_PITCH, min(
+            self.MAX_PITCH, self.pitch - mouse_dy * mouse_factor * 0.55))
 
     def move(self, dt, keys_pressed, bindings, level):
-        """Déplacement ZQSD/WASD relatif à la direction de vue, avec collisions."""
+        """Déplacement ZQSD/WASD relatif à la direction de vue, avec collisions.
+
+        Retourne True si le joueur a effectivement bougé (pour l'animation).
+        """
         forward = 0.0
         strafe = 0.0
         if keys_pressed[bindings["avancer"]]:
@@ -107,15 +115,19 @@ class Player(Entity):
         if keys_pressed[bindings["gauche"]]:
             strafe -= 1.0
         if forward == 0.0 and strafe == 0.0:
-            return
+            return False
 
         # Normalise pour que la diagonale ne soit pas plus rapide.
         length = math.hypot(forward, strafe)
         speed = self.SPEED * dt / length
+        if keys_pressed[bindings["sprint"]]:
+            speed *= self.SPRINT_MULT
         cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
         dx = (forward * cos_a - strafe * sin_a) * speed
         dy = (forward * sin_a + strafe * cos_a) * speed
+        old = (self.x, self.y)
         self.x, self.y = level.move_with_collisions(self.x, self.y, dx, dy, self.RADIUS)
+        return (self.x, self.y) != old
 
     def take_damage(self, amount):
         self.hurt_flash = 0.35
@@ -137,12 +149,15 @@ class Enemy(Entity):
     SPEED = 1.9            # vitesse de déplacement (cases / s)
     RADIUS = 0.3           # rayon de collision et de "hitbox"
     SPRITE_HEIGHT = 0.72   # hauteur du billboard (en unités monde)
+    DEAD_HEIGHT = 0.2      # hauteur du cadavre au sol
     MAX_HEALTH = 100
 
     DETECT_RANGE = 11.0    # distance de détection du joueur
     ATTACK_RANGE = 7.0     # distance à laquelle il ouvre le feu
     FIRE_DELAY = 1.1       # temps entre deux tirs (s)
     DAMAGE = (6, 13)       # dégâts min/max par balle
+    TAKES_COVER = True     # cherche un abri quand il est blessé
+    IS_BOSS = False
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
@@ -158,14 +173,24 @@ class Enemy(Entity):
         self.cover_target = None # point de couverture visé
 
     def current_sprite(self):
-        """Pose selon l'état : tir > marche (alternée) > repos."""
-        if self.flash_timer > 0.0:
+        """Pose selon l'état : mort > tir > marche (alternée) > repos."""
+        if not self.alive:
+            pose = "dead"
+        elif self.flash_timer > 0.0:
             pose = "fire"
         elif self.moving and int(self.anim_time * 5) % 2 == 0:
             pose = "walk"
         else:
             pose = "idle"
         return assets.get(f"enemy_{self.KIND}_{pose}")
+
+    def take_damage(self, amount):
+        died = super().take_damage(amount)
+        if died:
+            # Le billboard devient un cadavre bas posé au sol.
+            self.SPRITE_HEIGHT = self.DEAD_HEIGHT
+            self.moving = False
+        return died
 
     def roll_damage(self, rng):
         low, high = self.DAMAGE
@@ -204,7 +229,24 @@ class Heavy(Enemy):
     ATTACK_RANGE = 6.0
 
 
-ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy}
+class Boss(Enemy):
+    """Le Colosse : boss du dernier niveau. Énorme, implacable, ne se
+    cache jamais — il avance."""
+    KIND = "boss"
+    SPEED = 1.15
+    RADIUS = 0.38
+    MAX_HEALTH = 550
+    SPRITE_HEIGHT = 0.95
+    DEAD_HEIGHT = 0.26
+    DAMAGE = (12, 20)
+    FIRE_DELAY = 0.55
+    ATTACK_RANGE = 8.0
+    DETECT_RANGE = 14.0
+    TAKES_COVER = False
+    IS_BOSS = True
+
+
+ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy, "boss": Boss}
 
 
 class Pickup:
