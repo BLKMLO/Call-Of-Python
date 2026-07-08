@@ -110,6 +110,10 @@ class ParticleSystem:
             p.z += p.vz * dt
             p.vz -= self.GRAVITY * dt
             if p.z <= 0.02:            # au sol : la particule s'y dépose
+                if p.vz < -0.5 and p.life < 0.5:
+                    # une goutte qui s'écrase reste visible un peu plus
+                    # longtemps (flaques de sang, gravats)
+                    p.life = 0.5
                 p.z = 0.02
                 p.vx *= 0.4
                 p.vy *= 0.4

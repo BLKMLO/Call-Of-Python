@@ -278,6 +278,8 @@ class CoopClientGame:
         self.show_fps = False
         self.fps = 60.0
         self.sparkle_timer = 0.0
+        self.step_distance = 0.0
+        self.step_side = False
 
         # Réseau
         self.peer = UdpPeer()
@@ -353,7 +355,15 @@ class CoopClientGame:
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
             keys = pygame.key.get_pressed()
+            old_x, old_y = player.x, player.y
             moving = player.move(dt, keys, self.settings.keys, self.level)
+            self.step_distance += math.hypot(player.x - old_x,
+                                             player.y - old_y)
+            if self.step_distance > 1.05:
+                self.step_distance = 0.0
+                self.step_side = not self.step_side
+                self.sounds.play("step" if self.step_side else "step2",
+                                 volume_scale=0.35)
             if pygame.mouse.get_pressed()[0] and player.weapon.spec.automatic:
                 self._fire()
             player.update(dt)
@@ -518,6 +528,7 @@ class CoopClientGame:
                                  pos=(ghost.x, ghost.y), listener=self.player)
             elif 0 < health < ghost.health:
                 self.particles.spawn_blood(ghost.x, ghost.y)
+                ghost.hurt_timer = 0.09   # flash blanc de l'impact
                 ghost.health = health
             else:
                 ghost.health = max(0, health)

@@ -7,6 +7,7 @@ et voile rouge de dégâts.
 """
 
 import math
+import random
 
 import pygame
 
@@ -19,6 +20,8 @@ class HUD:
         self.resize(size)
         self.kick = 0.0        # recul de l'arme (0 → 1)
         self.flash = 0.0       # éclair de bouche
+        self.lower = 0.0       # abaissement de l'arme (rechargement, lissé)
+        self.smoke = []        # volutes de fumée du canon [x, y, âge]
         self.sway_time = 0.0   # horloge du balancement
         self.message = ""
         self.message_timer = 0.0
@@ -33,6 +36,13 @@ class HUD:
         self.width, self.height = size
         self.font = pygame.font.Font(None, max(22, self.height // 24))
         self.big_font = pygame.font.Font(None, max(36, self.height // 12))
+        # Voiles plein écran pré-remplis : blittés avec set_alpha (rapide)
+        # au lieu de recréer une surface SRCALPHA à chaque frame.
+        self._red_veil = pygame.Surface(size)
+        self._red_veil.fill((180, 20, 20))
+        self._dark_veil = pygame.Surface(size)
+        self._dark_veil.fill((10, 0, 0))
+        self._minimap_level = None
 
     # ------------------------------------------------------------------
     # Notifications venant du jeu
@@ -70,6 +80,11 @@ class HUD:
         for entry in self.damage_dirs:
             entry[1] -= dt
         self.damage_dirs = [e for e in self.damage_dirs if e[1] > 0]
+        for puff in self.smoke:      # la fumée monte et dérive
+            puff[1] -= dt * self.height * 0.14
+            puff[0] += dt * self.width * 0.008
+            puff[2] += dt
+        self.smoke = [p for p in self.smoke if p[2] < 0.7]
         if moving:
             self.sway_time += dt
 
@@ -96,7 +111,11 @@ class HUD:
         self._draw_hurt_flash(screen, player)
 
     def _draw_weapon(self, screen, player):
-        """Sprite pixel-art de l'arme courante, vu à la première personne."""
+        """Sprite pixel-art de l'arme courante, vu à la première personne.
+
+        Balancement à la marche, recul au tir, abaissement lissé pendant le
+        rechargement, fumée qui s'échappe du canon après les tirs.
+        """
         sprite = assets.get("fp_" + player.weapon.spec.id)
         target_w = int(self.width * 0.34)
         target_h = int(target_w * sprite.get_height() / sprite.get_width())
@@ -104,18 +123,40 @@ class HUD:
 
         sway_x = math.sin(self.sway_time * 7) * self.width * 0.008
         sway_y = abs(math.cos(self.sway_time * 7)) * self.height * 0.008
-        # Pendant le rechargement, l'arme est abaissée.
-        lowered = self.height * 0.14 if player.weapon.reloading > 0.0 else 0
+        # Abaissement interpolé : l'arme plonge et remonte en douceur.
+        target_lower = self.height * 0.16 if player.weapon.reloading > 0.0 else 0.0
+        self.lower += (target_lower - self.lower) * 0.16
         x = self.width // 2 - target_w // 2 + int(self.width * 0.07 + sway_x)
         y = (self.height - int(target_h * 0.86)
-             + int(self.kick * self.height * 0.04 + sway_y + lowered))
+             + int(self.kick * self.height * 0.04 + sway_y + self.lower))
+        tip = (x + target_w // 2, y + int(target_h * 0.04))
+
+        # Volutes de fumée derrière l'arme.
+        for px, py, age in self.smoke:
+            fade = 1.0 - age / 0.7
+            radius = int(self.height * (0.006 + age * 0.02))
+            gray = int(120 + 60 * fade)
+            pygame.draw.circle(screen, (gray, gray, gray), (int(px), int(py)),
+                               radius, 1)
+
         screen.blit(scaled, (x, y))
 
         if self.flash > 0.0:
-            # Éclair de bouche au sommet du canon.
-            tip = (x + target_w // 2, y + int(target_h * 0.04))
-            pygame.draw.circle(screen, (255, 230, 120), tip, self.height // 26)
-            pygame.draw.circle(screen, (255, 255, 210), tip, self.height // 52)
+            # Éclair de bouche en étoile, taille légèrement aléatoire.
+            big = self.height // 24 + random.randint(-2, 3)
+            small = big * 0.45
+            points = []
+            spin = random.uniform(0, math.pi / 4)
+            for i in range(8):
+                ang = spin + i * math.pi / 4
+                r = big if i % 2 == 0 else small
+                points.append((tip[0] + math.cos(ang) * r,
+                               tip[1] + math.sin(ang) * r))
+            pygame.draw.polygon(screen, (255, 225, 110), points)
+            pygame.draw.circle(screen, (255, 255, 215), tip, int(small * 0.8))
+        elif self.kick > 0.4:
+            # Juste après un tir : une volute de fumée naît au canon.
+            self.smoke.append([tip[0] + random.uniform(-4, 4), tip[1], 0.0])
 
     def _draw_crosshair(self, screen):
         """Viseur dynamique : s'écarte quand on tire (dispersion)."""
@@ -140,27 +181,27 @@ class HUD:
                              (cx + dx * 14, cy + dy * 14), 3)
 
     def _draw_damage_dirs(self, screen):
-        """Flèches rouges autour du centre indiquant d'où viennent les tirs."""
-        if not self.damage_dirs:
-            return
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        """Flèches rouges autour du centre indiquant d'où viennent les tirs.
+
+        Dessinées directement (pas de voile plein écran) : le fondu se fait
+        par la couleur et la taille du triangle.
+        """
         cx, cy = self.width // 2, self.height // 2
         radius = self.height * 0.17
         for rel, timer in self.damage_dirs:
-            alpha = max(0, min(255, int(300 * timer)))
+            fade = min(1.0, timer * 2.2)
+            color = (int(90 + 130 * fade), int(20 + 25 * fade), 30)
+            size = 8 + 7 * fade
             # rel = 0 -> devant (haut de l'écran) ; croît vers la droite.
             px = cx + math.sin(rel) * radius
             py = cy - math.cos(rel) * radius
-            # petit triangle pointant vers l'extérieur
             out_x, out_y = math.sin(rel), -math.cos(rel)
             side_x, side_y = math.cos(rel), math.sin(rel)
-            points = [
-                (px + out_x * 14, py + out_y * 14),
-                (px + side_x * 9, py + side_y * 9),
-                (px - side_x * 9, py - side_y * 9),
-            ]
-            pygame.draw.polygon(overlay, (215, 40, 35, alpha), points)
-        screen.blit(overlay, (0, 0))
+            pygame.draw.polygon(screen, color, [
+                (px + out_x * (size + 5), py + out_y * (size + 5)),
+                (px + side_x * size * 0.65, py + side_y * size * 0.65),
+                (px - side_x * size * 0.65, py - side_y * size * 0.65),
+            ])
 
     def _draw_status(self, screen, player, enemies, survival=None, stats=None):
         """Barre de vie + arme/munitions + ennemis restants + éliminations."""
@@ -290,14 +331,22 @@ class HUD:
                            self.height // 2 - self.height // 8))
 
     def _draw_minimap(self, screen, player, enemies, level, pickups=(), scale=6):
-        """Petite carte en haut à gauche (murs, joueur, ennemis, objets)."""
-        surf = pygame.Surface((level.width * scale, level.height * scale), pygame.SRCALPHA)
-        surf.fill((10, 10, 14, 150))
-        for y in range(level.height):
-            for x in range(level.width):
-                if level.grid[y][x] != ".":
-                    pygame.draw.rect(surf, (170, 170, 180, 200),
-                                     (x * scale, y * scale, scale, scale))
+        """Petite carte en haut à gauche (murs, joueur, ennemis, objets).
+
+        Le fond (murs) est statique : rendu une seule fois puis copié.
+        """
+        if getattr(self, "_minimap_level", None) is not level:
+            self._minimap_level = level
+            base = pygame.Surface((level.width * scale, level.height * scale),
+                                  pygame.SRCALPHA)
+            base.fill((10, 10, 14, 150))
+            for y in range(level.height):
+                for x in range(level.width):
+                    if level.grid[y][x] != ".":
+                        pygame.draw.rect(base, (170, 170, 180, 200),
+                                         (x * scale, y * scale, scale, scale))
+            self._minimap_base = base
+        surf = self._minimap_base.copy()
         for pickup in pickups:
             # Les packs de vie cachés ne trahissent pas leur position ici.
             if not pickup.taken and not pickup.hidden:
@@ -319,16 +368,13 @@ class HUD:
         """Voile rouge bref quand le joueur encaisse des dégâts."""
         if player.hurt_flash <= 0.0:
             return
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        alpha = int(120 * (player.hurt_flash / 0.35))
-        overlay.fill((180, 20, 20, alpha))
-        screen.blit(overlay, (0, 0))
+        self._red_veil.set_alpha(int(120 * (player.hurt_flash / 0.35)))
+        screen.blit(self._red_veil, (0, 0))
 
     def draw_dead_overlay(self, screen):
         """Voile sombre pendant l'attente de réapparition (coop LAN)."""
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill((60, 0, 0, 130))
-        screen.blit(overlay, (0, 0))
+        self._red_veil.set_alpha(110)
+        screen.blit(self._red_veil, (0, 0))
         title = self.big_font.render("VOUS ÊTES À TERRE", True, (240, 200, 190))
         hint = self.font.render("Réapparition dans quelques secondes...",
                                 True, (220, 200, 200))
@@ -339,9 +385,8 @@ class HUD:
 
     def draw_pause(self, screen):
         """Voile + texte de pause par-dessus la scène figée."""
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 150))
-        screen.blit(overlay, (0, 0))
+        self._dark_veil.set_alpha(150)
+        screen.blit(self._dark_veil, (0, 0))
         title = self.big_font.render("PAUSE", True, (240, 240, 240))
         hint = self.font.render("Échap : reprendre    M : menu principal", True, (200, 200, 200))
         screen.blit(title, ((self.width - title.get_width()) // 2, self.height // 2 - 60))
