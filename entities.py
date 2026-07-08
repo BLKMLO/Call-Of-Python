@@ -327,6 +327,34 @@ ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
                "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss}
 
 
+# Décors : sprite, hauteur monde du billboard. Tous bloquent le passage
+# (leur case est infranchissable) mais laissent passer balles et regards.
+PROP_SPECS = {
+    "car":      {"sprite": "prop_car",      "height": 0.5},
+    "bench":    {"sprite": "prop_bench",    "height": 0.34},
+    "tribune":  {"sprite": "prop_tribune",  "height": 0.62},
+    "labtable": {"sprite": "prop_labtable", "height": 0.5},
+    "rock":     {"sprite": "prop_rock",     "height": 0.3},
+}
+
+
+class Prop:
+    """Décor statique rendu en billboard (voiture, pupitre, paillasse,
+    rocher lunaire...). Le sens est alterné selon la case pour varier."""
+
+    def __init__(self, x, y, kind):
+        self.x = x
+        self.y = y
+        self.kind = kind
+        spec = PROP_SPECS[kind]
+        self.sprite_name = spec["sprite"]
+        self.SPRITE_HEIGHT = spec["height"]
+        self.flipped = (int(x) + int(y)) % 2 == 1
+
+    def current_sprite(self, player=None):
+        return assets.get(self.sprite_name, self.flipped)
+
+
 class Pickup:
     """Objet posé au sol (arme, trousse de soins ou pack de vie caché),
     rendu en billboard flottant qui oscille doucement.

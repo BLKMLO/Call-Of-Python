@@ -20,7 +20,7 @@ import random
 
 import pygame
 
-from entities import ENEMY_TYPES, Pickup, Player, RemotePlayer
+from entities import ENEMY_TYPES, Pickup, Player, Prop, RemotePlayer
 from game import GUNSHOT_HEARING, SLOT_SCANCODES, new_stats
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
@@ -265,6 +265,8 @@ class CoopClientGame:
         self.player.select_weapon(2)
         self.pickups = [Pickup(x, y, kind, 1)
                         for x, y, kind in self.level.pickup_spawns]
+        self.props = [Prop(x, y, kind)
+                      for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
         self.raycaster = Raycaster(screen.get_size(), self.level)
@@ -576,7 +578,8 @@ class CoopClientGame:
 
     # -- rendu -------------------------------------------------------------
     def draw(self, screen):
-        sprites = list(self.ghosts.values()) + list(self.allies.values())
+        sprites = (list(self.ghosts.values()) + list(self.allies.values())
+                   + self.props)
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)

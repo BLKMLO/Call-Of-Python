@@ -345,6 +345,9 @@ class HUD:
                     if level.grid[y][x] != ".":
                         pygame.draw.rect(base, (170, 170, 180, 200),
                                          (x * scale, y * scale, scale, scale))
+                    elif (x, y) in level.prop_tiles:   # décors (voitures...)
+                        pygame.draw.rect(base, (105, 105, 115, 170),
+                                         (x * scale, y * scale, scale, scale))
             self._minimap_base = base
         surf = self._minimap_base.copy()
         for pickup in pickups:

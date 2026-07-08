@@ -12,7 +12,7 @@ import assets
 import pygame
 
 from ai import EnemyAI
-from entities import ENEMY_TYPES, Pickup, Player
+from entities import ENEMY_TYPES, Pickup, Player, Prop
 from hud import HUD
 from level import Level
 from particles import ParticleSystem
@@ -58,6 +58,8 @@ class Game:
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
         self.pickups = [Pickup(x, y, kind, level_index)
                         for x, y, kind in self.level.pickup_spawns]
+        self.props = [Prop(x, y, kind)
+                      for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
         self.raycaster = Raycaster(screen.get_size(), self.level)
@@ -414,8 +416,8 @@ class Game:
     # Rendu
     # ------------------------------------------------------------------
     def draw(self, screen):
-        # Billboards : cadavres (dessous), ennemis, coéquipiers, objets.
-        sprites = list(self.enemies) + self._extra_sprites()
+        # Billboards : décors, cadavres, ennemis, coéquipiers, objets.
+        sprites = list(self.enemies) + self._extra_sprites() + self.props
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)

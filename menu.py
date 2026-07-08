@@ -318,10 +318,10 @@ class SealBrokenScreen(MenuBase):
     title = "LE SCEAU EST BRISÉ"
 
     LORE = [
-        "Le Colosse s'effondre... et le sol tremble encore.",
+        "Le Colosse s'effondre... et le laboratoire tremble encore.",
         "Trop tard, vous comprenez : il n'était pas leur champion.",
-        "Il était le Sceau — le bastion qui retenait la horde.",
-        "Derrière les portes, le Déferlement gronde. Tenez 50 vagues.",
+        "Il était le Sceau — et son portail lunaire est grand ouvert.",
+        "Sur la Lune, le Déferlement gronde. Tenez 50 vagues.",
     ]
 
     def items(self):

@@ -19,6 +19,7 @@ avec la texture décalée d'autant.
 """
 
 import math
+import random
 
 import pygame
 
@@ -213,6 +214,20 @@ class Raycaster:
                                      for j in range(3))]
             pygame.draw.line(self.background, alpha_color,
                              (0, half - 7 + i), (self.width, half - 7 + i))
+        # Ciel étoilé (la Lune) : le fond défile alors avec la rotation.
+        self.sky_scroll = bool(self.level_config.get("stars"))
+        if self.sky_scroll:
+            rng = random.Random(42)
+            for _ in range(90 + self.width // 4):
+                sx = rng.randint(0, self.width - 1)
+                sy = rng.randint(0, int(half * 0.88))
+                color = rng.choice(((235, 235, 240), (200, 210, 255),
+                                    (255, 240, 214), (150, 155, 175)))
+                self.background.set_at((sx, sy), color)
+                if rng.random() < 0.12:            # quelques étoiles brillantes
+                    for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        if 0 <= sx + ox < self.width:
+                            self.background.set_at((sx + ox, sy + oy), color)
 
     # ------------------------------------------------------------------
     # Rendu
@@ -223,7 +238,17 @@ class Raycaster:
         # L'horizon monte quand on vise vers le bas, et inversement.
         self.horizon = self.height // 2 + pitch_px
         bg_center = self.bg_margin + self.height // 2
-        screen.blit(self.background, (0, self.horizon - bg_center))
+        bg_y = self.horizon - bg_center
+        if self.sky_scroll:
+            # Ciel étoilé : défile horizontalement avec la rotation (deux
+            # blits pour boucler sans couture ; x2 = un tour complet
+            # décale le fond de deux largeurs d'écran).
+            x_off = int(player.angle / (2 * math.pi)
+                        * self.width * 2) % self.width
+            screen.blit(self.background, (x_off - self.width, bg_y))
+            screen.blit(self.background, (x_off, bg_y))
+        else:
+            screen.blit(self.background, (0, bg_y))
         self._render_walls(screen, player, level)
         self._render_sprites(screen, player, sprites)
         self._render_particles(screen, player, particles)
