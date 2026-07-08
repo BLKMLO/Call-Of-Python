@@ -70,6 +70,8 @@ class Game:
         self.show_fps = False    # bascule F3
         self.fps = 60.0          # FPS lissés (affichage)
         self.sparkle_timer = 0.0 # émission des étincelles des packs de vie
+        self.step_distance = 0.0 # distance parcourue depuis le dernier pas
+        self.step_side = False   # alterne les deux sons de pas
         pygame.mouse.get_rel()   # purge le mouvement accumulé dans les menus
 
     # ------------------------------------------------------------------
@@ -121,8 +123,19 @@ class Game:
 
             # Déplacements clavier (sprint compris).
             keys = pygame.key.get_pressed()
+            old_x, old_y = player.x, player.y
             moving = player.move(dt, keys, self.settings.keys, self.level)
             self.player_moving = moving   # relayé aux clients en coop LAN
+
+            # Bruits de pas cadencés par la distance parcourue : le rythme
+            # s'accélère naturellement en sprint.
+            self.step_distance += math.hypot(player.x - old_x,
+                                             player.y - old_y)
+            if self.step_distance > 1.05:
+                self.step_distance = 0.0
+                self.step_side = not self.step_side
+                self.sounds.play("step" if self.step_side else "step2",
+                                 volume_scale=0.35)
 
             # Tir maintenu (armes automatiques uniquement).
             if pygame.mouse.get_pressed()[0] and player.weapon.spec.automatic:

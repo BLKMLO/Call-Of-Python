@@ -66,10 +66,17 @@ class EnemyAI:
     COVER_DURATION = 2.6     # temps passé à couvert avant de repartir (s)
     REPATH_TIME = 0.6        # fréquence de recalcul du chemin (s)
 
+    SIGHT_PERIOD = 0.12      # cadence des tests de ligne de vue (coûteux)
+
     def __init__(self, enemy):
         self.enemy = enemy
         self.lost_timer = 0.0
         self.took_cover = False   # une seule retraite par ennemi
+        # Ligne de vue cadencée (déphasée pour lisser la charge CPU)
+        self.sight_timer = random.uniform(0.0, self.SIGHT_PERIOD)
+        self.sight_cached = False
+        self.nav_timer = 0.0
+        self.nav_direct = False
         # Navigation
         self.path = None          # liste de waypoints (centres de cases)
         self.path_timer = 0.0
@@ -94,10 +101,16 @@ class EnemyAI:
         enemy.update_timers(dt)
         self.path_timer += dt
         dist = enemy.distance_to(player)
-        sees_player = (
-            dist < enemy.DETECT_RANGE
-            and has_line_of_sight(level, enemy.x, enemy.y, player.x, player.y)
-        )
+
+        # Ligne de vue rafraîchie ~8 fois/s seulement : avec une horde
+        # entière, les lancers de rayons de l'IA seraient sinon le poste
+        # de coût principal. La distance, elle, est recalculée à chaque pas.
+        self.sight_timer -= dt
+        if self.sight_timer <= 0.0:
+            self.sight_timer = self.SIGHT_PERIOD
+            self.sight_cached = has_line_of_sight(level, enemy.x, enemy.y,
+                                                  player.x, player.y)
+        sees_player = dist < enemy.DETECT_RANGE and self.sight_cached
         if sees_player:
             enemy.last_seen = (player.x, player.y)
             self.lost_timer = 0.0
@@ -203,9 +216,15 @@ class EnemyAI:
 
     def _navigate_towards(self, dt, target, level, speed_mult=1.0):
         """Rejoint la cible : tout droit si elle est en vue, sinon en
-        suivant un chemin BFS recalculé périodiquement."""
+        suivant un chemin BFS recalculé périodiquement (le test de vue
+        est lui aussi cadencé)."""
         enemy = self.enemy
-        if has_line_of_sight(level, enemy.x, enemy.y, target[0], target[1]):
+        self.nav_timer -= dt
+        if self.nav_timer <= 0.0:
+            self.nav_timer = self.SIGHT_PERIOD
+            self.nav_direct = has_line_of_sight(level, enemy.x, enemy.y,
+                                                target[0], target[1])
+        if self.nav_direct:
             self.path = None
             self._move_towards(dt, target, level, speed_mult)
             return

@@ -34,37 +34,93 @@ def _pack(samples):
 
 # ----------------------------------------------------------------------
 # Synthèse des effets
+#
+# Les détonations sont construites en couches : un souffle de bruit blanc
+# (l'explosion), un « thump » grave à fréquence descendante (le punch) et
+# un claquement haute fréquence très bref (la percussion mécanique). Le
+# tout passe dans un écrasement doux (tanh) qui donne du corps, puis
+# reçoit une courte queue d'écho.
 # ----------------------------------------------------------------------
-def _gunshot(duration=0.12):
-    """Bruit blanc à décroissance rapide : détonation du fusil."""
-    n = int(SAMPLE_RATE * duration)
-    return _pack(
-        random.uniform(-1, 1) * (1 - i / n) ** 3 for i in range(n)
-    )
+def _clip(sample):
+    """Écrasement doux : comprime les crêtes sans distorsion dure."""
+    return math.tanh(sample * 1.4)
 
 
-def _enemy_shot(duration=0.14):
-    """Détonation plus sourde (mélange bruit + basse fréquence)."""
+def _with_tail(samples, delay=0.055, gain=0.3):
+    """Ajoute un léger écho : rend les tirs moins « secs »."""
+    offset = int(SAMPLE_RATE * delay)
+    out = list(samples) + [0.0] * offset
+    for i, s in enumerate(samples):
+        out[i + offset] += s * gain
+    return out
+
+
+def _layered_shot(duration, low_freq, crack_freq, noise_gain=0.9,
+                  punch=1.0, tail=0.3):
+    """Détonation générique à trois couches (voir commentaire de section)."""
     n = int(SAMPLE_RATE * duration)
+    phase = 0.0
     samples = []
     for i in range(n):
-        env = (1 - i / n) ** 2.5
-        noise = random.uniform(-0.6, 0.6)
-        low = 0.5 * math.sin(2 * math.pi * 90 * i / SAMPLE_RATE)
-        samples.append((noise + low) * env)
+        t = i / n
+        seconds = i / SAMPLE_RATE
+        noise = random.uniform(-1, 1) * (1 - t) ** 4 * noise_gain
+        phase += 2 * math.pi * low_freq * (1.0 - 0.45 * t) / SAMPLE_RATE
+        thump = math.sin(phase) * (1 - t) ** 2 * punch
+        crack = math.sin(2 * math.pi * crack_freq * seconds) * (1 - t) ** 12
+        samples.append(_clip(noise + thump * 0.9 + crack * 0.7))
+    return _pack(_with_tail(samples, gain=tail))
+
+
+def _gunshot(duration=0.16):
+    """Fusil d'assaut / minigun : claquement sec avec du coffre."""
+    return _layered_shot(duration, low_freq=68, crack_freq=1300)
+
+
+def _pistol():
+    """Pistolet : plus haut, plus court, moins de souffle."""
+    return _layered_shot(0.11, low_freq=95, crack_freq=1900,
+                         noise_gain=0.7, punch=0.8, tail=0.22)
+
+
+def _shotgun(duration=0.32):
+    """Fusil à pompe : détonation lourde, grave et longue."""
+    return _layered_shot(duration, low_freq=48, crack_freq=900,
+                         noise_gain=1.1, punch=1.35, tail=0.4)
+
+
+def _enemy_shot(duration=0.16):
+    """Détonation ennemie, plus sourde (entendue de l'extérieur)."""
+    return _layered_shot(duration, low_freq=80, crack_freq=500,
+                         noise_gain=0.55, punch=0.9, tail=0.35)
+
+
+def _footstep(seed):
+    """Pas feutré : bruit passé dans un passe-bas (thud sourd et court)."""
+    rng = random.Random(seed)
+    n = int(SAMPLE_RATE * 0.085)
+    samples = []
+    level = 0.0
+    for i in range(n):
+        t = i / n
+        level += (rng.uniform(-1, 1) - level) * 0.18   # filtre passe-bas
+        env = math.sin(math.pi * min(1.0, t * 3)) * (1 - t) ** 2
+        samples.append(level * env * 1.6)
     return _pack(samples)
 
 
-def _shotgun(duration=0.28):
-    """Détonation lourde et longue du fusil à pompe."""
-    n = int(SAMPLE_RATE * duration)
-    samples = []
-    for i in range(n):
-        env = (1 - i / n) ** 2
-        noise = random.uniform(-1, 1)
-        low = 0.6 * math.sin(2 * math.pi * 60 * i / SAMPLE_RATE)
-        samples.append((noise * 0.8 + low) * env)
-    return _pack(samples)
+def _reload_clack():
+    """Rechargement en deux temps : chargeur éjecté... puis claqué."""
+    def click(freq, dur, vol):
+        n = int(SAMPLE_RATE * dur)
+        out = []
+        for i in range(n):
+            t = i / n
+            out.append((math.sin(2 * math.pi * freq * i / SAMPLE_RATE) * 0.5
+                        + random.uniform(-0.5, 0.5)) * (1 - t) ** 6 * vol)
+        return out
+    silence = [0.0] * int(SAMPLE_RATE * 0.13)
+    return _pack(click(620, 0.05, 0.7) + silence + click(380, 0.07, 1.0))
 
 
 def _tone(freq, duration, slide=0.0):
@@ -85,8 +141,8 @@ def _jingle(freqs, note=0.11):
     return b"".join(_tone(f, note, slide=f * 0.05) for f in freqs)
 
 
-def _explosion(duration=0.55):
-    """Déflagration d'un kamikaze : souffle grave + gravats."""
+def _explosion(duration=0.6):
+    """Déflagration d'un kamikaze : souffle grave + gravats + écho."""
     n = int(SAMPLE_RATE * duration)
     samples = []
     phase = 0.0
@@ -94,9 +150,9 @@ def _explosion(duration=0.55):
         t = i / n
         env = (1 - t) ** 1.6
         phase += 2 * math.pi * (55 - 25 * t) / SAMPLE_RATE
-        samples.append((math.sin(phase) * 0.7
-                        + random.uniform(-0.8, 0.8) * (1 - t) ** 3) * env)
-    return _pack(samples)
+        samples.append(_clip((math.sin(phase) * 0.9
+                              + random.uniform(-0.9, 0.9) * (1 - t) ** 3) * env))
+    return _pack(_with_tail(samples, delay=0.09, gain=0.4))
 
 
 def _door_slide(duration=0.35):
@@ -205,18 +261,23 @@ class SoundBank:
         self.enabled = pygame.mixer.get_init() is not None
         if not self.enabled:
             return
-        pygame.mixer.set_reserved(1)                 # canal 0 : musique
+        # Assez de canaux pour une horde qui tire de partout, plus le
+        # canal 0 réservé à la musique.
+        pygame.mixer.set_num_channels(24)
+        pygame.mixer.set_reserved(1)
         self.music_channel = pygame.mixer.Channel(0)
         self.sounds = {
             "player_shot": pygame.mixer.Sound(buffer=_gunshot()),
-            "pistol_shot": pygame.mixer.Sound(buffer=_gunshot(0.08)),
+            "pistol_shot": pygame.mixer.Sound(buffer=_pistol()),
             "shotgun_shot": pygame.mixer.Sound(buffer=_shotgun()),
             "enemy_shot": pygame.mixer.Sound(buffer=_enemy_shot()),
             "player_hit": pygame.mixer.Sound(buffer=_tone(140, 0.18, slide=-60)),
             "enemy_hit": pygame.mixer.Sound(buffer=_tone(520, 0.08, slide=-120)),
             "enemy_die": pygame.mixer.Sound(buffer=_tone(300, 0.35, slide=-220)),
-            "reload": pygame.mixer.Sound(buffer=_tone(700, 0.09, slide=200)),
+            "reload": pygame.mixer.Sound(buffer=_reload_clack()),
             "click": pygame.mixer.Sound(buffer=_tone(900, 0.05)),
+            "step": pygame.mixer.Sound(buffer=_footstep(1)),
+            "step2": pygame.mixer.Sound(buffer=_footstep(2)),
             "pickup": pygame.mixer.Sound(buffer=_jingle([520, 660, 880])),
             "heal": pygame.mixer.Sound(buffer=_jingle([440, 550])),
             "level_complete": pygame.mixer.Sound(

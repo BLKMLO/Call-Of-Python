@@ -102,8 +102,12 @@ par les sas de l'arène, jusqu'à la cinquantième.
   panoramiqués gauche/droite (stéréo) selon la direction ; **musique
   d'ambiance procédurale** propre à chaque niveau — le tout synthétisé
   en pur Python, sans aucun fichier audio.
-- **Particules** : sang à l'impact, gerbe à la mort, poussière teintée de
-  la texture du mur touché.
+- **Particules** : sang à l'impact (qui s'écrase au sol), gerbe à la
+  mort, poussière teintée de la texture du mur touché, fondu de sortie.
+- **Performances** : colonnes de murs et sprites mis à l'échelle
+  mémoïsés, ombrage et brume pré-calculés, correction de perspective en
+  table, lancer de rayons optimisé, ligne de vue de l'IA cadencée —
+  100+ FPS en 1280x720 même en pleine horde.
 - HUD complet : arme en vue subjective animée (balancement, recul,
   éclair de bouche, abaissée au rechargement), munitions, emplacements
   d'armes, minimap (ennemis, objets), voile rouge de dégâts, compteur

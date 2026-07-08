@@ -171,6 +171,7 @@ class Enemy(Entity):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
         self.damage_mult = damage_mult
         self.flash_timer = 0.0   # affiche la pose "tir" du sprite
+        self.hurt_timer = 0.0    # flash blanc quand il encaisse une balle
         self.moving = False      # l'IA le met à jour (pose "marche")
         self.anim_time = 0.0
         self.exploded = False    # un kamikaze ne détone qu'une fois
@@ -185,15 +186,18 @@ class Enemy(Entity):
     def current_sprite(self, player=None):
         """Pose selon l'état ET l'angle de vue : on voit les ennemis de
         face, de dos ou de profil selon leur orientation par rapport au
-        joueur (le profil opposé est obtenu par miroir)."""
+        joueur (le profil opposé est obtenu par miroir). La marche est un
+        cycle à deux frames ; un ennemi qui encaisse flashe en blanc."""
         if not self.alive:
             return assets.get(f"enemy_{self.KIND}_dead")
         if self.flash_timer > 0.0:
             # Quand il tire, il fait face au joueur : pose de face armée.
             return assets.get(f"enemy_{self.KIND}_fire")
 
-        walking = self.moving and int(self.anim_time * 5) % 2 == 0
-        pose = "walk" if walking else "idle"
+        if self.moving:
+            pose = "walk" if int(self.anim_time * 6) % 2 == 0 else "walk2"
+        else:
+            pose = "idle"
         suffix, flipped = "", False
         if player is not None:
             # Angle entre la direction regardée par l'ennemi et le joueur.
@@ -204,7 +208,10 @@ class Enemy(Entity):
             elif abs(diff) > math.pi / 4:
                 suffix = "_side"            # profil (miroir selon le côté)
                 flipped = diff > 0
-        return assets.get(f"enemy_{self.KIND}_{pose}{suffix}", flipped)
+        name = f"enemy_{self.KIND}_{pose}{suffix}"
+        if self.hurt_timer > 0.0:
+            return assets.get_tinted(name, flipped)
+        return assets.get(name, flipped)
 
     def take_damage(self, amount):
         died = super().take_damage(amount)
@@ -212,6 +219,8 @@ class Enemy(Entity):
             # Le billboard devient un cadavre bas posé au sol.
             self.SPRITE_HEIGHT = self.DEAD_HEIGHT
             self.moving = False
+        else:
+            self.hurt_timer = 0.09   # flash blanc bref
         return died
 
     def roll_damage(self, rng):
@@ -226,6 +235,7 @@ class Enemy(Entity):
 
     def update_timers(self, dt):
         self.flash_timer = max(0.0, self.flash_timer - dt)
+        self.hurt_timer = max(0.0, self.hurt_timer - dt)
         self.fire_cooldown = max(0.0, self.fire_cooldown - dt)
         self.ai_timer += dt
         if self.moving:

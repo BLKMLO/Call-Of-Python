@@ -49,6 +49,20 @@ def get(name, flipped=False):
     return surf
 
 
+def get_tinted(name, flipped=False):
+    """Variante « flash blanc » d'un sprite (ennemi qui encaisse une balle).
+
+    Mise en cache comme les autres : le sur-teintage n'est calculé qu'une
+    seule fois par sprite.
+    """
+    key = (name, flipped, "tint")
+    if key not in _cache:
+        surf = get(name, flipped).copy()
+        surf.fill((95, 95, 95), special_flags=pygame.BLEND_RGB_ADD)
+        _cache[key] = surf
+    return _cache[key]
+
+
 def average_color(name):
     """Couleur moyenne d'un asset (utilisée pour teinter les particules)."""
     if name not in _avg_cache:
@@ -85,95 +99,166 @@ def _upscale(surf, k):
 
 
 # ----------------------------------------------------------------------
-# Textures de murs (dessinées en 16x16, agrandies x4 -> 64x64)
+# Textures de murs (dessinées en 32x32 pour deux fois plus de détail,
+# agrandies x2 -> 64x64). Chaque matériau a du relief : arêtes claires en
+# haut/gauche, ombres en bas/droite, fissures et usure aléatoires.
 # ----------------------------------------------------------------------
 def _tex_base():
-    return pygame.Surface((16, 16))
+    return pygame.Surface((32, 32))
+
+
+def _bevel(surf, x, y, w, h, light, dark):
+    """Relief d'un bloc : arête claire en haut/gauche, ombre en bas/droite."""
+    _rect(surf, x, y, w, 1, light)
+    _rect(surf, x, y, 1, h, light)
+    _rect(surf, x, y + h - 1, w, 1, dark)
+    _rect(surf, x + w - 1, y + 1, 1, h - 1, dark)
+
+
+def _shift(color, delta):
+    return tuple(_clamp(c + delta) for c in color)
 
 
 def _tex_brick():
-    """Mur de briques rouges."""
+    """Mur de briques rouges : teinte propre à chaque brique, arêtes en
+    relief, fissures et éclats occasionnels."""
     rng = random.Random(101)
     s = _tex_base()
-    _rect(s, 0, 0, 16, 16, (74, 66, 62), rng, 6)          # mortier
-    brick = (150, 74, 56)
+    _rect(s, 0, 0, 32, 32, (66, 58, 54), rng, 5)          # mortier
     for row in range(4):
-        y = row * 4 + 1
-        offset = 0 if row % 2 == 0 else 4
+        y = row * 8
+        offset = 0 if row % 2 == 0 else 8
         for bx in range(-1, 3):
-            _rect(s, bx * 8 + offset, y, 7, 3, brick, rng, 12)
-    return _upscale(s, 4)
+            x = bx * 16 + offset
+            base = _shift((152, 74, 56), rng.randint(-16, 14))
+            _rect(s, x, y + 1, 15, 7, base, rng, 7)
+            _bevel(s, x, y + 1, 15, 7, _shift(base, 22), _shift(base, -26))
+            if rng.random() < 0.35:                        # fissure
+                cx_, cy_ = x + rng.randint(3, 11), y + 2
+                for step in range(rng.randint(2, 4)):
+                    if 0 <= cx_ < 32:
+                        s.set_at((cx_, min(31, cy_ + step)), _shift(base, -40))
+                    cx_ += rng.choice((-1, 0, 1))
+    return _upscale(s, 2)
 
 
 def _tex_crate():
-    """Caisse en bois (planches + cadre)."""
+    """Caisse en bois : planches veinées, cadre en relief, équerres
+    métalliques cloutées aux coins."""
     rng = random.Random(102)
     s = _tex_base()
-    _rect(s, 0, 0, 16, 16, (150, 112, 62), rng, 10)       # planches
-    for y in (3, 7, 11):                                  # rainures
-        _rect(s, 0, y, 16, 1, (104, 76, 40), rng, 6)
-    _rect(s, 0, 0, 16, 1, (112, 82, 44), rng, 6)          # cadre
-    _rect(s, 0, 15, 16, 1, (112, 82, 44), rng, 6)
-    _rect(s, 0, 0, 1, 16, (112, 82, 44), rng, 6)
-    _rect(s, 15, 0, 1, 16, (112, 82, 44), rng, 6)
-    return _upscale(s, 4)
+    for y in range(32):                                    # planches + veines
+        tone = (150, 112, 62) if (y // 8) % 2 == 0 else (142, 104, 56)
+        _rect(s, 0, y, 32, 1, tone, rng, 6)
+    for y in (7, 15, 23):                                  # rainures
+        _rect(s, 0, y, 32, 1, (96, 70, 38), rng, 4)
+        _rect(s, 0, y + 1, 32, 1, (168, 128, 74), rng, 4)  # rebord éclairé
+    for _ in range(10):                                    # nœuds du bois
+        wx, wy = rng.randint(2, 29), rng.randint(1, 30)
+        s.set_at((wx, wy), (110, 80, 44))
+    _rect(s, 0, 0, 32, 3, (124, 92, 50), rng, 5)           # cadre
+    _rect(s, 0, 29, 32, 3, (108, 78, 42), rng, 5)
+    _rect(s, 0, 0, 3, 32, (124, 92, 50), rng, 5)
+    _rect(s, 29, 0, 3, 32, (108, 78, 42), rng, 5)
+    for cx_, cy_ in ((1, 1), (27, 1), (1, 27), (27, 27)):  # équerres
+        _rect(s, cx_, cy_, 4, 4, (118, 122, 132), rng, 6)
+        s.set_at((cx_ + 1, cy_ + 1), (170, 174, 184))      # clou
+    return _upscale(s, 2)
 
 
 def _tex_stone():
-    """Pierres grises irrégulières."""
+    """Pierres grises : blocs biseautés de tailles inégales, mousse rare."""
     rng = random.Random(103)
     s = _tex_base()
-    _rect(s, 0, 0, 16, 16, (52, 52, 58), rng, 4)          # joints
-    for y in (0, 5, 10):
-        x = -rng.randint(0, 2)
-        while x < 16:
-            w = rng.randint(3, 6)
-            _rect(s, x, y, w - 1, 4 if y < 10 else 5, (124, 126, 132), rng, 10)
+    _rect(s, 0, 0, 32, 32, (42, 42, 48), rng, 4)          # joints
+    for row, (y, h) in enumerate(((0, 9), (9, 8), (17, 9), (26, 6))):
+        x = -rng.randint(0, 3)
+        while x < 32:
+            w = rng.randint(6, 11)
+            base = _shift((122, 124, 130), rng.randint(-14, 12))
+            _rect(s, x, y, w - 1, h - 1, base, rng, 8)
+            _bevel(s, x, y, w - 1, h - 1, _shift(base, 24), _shift(base, -30))
+            if rng.random() < 0.25:                        # mousse discrète
+                mx, my = x + rng.randint(1, max(2, w - 3)), y + h - 2
+                if 0 <= mx < 32 and 0 <= my < 32:
+                    s.set_at((mx, my), (86, 116, 74))
             x += w
-    return _upscale(s, 4)
+    return _upscale(s, 2)
 
 
 def _tex_metal():
-    """Panneau métallique riveté."""
+    """Panneau métallique : brossage vertical, jointure biseautée,
+    rivets en relief et rayures d'usure."""
     rng = random.Random(104)
     s = _tex_base()
-    _rect(s, 0, 0, 16, 16, (108, 112, 124), rng, 6)
-    _rect(s, 0, 7, 16, 2, (84, 88, 100), rng, 5)          # rainure centrale
-    _rect(s, 0, 0, 16, 1, (130, 134, 146), rng, 5)        # arête claire
-    for px, py in ((1, 2), (14, 2), (1, 13), (14, 13)):   # rivets
+    for x in range(32):                                    # brossage vertical
+        tone = _shift((106, 110, 122), rng.randint(-5, 5))
+        _rect(s, x, 0, 1, 32, tone, rng, 3)
+    _rect(s, 0, 15, 32, 1, (74, 78, 90))                   # jointure centrale
+    _rect(s, 0, 16, 32, 1, (134, 138, 150))
+    _rect(s, 0, 0, 32, 1, (140, 144, 156))                 # arêtes du panneau
+    _rect(s, 0, 31, 32, 1, (70, 74, 86))
+    for px, py in ((3, 4), (28, 4), (3, 27), (28, 27),
+                   (15, 4), (15, 27)):                     # rivets bombés
         s.set_at((px, py), (176, 180, 192))
-    return _upscale(s, 4)
+        s.set_at((px + 1, py + 1), (66, 70, 82))
+    for _ in range(4):                                     # rayures claires
+        sx, sy = rng.randint(2, 24), rng.randint(3, 27)
+        for step in range(rng.randint(3, 6)):
+            s.set_at((min(31, sx + step), max(0, sy - step)), (150, 154, 166))
+    return _upscale(s, 2)
 
 
 def _tex_tech():
-    """Panneau high-tech sombre avec lignes lumineuses (laboratoire)."""
+    """Panneau high-tech : conduits néon à halo, petit écran à balayage,
+    grille d'aération (laboratoire)."""
     rng = random.Random(105)
     s = _tex_base()
-    _rect(s, 0, 0, 16, 16, (42, 47, 58), rng, 5)
-    _rect(s, 0, 7, 16, 1, (30, 34, 44), rng, 3)           # jointure
-    _rect(s, 7, 0, 1, 16, (30, 34, 44), rng, 3)
-    _rect(s, 2, 3, 5, 1, (86, 220, 230))                  # lignes néon
-    _rect(s, 10, 11, 4, 1, (86, 220, 230))
-    s.set_at((12, 3), (240, 90, 90))                      # diodes
-    s.set_at((3, 12), (110, 235, 130))
-    return _upscale(s, 4)
+    _rect(s, 0, 0, 32, 32, (38, 43, 54), rng, 4)
+    _rect(s, 0, 15, 32, 1, (26, 30, 40))                   # jointures
+    _rect(s, 15, 0, 1, 32, (26, 30, 40))
+    # conduit néon horizontal avec halo
+    _rect(s, 2, 6, 28, 1, (36, 96, 108))                   # halo
+    _rect(s, 2, 8, 28, 1, (36, 96, 108))
+    _rect(s, 2, 7, 28, 1, (92, 226, 238))                  # cœur lumineux
+    # petit écran à lignes de balayage
+    _rect(s, 19, 19, 10, 8, (16, 22, 20))
+    for i, sy in enumerate(range(20, 26)):
+        _rect(s, 20, sy, 8, 1, (52, 150, 92) if i % 2 == 0 else (26, 74, 46))
+    _bevel(s, 19, 19, 10, 8, (70, 78, 92), (18, 22, 30))
+    # grille d'aération
+    for sy in range(21, 28, 2):
+        _rect(s, 4, sy, 9, 1, (20, 24, 32))
+    # diodes d'état
+    s.set_at((25, 3), (240, 90, 90))
+    s.set_at((27, 3), (110, 235, 130))
+    s.set_at((4, 12), (235, 200, 90))
+    return _upscale(s, 2)
 
 
 def _tex_door():
-    """Porte coulissante métallique avec bandes de signalisation."""
+    """Porte coulissante : deux vantaux biseautés, bandes de signalisation
+    diagonales, rails latéraux et voyant d'ouverture."""
     rng = random.Random(106)
     s = _tex_base()
-    _rect(s, 0, 0, 16, 16, (86, 92, 104), rng, 5)         # panneau
-    _rect(s, 7, 0, 2, 16, (56, 60, 70), rng, 3)           # jointure centrale
-    _rect(s, 0, 0, 1, 16, (120, 126, 140))                # rails latéraux
-    _rect(s, 15, 0, 1, 16, (120, 126, 140))
-    for x in range(1, 15, 2):                             # bandes jaune/noir
-        _rect(s, x, 2, 1, 2, (214, 176, 40))
-        _rect(s, x + 1, 2, 1, 2, (40, 38, 30))
-        _rect(s, x, 12, 1, 2, (214, 176, 40))
-        _rect(s, x + 1, 12, 1, 2, (40, 38, 30))
-    s.set_at((3, 8), (110, 235, 130))                     # voyant d'ouverture
-    return _upscale(s, 4)
+    _rect(s, 0, 0, 32, 32, (88, 94, 106), rng, 4)          # panneau
+    _rect(s, 0, 0, 2, 32, (128, 134, 146))                 # rails
+    _rect(s, 30, 0, 2, 32, (128, 134, 146))
+    _rect(s, 15, 0, 2, 32, (52, 56, 66))                   # jointure centrale
+    _bevel(s, 2, 0, 13, 32, (116, 122, 134), (62, 66, 78))  # vantail gauche
+    _bevel(s, 17, 0, 13, 32, (116, 122, 134), (62, 66, 78))  # vantail droit
+    for y in (5, 24):                                      # bandes diagonales
+        for x in range(3, 29):
+            if 14 <= x <= 17:
+                continue
+            color = (216, 178, 44) if ((x + y) // 3) % 2 == 0 else (42, 40, 32)
+            _rect(s, x, y, 1, 3, color)
+    for y in range(13, 20, 2):                             # rainures de prise
+        _rect(s, 5, y, 7, 1, (66, 70, 82))
+        _rect(s, 20, y, 7, 1, (66, 70, 82))
+    s.set_at((3, 10), (110, 235, 130))                     # voyant + halo
+    s.set_at((4, 10), (60, 140, 82))
+    return _upscale(s, 2)
 
 
 # ----------------------------------------------------------------------
@@ -223,15 +308,19 @@ ENEMY_PALETTES = {
 
 
 def _enemy_sprite(kind, pose):
-    """Sprite d'ennemi : poses de face (idle/walk/fire), de dos
-    (idle_back/walk_back), de profil (idle_side/walk_side) et au sol (dead)."""
+    """Sprite d'ennemi : poses de face (idle/walk/walk2/fire), de dos
+    (_back), de profil (_side) et au sol (dead).
+
+    `walk` et `walk2` forment un vrai cycle de marche à deux frames
+    (jambe gauche puis jambe droite levée, balancement des bras opposé).
+    """
     p = ENEMY_PALETTES[kind]
     if pose == "dead":
         return _enemy_dead_sprite(p)
     if pose.endswith("_back"):
-        return _enemy_back_sprite(p, walk=pose.startswith("walk"))
+        return _enemy_back_sprite(p, pose[:-5])
     if pose.endswith("_side"):
-        return _enemy_side_sprite(p, walk=pose.startswith("walk"))
+        return _enemy_side_sprite(p, pose[:-5])
     heavy = p.get("bulk", False)
     s = pygame.Surface((16, 24), pygame.SRCALPHA)
 
@@ -269,17 +358,22 @@ def _enemy_sprite(kind, pose):
         _rect(s, 10, 8, 1, 4, (255, 226, 110))
         _rect(s, 7, 9, 2, 2, (255, 255, 220))                # cœur du flash
     else:
-        swing = 1 if pose == "walk" else 0
+        swing = {"walk": 1, "walk2": -1}.get(pose, 0)
         _rect(s, 2, 6 + swing, 2, 6, p["dark"])              # bras gauche
         _rect(s, 12, 6 - swing, 2, 6, p["dark"])             # bras droit
         _rect(s, 2, 11 + swing, 2, 1, p["skin"])             # mains
-        _rect(s, 12, 10 + swing, 2, 1, p["skin"])
+        _rect(s, 12, 10 - swing, 2, 1, p["skin"])
 
-    if pose == "walk":                                        # jambes écartées
-        _rect(s, 4, 14, 3, 7, p["legs"])
+    if pose == "walk":                    # jambe gauche levée, droite au sol
+        _rect(s, 4, 15, 3, 6, p["legs"])
+        _rect(s, 4, 20, 3, 3, p["boots"])
         _rect(s, 9, 14, 3, 7, p["legs"])
-        _rect(s, 4, 21, 3, 3, p["boots"])
         _rect(s, 9, 21, 3, 3, p["boots"])
+    elif pose == "walk2":                 # frame opposée du cycle
+        _rect(s, 4, 14, 3, 7, p["legs"])
+        _rect(s, 4, 21, 3, 3, p["boots"])
+        _rect(s, 9, 15, 3, 6, p["legs"])
+        _rect(s, 9, 20, 3, 3, p["boots"])
     else:
         _rect(s, 5, 14, 3, 7, p["legs"])
         _rect(s, 8, 14, 3, 7, p["legs"])
@@ -288,7 +382,7 @@ def _enemy_sprite(kind, pose):
     return _upscale(s, 4)
 
 
-def _enemy_back_sprite(p, walk):
+def _enemy_back_sprite(p, base):
     """Vue de dos : casque plein (pas de visage), sac à dos, arme invisible."""
     heavy = p.get("bulk", False)
     s = pygame.Surface((16, 24), pygame.SRCALPHA)
@@ -303,14 +397,19 @@ def _enemy_back_sprite(p, walk):
     if heavy:
         _rect(s, 2, 5, 3, 2, p["dark"])
         _rect(s, 11, 5, 3, 2, p["dark"])
-    swing = 1 if walk else 0
+    swing = {"walk": 1, "walk2": -1}.get(base, 0)
     _rect(s, 2, 6 + swing, 2, 6, p["dark"])      # bras
     _rect(s, 12, 6 - swing, 2, 6, p["dark"])
-    if walk:
-        _rect(s, 4, 14, 3, 7, p["legs"])
+    if base == "walk":
+        _rect(s, 4, 15, 3, 6, p["legs"])
+        _rect(s, 4, 20, 3, 3, p["boots"])
         _rect(s, 9, 14, 3, 7, p["legs"])
-        _rect(s, 4, 21, 3, 3, p["boots"])
         _rect(s, 9, 21, 3, 3, p["boots"])
+    elif base == "walk2":
+        _rect(s, 4, 14, 3, 7, p["legs"])
+        _rect(s, 4, 21, 3, 3, p["boots"])
+        _rect(s, 9, 15, 3, 6, p["legs"])
+        _rect(s, 9, 20, 3, 3, p["boots"])
     else:
         _rect(s, 5, 14, 3, 7, p["legs"])
         _rect(s, 8, 14, 3, 7, p["legs"])
@@ -319,10 +418,11 @@ def _enemy_back_sprite(p, walk):
     return _upscale(s, 4)
 
 
-def _enemy_side_sprite(p, walk):
+def _enemy_side_sprite(p, base):
     """Profil (tourné vers la droite) : arme pointée vers l'avant.
 
     La vue de l'autre profil est obtenue par miroir (assets.get flipped).
+    Cycle de marche : jambes en ciseaux (walk) puis passage (walk2).
     """
     heavy = p.get("bulk", False)
     s = pygame.Surface((16, 24), pygame.SRCALPHA)
@@ -343,12 +443,17 @@ def _enemy_side_sprite(p, walk):
     _rect(s, 7, 7, 3, 5, p["dark"])
     _rect(s, 9, 9, 6, 2, (34, 34, 38))           # canon
     _rect(s, 8, 11, 2, 2, p["skin"])             # main
-    # jambes de profil (ciseaux en marche)
-    if walk:
+    # jambes de profil : grand écart (walk) / jambes croisées (walk2)
+    if base == "walk":
         _rect(s, 4, 14, 3, 7, p["legs"])
         _rect(s, 9, 14, 3, 7, p["legs"])
         _rect(s, 3, 21, 3, 3, p["boots"])
         _rect(s, 10, 21, 3, 3, p["boots"])
+    elif base == "walk2":
+        _rect(s, 6, 14, 3, 7, p["legs"])
+        _rect(s, 8, 15, 2, 6, p["dark"])
+        _rect(s, 6, 21, 3, 3, p["boots"])
+        _rect(s, 8, 20, 2, 3, p["boots"])
     else:
         _rect(s, 6, 14, 3, 7, p["legs"])
         _rect(s, 8, 14, 2, 7, p["dark"])
@@ -511,8 +616,9 @@ _BUILDERS = {
     "pickup_lifepack": _pickup_lifepack,
 }
 for _kind in ENEMY_PALETTES:
-    for _pose in ("idle", "walk", "fire", "dead",
-                  "idle_back", "walk_back", "idle_side", "walk_side"):
+    for _pose in ("idle", "walk", "walk2", "fire", "dead",
+                  "idle_back", "walk_back", "walk2_back",
+                  "idle_side", "walk_side", "walk2_side"):
         _BUILDERS[f"enemy_{_kind}_{_pose}"] = (
             lambda k=_kind, p=_pose: _enemy_sprite(k, p)
         )
