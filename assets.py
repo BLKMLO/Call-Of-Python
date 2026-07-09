@@ -341,6 +341,49 @@ def _tex_govwood():
     return _upscale(s, 2)
 
 
+def _tex_shelf():
+    """Rayonnage d'entrepôt : montants métalliques, étagères chargées de
+    cartons et de bacs (texture répétée sur toute la hauteur du rack)."""
+    rng = random.Random(112)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (34, 34, 40), rng, 3)           # fond sombre
+    _rect(s, 0, 0, 2, 32, (196, 120, 40))                  # montants orange
+    _rect(s, 30, 0, 2, 32, (196, 120, 40))
+    _rect(s, 15, 0, 2, 32, (176, 106, 36))
+    for shelf_y in (9, 20, 31):                            # traverses
+        _rect(s, 0, shelf_y, 32, 1, (150, 92, 32), rng, 6)
+    for shelf_y in (2, 12, 23):                            # cartons / bacs
+        x = 3
+        while x < 29:
+            w = rng.randint(3, 6)
+            if rng.random() < 0.75 and x + w < 30:
+                color = rng.choice(((150, 116, 74), (128, 96, 60),
+                                    (70, 96, 130), (96, 70, 54)))
+                h = rng.randint(4, 6)
+                _rect(s, x, shelf_y + (7 - h), w, h, color, rng, 7)
+                _rect(s, x, shelf_y + (7 - h), w, 1, _shift(color, 22))
+            x += w + 1
+    return _upscale(s, 2)
+
+
+def _tex_energy():
+    """Mur d'énergie : grille verte translucide sur fond nocturne — la
+    limite du monde lunaire, visible seulement de près (fondu au noir)."""
+    rng = random.Random(113)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (6, 12, 10), rng, 2)            # presque noir
+    for y in range(0, 32, 8):                              # trame lumineuse
+        _rect(s, 0, y, 32, 1, (44, 150, 96))
+    for x in range(0, 32, 8):
+        _rect(s, x, 0, 1, 32, (44, 150, 96))
+    for x in range(0, 32, 8):                              # nœuds brillants
+        for y in range(0, 32, 8):
+            s.set_at((x, y), (140, 255, 190))
+    for _ in range(14):                                    # scintillements
+        s.set_at((rng.randint(0, 31), rng.randint(0, 31)), (24, 80, 52))
+    return _upscale(s, 2)
+
+
 def _tex_moon():
     """Régolithe lunaire : gris poussiéreux constellé de cratères."""
     rng = random.Random(111)
@@ -794,6 +837,44 @@ def _prop_rock():
     return _upscale(s, 4)
 
 
+def _prop_fissure():
+    """Crevasse lunaire : lèvres de régolithe déchirées sur une lueur
+    verte surnaturelle qui monte des profondeurs."""
+    rng = random.Random(125)
+    s = pygame.Surface((30, 8), pygame.SRCALPHA)
+    # lèvres de la faille (crête sombre irrégulière)
+    for x in range(30):
+        h = 2 + (x * 7 + x * x) % 3
+        _rect(s, x, 7 - h, 1, h, (74, 74, 82))
+        s.set_at((x, 7 - h), (98, 98, 106))                # arête éclairée
+    # lueur verte au ras du sol
+    for x in range(2, 28):
+        if rng.random() < 0.75:
+            s.set_at((x, 6), (60, 210, 120))
+            if rng.random() < 0.4:
+                s.set_at((x, 5), (120, 255, 170))
+    return _upscale(s, 4)
+
+
+def _prop_portal():
+    """Portail du Déferlement : anneau vert surnaturel, cœur tourbillonnant."""
+    rng = random.Random(126)
+    s = pygame.Surface((26, 34), pygame.SRCALPHA)
+    pygame.draw.ellipse(s, (26, 90, 58), (1, 1, 24, 30))     # halo externe
+    pygame.draw.ellipse(s, (52, 200, 118), (3, 3, 20, 26))   # anneau
+    pygame.draw.ellipse(s, (10, 30, 22), (6, 6, 14, 20))     # gouffre
+    for _ in range(22):                                      # volutes internes
+        px, py = rng.randint(7, 18), rng.randint(7, 24)
+        s.set_at((px, py), rng.choice(((90, 255, 160), (40, 150, 96),
+                                       (150, 255, 200))))
+    pygame.draw.ellipse(s, (190, 255, 220), (11, 13, 4, 6))  # cœur
+    # éclats au pied du portail
+    for px in (4, 9, 16, 21):
+        s.set_at((px, 32), (60, 210, 120))
+        s.set_at((px, 33), (30, 110, 66))
+    return _upscale(s, 4)
+
+
 # ----------------------------------------------------------------------
 _BUILDERS = {
     "wall_brick": _tex_brick,
@@ -807,11 +888,15 @@ _BUILDERS = {
     "wall_marble": _tex_marble,
     "wall_govwood": _tex_govwood,
     "wall_moon": _tex_moon,
+    "wall_shelf": _tex_shelf,
+    "wall_energy": _tex_energy,
     "prop_car": _prop_car,
     "prop_bench": _prop_bench,
     "prop_tribune": _prop_tribune,
     "prop_labtable": _prop_labtable,
     "prop_rock": _prop_rock,
+    "prop_fissure": _prop_fissure,
+    "prop_portal": _prop_portal,
     "fp_pistol": _fp_pistol,
     "fp_shotgun": _fp_shotgun,
     "fp_rifle": _fp_rifle,

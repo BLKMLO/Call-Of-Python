@@ -99,10 +99,15 @@ class Game:
         elif event.type == pygame.MOUSEWHEEL and not self.paused:
             self.player.cycle_weapon(-1 if event.y > 0 else 1)
             self.sounds.play("click", volume_scale=0.4)
-        elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
-              and not self.paused and self.player.alive):
-            # Premier coup au clic : indispensable pour les armes semi-auto.
-            self._player_fire()
+        elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
+                and self.player.alive:
+            if event.button == 1:
+                # Premier coup au clic : indispensable pour le semi-auto.
+                self._player_fire()
+            elif event.button == 3:              # clic droit : mise en joue
+                self.player.aiming = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+            self.player.aiming = False
         return None
 
     # ------------------------------------------------------------------
@@ -348,10 +353,11 @@ class Game:
             self.shake = min(1.0, self.shake + 0.18)
 
         self.stats["shots"] += 1
+        # En visée, la dispersion est fortement réduite (tir précis).
+        spread = weapon.spec.spread * (1.0 - 0.75 * self.player.ads)
         results = []
         for _ in range(weapon.spec.pellets):
-            angle = self.player.angle + random.uniform(-weapon.spec.spread,
-                                                       weapon.spec.spread)
+            angle = self.player.angle + random.uniform(-spread, spread)
             results.append(self._hitscan(self.player.x, self.player.y, angle,
                                          weapon.damage,
                                          weapon.spec.hit_radius))
@@ -429,6 +435,7 @@ class Game:
             pitch_px += int(random.uniform(-1, 1) * self.shake
                             * self.raycaster.height * 0.02)
 
+        self.raycaster.set_zoom(self.player.zoom)   # lunette de visée
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
         self.hud.draw(screen, self.player, self.enemies, self.level,

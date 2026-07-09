@@ -22,8 +22,8 @@ import random
 from game import Game
 from level import SURVIVAL_LEVEL
 
-FINAL_WAVE = 50            # dernière vague
-WAVE_TIMEOUT = 60.0        # délai avant que la vague suivante déferle (s)
+FINAL_WAVE = 30            # dernière vague
+WAVE_TIMEOUT = 15.0        # délai avant que la vague suivante déferle (s)
 INTERMISSION = 4.0         # répit entre deux vagues nettoyées (s)
 SPAWN_INTERVAL = 0.4       # étalement des apparitions dans une vague (s)
 MAX_ALIVE = 24             # ennemis simultanés (les autres attendent en file)

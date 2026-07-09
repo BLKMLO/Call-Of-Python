@@ -27,6 +27,7 @@ python main.py
 | Sprint              | `Maj gauche` |
 | Viser (horizontal + vertical) | Souris |
 | Tirer               | Clic gauche (maintien = rafale pour les armes automatiques) |
+| Mise en joue (lunette) | Clic droit (maintenu) — zoom, précision accrue, déplacement ralenti |
 | Changer d'arme      | `1`–`4` ou molette |
 | Recharger           | `R`          |
 | Compteur de FPS     | `F3`         |
@@ -43,34 +44,49 @@ tombé à la **Base militaire**, jusqu'au **Laboratoire** où attend le
 Colosse. Mais en l'abattant, vous comprenez trop tard : il n'était pas
 leur champion, il était **le Sceau** — et son portail lunaire est grand
 ouvert. **Le Déferlement** se joue sur la Lune : les vagues surgissent
-des sas, jusqu'à la cinquantième.
+du portail, jusqu'à la trentième.
 
 ## Gameplay
 
-- **5 niveaux** à thèmes différents — Entrepôt, **Métropole** (gratte-ciel
-  aux fenêtres allumées, voitures abandonnées, périmètre bouclé par des
-  barrières anti-émeute), **Gouvernement** (hémicycle de marbre et de
-  boiseries : tribune, rangées de pupitres, bureaux dérobés), Base
-  militaire, et le **Laboratoire en assaut final** (paillasses chargées
-  de microscopes et d'éprouvettes... et le Colosse). Chacun a sa carte,
-  ses textures, ses décors, son ambiance et sa nappe musicale. Le niveau
-  suivant se débloque quand **tous les ennemis sont éliminés** ; le
-  joueur y conserve son arsenal et récupère de la vie. **S'il meurt, il
-  repart de zéro** (niveau 1, pistolet seul). Le meilleur niveau atteint
-  est mémorisé.
-- **Décors** : voitures, pupitres, tribune, paillasses, rochers — des
-  billboards qui bloquent les déplacements (le pathfinding des ennemis
-  les contourne) mais pas les balles ni les regards.
-- **Le Déferlement (mode survie), sur la Lune** : régolithe gris,
-  cratères, rochers épars et **ciel noir étoilé qui défile avec la
-  rotation**. Débloqué en brisant le Sceau (et ensuite accessible depuis
-  le menu). Des vagues de plus en plus grosses et dures, **jusqu'à la
-  vague 50** ; un Colosse accompagne la horde toutes les 10 vagues. Une
-  vague nettoyée accorde un répit et un peu de vie ; mais **si elle n'est
-  pas nettoyée en 60 secondes, la suivante déferle par-dessus** — la
-  submersion guette. Trousses de soins toutes les 3 vagues, armes au sol
-  de plus en plus améliorées toutes les 5. Le record de vagues est
-  sauvegardé.
+- **5 niveaux** à thèmes différents, aux cartes vastes et variées —
+  **Entrepôt** (allées de rayonnages alignés, bureau, quai de
+  chargement), **Métropole** (gratte-ciel élancés aux fenêtres
+  allumées, voitures abandonnées, périmètre bouclé par des barrières
+  anti-émeute), **Gouvernement** (hémicycle circulaire de marbre et de
+  boiseries, avec le parloir et sa tribune au centre, cerné de rangées
+  de pupitres), **Base militaire**, et le **Laboratoire en assaut
+  final** (couloirs desservant des salles à thème — spécimens, chimie,
+  serveurs, médical — jusqu'à la chambre du Colosse). Chacun a sa carte,
+  ses textures, ses décors, son ambiance et sa nappe musicale, et grouille
+  d'ennemis (8 à 15 par niveau) avec armes et trousses de soins pour
+  tenir. Le niveau suivant se débloque quand **tous les ennemis sont
+  éliminés** ; le joueur y conserve son arsenal et récupère de la vie.
+  **S'il meurt, il repart de zéro**. Le meilleur niveau atteint est
+  mémorisé.
+- **Murs à hauteurs variables** : les gratte-ciel montent jusqu'au ciel
+  (×3,4), les rayonnages et immeubles de brique dominent le joueur, les
+  barrières anti-émeute restent basses — la texture est empilée
+  verticalement sur toute la hauteur du mur.
+- **Mise en joue (clic droit)** : lunette avec zoom optique, réticule et
+  vignette circulaire, sensibilité et dispersion fortement réduites (tir
+  de précision) au prix d'un déplacement ralenti.
+- **Décors** : voitures, pupitres, tribune, paillasses, rochers, portail,
+  crevasses — des billboards qui bloquent les déplacements (le
+  pathfinding des ennemis les contourne) mais pas les balles ni les
+  regards.
+- **Le Déferlement (mode survie), sur la Lune** : une plaine de régolithe
+  gris **entièrement plate**, striée de crevasses luisantes, sous un
+  **ciel noir étoilé qui défile avec la rotation**, avec un **portail
+  vert surnaturel** au centre d'où jaillit la horde. Pas de murs : les
+  **limites du monde sont un champ d'énergie invisible qui ne se
+  matérialise qu'à l'approche** (comme un mur transparent). Débloqué en
+  brisant le Sceau (puis accessible depuis le menu). Des vagues de plus en
+  plus grosses et dures, **jusqu'à la vague 30** ; un Colosse accompagne
+  la horde toutes les 10 vagues. Une vague nettoyée accorde un répit et un
+  peu de vie ; mais **si elle n'est pas nettoyée en 15 secondes, la
+  suivante déferle par-dessus** — la submersion guette. Trousses de soins
+  toutes les 3 vagues, armes améliorées toutes les 5. Le record de vagues
+  est sauvegardé.
 - **Portes coulissantes automatiques** sur les cartes : elles s'ouvrent
   à l'approche (du joueur comme des ennemis — l'IA les traverse), les
   balles et les regards passent par l'entrebâillement.
