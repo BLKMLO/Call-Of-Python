@@ -26,7 +26,7 @@ from hud import HUD
 from level import SURVIVAL_LEVEL, Level
 from network import DEFAULT_PORT, UdpPeer
 from particles import ParticleSystem
-from raycaster import Raycaster, cast_ray
+from raycaster import Raycaster, cast_ray, zoom_screen
 from survival import SurvivalGame
 
 RESPAWN_DELAY = 6.0        # secondes avant la réapparition d'un joueur
@@ -594,9 +594,10 @@ class CoopClientGame:
         if self.shake > 0.0:
             pitch_px += int(random.uniform(-1, 1) * self.shake
                             * self.raycaster.height * 0.02)
-        self.raycaster.set_zoom(self.player.zoom)   # lunette de visée
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+        if self.player.ads > 0.01:
+            zoom_screen(screen, self.player.zoom)   # lunette de visée
         self.hud.draw(screen, self.player, list(self.ghosts.values()),
                       self.level, self.pickups,
                       fps=self.fps if self.show_fps else None,

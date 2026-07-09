@@ -64,9 +64,16 @@ du portail, jusqu'à la trentième.
   **S'il meurt, il repart de zéro**. Le meilleur niveau atteint est
   mémorisé.
 - **Murs à hauteurs variables** : les gratte-ciel montent jusqu'au ciel
-  (×3,4), les rayonnages et immeubles de brique dominent le joueur, les
-  barrières anti-émeute restent basses — la texture est empilée
-  verticalement sur toute la hauteur du mur.
+  (×3,4, blocs pleins entre lesquels on circule), les rayonnages et la
+  rotonde du Gouvernement dominent le joueur, les barrières anti-émeute
+  restent basses — la texture est empilée verticalement sur toute la
+  hauteur du mur. Les portes ne sont placées que dans des murs de
+  hauteur normale (jamais de vide au-dessus).
+- **Soleil dynamique** : chaque niveau a son heure, de 8h (Entrepôt,
+  soleil bas et chaud) à midi (au plus haut) puis 19h (Laboratoire,
+  soleil rouge à l'horizon et ciel de crépuscule). Il occupe une
+  position fixe dans le monde (occulté par les bâtiments) et progresse
+  au fil de la campagne.
 - **Mise en joue (clic droit)** : lunette avec zoom optique, réticule et
   vignette circulaire, sensibilité et dispersion fortement réduites (tir
   de précision) au prix d'un déplacement ralenti.

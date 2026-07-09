@@ -373,7 +373,7 @@ class HUD:
             self._minimap_level = level
             base = pygame.Surface((level.width * scale, level.height * scale),
                                   pygame.SRCALPHA)
-            base.fill((10, 10, 14, 150))
+            base.fill((10, 10, 14, 235))   # opaque : le soleil ne transparaît pas
             for y in range(level.height):
                 for x in range(level.width):
                     if level.grid[y][x] != ".":
