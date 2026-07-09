@@ -20,7 +20,7 @@ import random
 
 import pygame
 
-from entities import ENEMY_TYPES, Pickup, Player, RemotePlayer
+from entities import ENEMY_TYPES, Pickup, Player, Prop, RemotePlayer
 from game import GUNSHOT_HEARING, SLOT_SCANCODES, new_stats
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
@@ -265,6 +265,8 @@ class CoopClientGame:
         self.player.select_weapon(2)
         self.pickups = [Pickup(x, y, kind, 1)
                         for x, y, kind in self.level.pickup_spawns]
+        self.props = [Prop(x, y, kind)
+                      for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
         self.raycaster = Raycaster(screen.get_size(), self.level)
@@ -295,7 +297,7 @@ class CoopClientGame:
         # Monde répliqué
         self.ghosts = {}           # net_id -> ennemi fantôme
         self.allies = {}           # pid -> RemotePlayer
-        self.wave_info = {"wave": 0, "final": 50, "remaining": 0,
+        self.wave_info = {"wave": 0, "final": 30, "remaining": 0,
                           "next_in": 0.0, "intermission": True}
         self.synced = False        # premier instantané reçu
         pygame.mouse.get_rel()
@@ -331,9 +333,14 @@ class CoopClientGame:
         elif event.type == pygame.MOUSEWHEEL and not self.paused:
             self.player.cycle_weapon(-1 if event.y > 0 else 1)
             self.sounds.play("click", volume_scale=0.4)
-        elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
-              and not self.paused and self.player.alive):
-            self._fire()
+        elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
+                and self.player.alive:
+            if event.button == 1:
+                self._fire()
+            elif event.button == 3:              # clic droit : mise en joue
+                self.player.aiming = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+            self.player.aiming = False
         return None
 
     # -- boucle -------------------------------------------------------------
@@ -402,9 +409,9 @@ class CoopClientGame:
         if weapon.spec.id in ("shotgun", "minigun"):
             self.shake = min(1.0, self.shake + 0.18)
         self.stats["shots"] += 1
+        spread = weapon.spec.spread * (1.0 - 0.75 * self.player.ads)
         for _ in range(weapon.spec.pellets):
-            angle = self.player.angle + random.uniform(-weapon.spec.spread,
-                                                       weapon.spec.spread)
+            angle = self.player.angle + random.uniform(-spread, spread)
             self.pending_fires.append([round(angle, 4), weapon.damage])
             # Poussière d'impact locale (l'hôte décide des vrais dégâts).
             wall_dist, _, _, _ = cast_ray(self.level, self.player.x,
@@ -576,7 +583,8 @@ class CoopClientGame:
 
     # -- rendu -------------------------------------------------------------
     def draw(self, screen):
-        sprites = list(self.ghosts.values()) + list(self.allies.values())
+        sprites = (list(self.ghosts.values()) + list(self.allies.values())
+                   + self.props)
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -586,6 +594,7 @@ class CoopClientGame:
         if self.shake > 0.0:
             pitch_px += int(random.uniform(-1, 1) * self.shake
                             * self.raycaster.height * 0.02)
+        self.raycaster.set_zoom(self.player.zoom)   # lunette de visée
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
         self.hud.draw(screen, self.player, list(self.ghosts.values()),

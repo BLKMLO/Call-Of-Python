@@ -236,14 +236,16 @@ def _ambient_loop(base_freq, seed, duration=12.0):
     return _pack(samples)
 
 
-# Tonique de la nappe par contexte : de plus en plus grave et sombre.
+# Tonique de la nappe par contexte : de plus en plus grave et sombre au
+# fil de la campagne, jusqu'à l'abîme lunaire du Déferlement.
 MUSIC_KEYS = {
-    "menu": (49.0, 1),      # G1
-    "level0": (55.0, 2),    # A1
-    "level1": (46.25, 3),   # F#1
-    "level2": (41.2, 4),    # E1
-    "level3": (36.7, 5),    # D1
-    "survival": (32.7, 6),  # C1 : l'abîme du Déferlement
+    "menu": (49.0, 1),       # G1
+    "level0": (55.0, 2),     # A1  — Entrepôt
+    "level1": (58.27, 7),    # A#1 — Métropole (rumeur urbaine)
+    "level2": (43.65, 8),    # F1  — Gouvernement (solennel)
+    "level3": (41.2, 4),     # E1  — Base militaire
+    "level4": (34.65, 9),    # C#1 — Laboratoire, l'assaut final
+    "survival": (32.7, 6),   # C1  — la Lune, le Déferlement
 }
 MUSIC_VOLUME = 0.35         # part du volume global réservée à la musique
 

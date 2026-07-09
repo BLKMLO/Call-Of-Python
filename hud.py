@@ -31,6 +31,8 @@ class HUD:
         self.damage_dirs = []  # [(angle_relatif, minuterie)] dégâts reçus
         self.announce_text = ""
         self.announce_timer = 0.0
+        self._scope_size = None      # cache de la vignette de lunette
+        self._scope_vignette = None
 
     def resize(self, size):
         self.width, self.height = size
@@ -94,7 +96,10 @@ class HUD:
     def draw(self, screen, player, enemies, level, pickups=(), fps=None,
              survival=None, stats=None):
         self._draw_weapon(screen, player)
-        self._draw_crosshair(screen)
+        if player.ads > 0.55:
+            self._draw_scope(screen, player)     # lunette de visée
+        else:
+            self._draw_crosshair(screen)
         self._draw_hit_marker(screen)
         self._draw_damage_dirs(screen)
         self._draw_status(screen, player, enemies, survival, stats)
@@ -123,8 +128,10 @@ class HUD:
 
         sway_x = math.sin(self.sway_time * 7) * self.width * 0.008
         sway_y = abs(math.cos(self.sway_time * 7)) * self.height * 0.008
-        # Abaissement interpolé : l'arme plonge et remonte en douceur.
+        # Abaissement interpolé : l'arme plonge au rechargement... et
+        # descend hors champ quand on met en joue (remplacée par la lunette).
         target_lower = self.height * 0.16 if player.weapon.reloading > 0.0 else 0.0
+        target_lower += player.ads * self.height * 0.5
         self.lower += (target_lower - self.lower) * 0.16
         x = self.width // 2 - target_w // 2 + int(self.width * 0.07 + sway_x)
         y = (self.height - int(target_h * 0.86)
@@ -168,6 +175,33 @@ class HUD:
             pygame.draw.line(screen, color,
                              (cx + dx * gap, cy + dy * gap),
                              (cx + dx * size, cy + dy * size), 2)
+
+    def _draw_scope(self, screen, player):
+        """Viseur de lunette : vignette noire circulaire, croix fine et
+        graduations — dessiné en visée (clic droit)."""
+        w, h = self.width, self.height
+        cx, cy = w // 2, h // 2
+        radius = int(h * 0.42)
+        # Vignette : coins noircis autour du cercle de visée.
+        if self._scope_size != (w, h):
+            self._scope_size = (w, h)
+            vig = pygame.Surface((w, h), pygame.SRCALPHA)
+            vig.fill((0, 0, 0, 255))
+            pygame.draw.circle(vig, (0, 0, 0, 0), (cx, cy), radius)
+            pygame.draw.circle(vig, (0, 0, 0, 130), (cx, cy), radius, h // 40)
+            self._scope_vignette = vig
+        screen.blit(self._scope_vignette, (0, 0))
+        pygame.draw.circle(screen, (12, 14, 12), (cx, cy), radius, 2)
+        # Réticule : croix fine avec rupture centrale + graduations.
+        col = (20, 24, 20)
+        pygame.draw.line(screen, col, (cx - radius, cy), (cx - 8, cy), 1)
+        pygame.draw.line(screen, col, (cx + 8, cy), (cx + radius, cy), 1)
+        pygame.draw.line(screen, col, (cx, cy - radius), (cx, cy - 8), 2)
+        pygame.draw.line(screen, col, (cx, cy + 8), (cx, cy + radius), 1)
+        for i in range(1, 6):                    # graduations verticales
+            gy = cy + i * radius // 6
+            pygame.draw.line(screen, col, (cx - 4, gy), (cx + 4, gy), 1)
+        pygame.draw.circle(screen, (200, 40, 40), (cx, cy), 1)
 
     def _draw_hit_marker(self, screen):
         """Croix diagonale brève quand une balle touche un ennemi."""
@@ -344,6 +378,9 @@ class HUD:
                 for x in range(level.width):
                     if level.grid[y][x] != ".":
                         pygame.draw.rect(base, (170, 170, 180, 200),
+                                         (x * scale, y * scale, scale, scale))
+                    elif (x, y) in level.prop_tiles:   # décors (voitures...)
+                        pygame.draw.rect(base, (105, 105, 115, 170),
                                          (x * scale, y * scale, scale, scale))
             self._minimap_base = base
         surf = self._minimap_base.copy()

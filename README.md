@@ -27,6 +27,7 @@ python main.py
 | Sprint              | `Maj gauche` |
 | Viser (horizontal + vertical) | Souris |
 | Tirer               | Clic gauche (maintien = rafale pour les armes automatiques) |
+| Mise en joue (lunette) | Clic droit (maintenu) — zoom, précision accrue, déplacement ralenti |
 | Changer d'arme      | `1`–`4` ou molette |
 | Recharger           | `R`          |
 | Compteur de FPS     | `F3`         |
@@ -37,28 +38,55 @@ la souris et les touches (WASD possible). Sauvegardé dans `settings.json`.
 
 ## Histoire
 
-Quatre niveaux pour atteindre le cœur du bastion... et son gardien, le
+Cinq niveaux pour remonter la piste de l'invasion — de l'**Entrepôt** aux
+rues d'une **Métropole** sous couvre-feu, du palais du **Gouvernement**
+tombé à la **Base militaire**, jusqu'au **Laboratoire** où attend le
 Colosse. Mais en l'abattant, vous comprenez trop tard : il n'était pas
-leur champion, il était **le Sceau** qui retenait la horde. Sa mort
-déclenche **le Déferlement** — un mode survie où les vagues déferlent
-par les sas de l'arène, jusqu'à la cinquantième.
+leur champion, il était **le Sceau** — et son portail lunaire est grand
+ouvert. **Le Déferlement** se joue sur la Lune : les vagues surgissent
+du portail, jusqu'à la trentième.
 
 ## Gameplay
 
-- **4 niveaux** à thèmes différents (Entrepôt, Base militaire,
-  Laboratoire, Assaut final), chacun avec sa carte, ses textures, son
-  ambiance et sa nappe musicale. Le niveau suivant se débloque quand
-  **tous les ennemis sont éliminés** ; le joueur y conserve son arsenal
-  et récupère de la vie. **S'il meurt, il repart de zéro** (niveau 1,
-  pistolet seul). Le meilleur niveau atteint est mémorisé.
-- **Le Déferlement (mode survie)** : débloqué en brisant le Sceau (et
-  ensuite accessible depuis le menu). Des vagues de plus en plus grosses
-  et dures, **jusqu'à la vague 50** ; un Colosse accompagne la horde
-  toutes les 10 vagues. Une vague nettoyée accorde un répit et un peu de
-  vie ; mais **si elle n'est pas nettoyée en 60 secondes, la suivante
-  déferle par-dessus** — la submersion guette. Trousses de soins toutes
-  les 3 vagues, armes au sol de plus en plus améliorées toutes les 5.
-  Le record de vagues est sauvegardé.
+- **5 niveaux** à thèmes différents, aux cartes vastes et variées —
+  **Entrepôt** (allées de rayonnages alignés, bureau, quai de
+  chargement), **Métropole** (gratte-ciel élancés aux fenêtres
+  allumées, voitures abandonnées, périmètre bouclé par des barrières
+  anti-émeute), **Gouvernement** (hémicycle circulaire de marbre et de
+  boiseries, avec le parloir et sa tribune au centre, cerné de rangées
+  de pupitres), **Base militaire**, et le **Laboratoire en assaut
+  final** (couloirs desservant des salles à thème — spécimens, chimie,
+  serveurs, médical — jusqu'à la chambre du Colosse). Chacun a sa carte,
+  ses textures, ses décors, son ambiance et sa nappe musicale, et grouille
+  d'ennemis (8 à 15 par niveau) avec armes et trousses de soins pour
+  tenir. Le niveau suivant se débloque quand **tous les ennemis sont
+  éliminés** ; le joueur y conserve son arsenal et récupère de la vie.
+  **S'il meurt, il repart de zéro**. Le meilleur niveau atteint est
+  mémorisé.
+- **Murs à hauteurs variables** : les gratte-ciel montent jusqu'au ciel
+  (×3,4), les rayonnages et immeubles de brique dominent le joueur, les
+  barrières anti-émeute restent basses — la texture est empilée
+  verticalement sur toute la hauteur du mur.
+- **Mise en joue (clic droit)** : lunette avec zoom optique, réticule et
+  vignette circulaire, sensibilité et dispersion fortement réduites (tir
+  de précision) au prix d'un déplacement ralenti.
+- **Décors** : voitures, pupitres, tribune, paillasses, rochers, portail,
+  crevasses — des billboards qui bloquent les déplacements (le
+  pathfinding des ennemis les contourne) mais pas les balles ni les
+  regards.
+- **Le Déferlement (mode survie), sur la Lune** : une plaine de régolithe
+  gris **entièrement plate**, striée de crevasses luisantes, sous un
+  **ciel noir étoilé qui défile avec la rotation**, avec un **portail
+  vert surnaturel** au centre d'où jaillit la horde. Pas de murs : les
+  **limites du monde sont un champ d'énergie invisible qui ne se
+  matérialise qu'à l'approche** (comme un mur transparent). Débloqué en
+  brisant le Sceau (puis accessible depuis le menu). Des vagues de plus en
+  plus grosses et dures, **jusqu'à la vague 30** ; un Colosse accompagne
+  la horde toutes les 10 vagues. Une vague nettoyée accorde un répit et un
+  peu de vie ; mais **si elle n'est pas nettoyée en 15 secondes, la
+  suivante déferle par-dessus** — la submersion guette. Trousses de soins
+  toutes les 3 vagues, armes améliorées toutes les 5. Le record de vagues
+  est sauvegardé.
 - **Portes coulissantes automatiques** sur les cartes : elles s'ouvrent
   à l'approche (du joueur comme des ennemis — l'IA les traverse), les
   balles et les regards passent par l'entrebâillement.
@@ -124,9 +152,9 @@ par les sas de l'arène, jusqu'à la cinquantième.
 | `survival.py`  | Le Déferlement : vagues, submersion à 60 s, apparitions par les sas, ravitaillement |
 | `network.py`   | Couche LAN : datagrammes UDP + JSON, sockets non bloquantes, sans thread |
 | `coop.py`      | Coop LAN : hôte autoritaire (`CoopHostGame`) et client répliqué (`CoopClientGame`) |
-| `level.py`     | Cartes ASCII + niveaux (thème, ennemis, armes, difficulté) + portes coulissantes |
-| `raycaster.py` | Rendu : murs texturés (DDA + z-buffer), portes, y-shearing, billboards, particules |
-| `entities.py`  | `Player` (arsenal, pitch), `Grunt`/`Soldier`/`Heavy`/`Boss`, `Pickup`, sprites directionnels |
+| `level.py`     | Cartes ASCII + niveaux (thème, ennemis, armes, décors, difficulté) + portes coulissantes |
+| `raycaster.py` | Rendu : murs texturés (DDA + z-buffer), portes, y-shearing, billboards, ciel étoilé, particules |
+| `entities.py`  | `Player` (arsenal, pitch), `Grunt`/`Soldier`/`Heavy`/`Boss`, `Pickup`, `Prop`, sprites directionnels |
 | `ai.py`        | Machine à états des ennemis (idle / chase / attack / cover) + pathfinding BFS |
 | `weapons.py`   | Specs des armes + niveaux d'amélioration (Mk. II...) |
 | `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss |
@@ -139,7 +167,9 @@ par les sas de l'arène, jusqu'à la cinquantième.
 - **Nouvelle arme** : un `WeaponSpec` dans `weapons.py` + ses sprites
   `fp_<id>` / `pickup_<id>` dans `assets.py`.
 - **Nouveau niveau** : une grille ASCII + une entrée dans `LEVELS`
-  (`level.py`) — thème, composition d'ennemis, armes au sol.
+  (`level.py`) — thème, composition d'ennemis, armes au sol, décors.
+- **Nouveau décor** : un sprite `prop_<id>` dans `assets.py`, une entrée
+  dans `PROP_SPECS` (`entities.py`) et un caractère dans `PROP_CHARS`.
 - **Nouveau type d'ennemi** : hériter d'`Enemy` (`entities.py`) et
   ajouter sa palette dans `assets.py` — l'IA est réutilisable telle quelle.
 - **Nouvelles textures** : éditer les PNG de `assets/` directement, ou

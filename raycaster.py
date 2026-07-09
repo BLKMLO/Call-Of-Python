@@ -19,6 +19,7 @@ avec la texture décalée d'autant.
 """
 
 import math
+import random
 
 import pygame
 
@@ -148,16 +149,30 @@ class Raycaster:
         """(Re)calcule tout ce qui dépend de la résolution."""
         self.width, self.height = size
         self.num_rays = self.width // COLUMN_WIDTH
-        self.delta_angle = FOV / self.num_rays
-        self.screen_dist = (self.width / 2) / math.tan(HALF_FOV)
         self.z_buffer = [MAX_DEPTH] * self.num_rays
         self.horizon = self.height // 2
-        # Correction fisheye : l'écart angulaire de chaque colonne est fixe.
-        self.ray_cos = [math.cos(-HALF_FOV + (i + 0.5) * self.delta_angle)
-                        for i in range(self.num_rays)]
         self._wall_cache = {}
         self._sprite_cache = {}
+        self._set_fov(FOV)
         self._build_background()
+
+    def _set_fov(self, fov):
+        """Recalcule la projection pour un champ de vision donné (le zoom de
+        visée réduit le FOV, ce qui grossit la scène)."""
+        self.fov = fov
+        self.half_fov = fov / 2
+        self.delta_angle = fov / self.num_rays
+        self.screen_dist = (self.width / 2) / math.tan(self.half_fov)
+        # Correction fisheye : l'écart angulaire de chaque colonne est fixe.
+        self.ray_cos = [math.cos(-self.half_fov + (i + 0.5) * self.delta_angle)
+                        for i in range(self.num_rays)]
+
+    def set_zoom(self, zoom):
+        """Applique un facteur de zoom (1.0 = normal, >1 = visée)."""
+        target = FOV / zoom
+        if abs(target - self.fov) > 1e-4:
+            self._set_fov(target)
+            self._wall_cache.clear()   # les hauteurs projetées ont changé
 
     def set_level(self, level):
         """Prépare les textures ombrées du thème de ce niveau.
@@ -168,23 +183,55 @@ class Raycaster:
         self.level_config = level.config
         self._build_background()
         self._wall_cache.clear()
-        # tex_cols[char][niveau_d_ombre][x] -> colonne de texture (1 px de large)
-        # La texture de porte est ajoutée automatiquement à chaque thème.
+        # Hauteurs des murs (multiplicateur d'unités monde ; 1.0 par défaut)
+        # et repérage du mur d'énergie (limite du monde, rendu fondu).
+        self.heights = self.level_config.get("heights", {})
         theme = {**self.level_config["theme"], "D": "wall_door"}
+        self.energy_tile = next((c for c, t in theme.items()
+                                 if t == "wall_energy"), None)
+
+        def shade_texture(texture, i):
+            """Assombrit + embrume une texture pour le niveau d'ombre `i`."""
+            factor = 1.0 - i / (SHADE_LEVELS + 1)
+            shaded = texture.copy()
+            mult = int(255 * factor)
+            shaded.fill((mult, mult, mult), special_flags=pygame.BLEND_MULT)
+            fog = tuple(int(c * (1.0 - factor)) for c in FOG_COLOR)
+            shaded.fill(fog, special_flags=pygame.BLEND_ADD)
+            return shaded
+
+        # tex_cols[char][niveau_d_ombre][x] -> colonne de texture (1 px de large)
+        # d'une unité monde de haut (TEX_SIZE px). La porte est ajoutée à tout thème.
         self.tex_cols = {}
+        # tall_cols : idem mais colonne pré-empilée sur toute la hauteur du
+        # mur (bâtiments, barrières, mur d'énergie), alignée au sol.
+        self.tall_cols = {}
+        self.tall_h = {}
         for char, tex_name in theme.items():
             texture = assets.get(tex_name)
             shades = []
             for i in range(SHADE_LEVELS):
-                factor = 1.0 - i / (SHADE_LEVELS + 1)
-                shaded = texture.copy()
-                mult = int(255 * factor)
-                shaded.fill((mult, mult, mult), special_flags=pygame.BLEND_MULT)
-                fog = tuple(int(c * (1.0 - factor)) for c in FOG_COLOR)
-                shaded.fill(fog, special_flags=pygame.BLEND_ADD)
+                shaded = shade_texture(texture, i)
                 shades.append([shaded.subsurface((x, 0, 1, TEX_SIZE))
                                for x in range(TEX_SIZE)])
             self.tex_cols[char] = shades
+
+            h_mult = self.heights.get(char, 1.0)
+            if h_mult == 1.0:
+                continue
+            th = int(TEX_SIZE * h_mult)
+            self.tall_h[char] = th
+            tall_shades = []
+            for i in range(SHADE_LEVELS):
+                shaded = shade_texture(texture, i)
+                stacked = pygame.Surface((TEX_SIZE, th)).convert()
+                y = th - TEX_SIZE          # empilé depuis le sol vers le haut
+                while y > -TEX_SIZE:
+                    stacked.blit(shaded, (0, y))
+                    y -= TEX_SIZE
+                tall_shades.append([stacked.subsurface((x, 0, 1, th))
+                                    for x in range(TEX_SIZE)])
+            self.tall_cols[char] = tall_shades
 
     def _build_background(self):
         """Pré-calcule le dégradé ciel/sol aux couleurs du niveau.
@@ -213,6 +260,20 @@ class Raycaster:
                                      for j in range(3))]
             pygame.draw.line(self.background, alpha_color,
                              (0, half - 7 + i), (self.width, half - 7 + i))
+        # Ciel étoilé (la Lune) : le fond défile alors avec la rotation.
+        self.sky_scroll = bool(self.level_config.get("stars"))
+        if self.sky_scroll:
+            rng = random.Random(42)
+            for _ in range(90 + self.width // 4):
+                sx = rng.randint(0, self.width - 1)
+                sy = rng.randint(0, int(half * 0.88))
+                color = rng.choice(((235, 235, 240), (200, 210, 255),
+                                    (255, 240, 214), (150, 155, 175)))
+                self.background.set_at((sx, sy), color)
+                if rng.random() < 0.12:            # quelques étoiles brillantes
+                    for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        if 0 <= sx + ox < self.width:
+                            self.background.set_at((sx + ox, sy + oy), color)
 
     # ------------------------------------------------------------------
     # Rendu
@@ -223,7 +284,17 @@ class Raycaster:
         # L'horizon monte quand on vise vers le bas, et inversement.
         self.horizon = self.height // 2 + pitch_px
         bg_center = self.bg_margin + self.height // 2
-        screen.blit(self.background, (0, self.horizon - bg_center))
+        bg_y = self.horizon - bg_center
+        if self.sky_scroll:
+            # Ciel étoilé : défile horizontalement avec la rotation (deux
+            # blits pour boucler sans couture ; x2 = un tour complet
+            # décale le fond de deux largeurs d'écran).
+            x_off = int(player.angle / (2 * math.pi)
+                        * self.width * 2) % self.width
+            screen.blit(self.background, (x_off - self.width, bg_y))
+            screen.blit(self.background, (x_off, bg_y))
+        else:
+            screen.blit(self.background, (0, bg_y))
         self._render_walls(screen, player, level)
         self._render_sprites(screen, player, sprites)
         self._render_particles(screen, player, particles)
@@ -234,6 +305,10 @@ class Raycaster:
         z_buffer = self.z_buffer
         ray_cos = self.ray_cos
         tex_cols = self.tex_cols
+        tall_cols = self.tall_cols
+        tall_h = self.tall_h
+        heights = self.heights
+        energy_tile = self.energy_tile
         wall_cache = self._wall_cache
         screen_dist = self.screen_dist
         horizon = self.horizon
@@ -241,62 +316,89 @@ class Raycaster:
         scale = pygame.transform.scale
         blit = screen.blit
         default_char = next(iter(tex_cols))
-        angle = pangle - HALF_FOV + 0.5 * self.delta_angle
+        angle = pangle - self.half_fov + 0.5 * self.delta_angle
 
         for ray in range(self.num_rays):
             depth, tile, vertical, offset = cast_ray(level, px, py, angle)
+            angle += self.delta_angle
             depth *= ray_cos[ray]     # correction fisheye pré-calculée
             if depth < 0.02:
                 depth = 0.02
             z_buffer[ray] = depth
 
-            # Hauteur quantifiée au pixel pair : divise l'espace de clés du
-            # cache par deux pour une différence visuelle imperceptible.
-            wall_height = int(screen_dist / depth) & ~1
+            # Unité projetée = hauteur d'un mur d'une case. Quantifiée au
+            # pixel pair : divise par deux l'espace de clés du cache.
+            unit = int(screen_dist / depth) & ~1
             shade = int(depth * 0.55) + (0 if vertical else 2)
             if shade >= SHADE_LEVELS:
                 shade = SHADE_LEVELS - 1
             tx = int(offset * TEX_SIZE)
             if tx >= TEX_SIZE:
                 tx = TEX_SIZE - 1
-            top = horizon - wall_height // 2
+            x = ray * COLUMN_WIDTH
+            h_mult = heights.get(tile, 1.0)
 
-            if top >= 0 and top + wall_height <= scr_h:
-                # Mur entièrement visible : cas ultra-fréquent, mémoïsé
-                # (les mêmes hauteurs reviennent frame après frame).
-                key = (tile, shade, tx, wall_height)
-                scaled = wall_cache.get(key)
-                if scaled is None:
-                    shades = tex_cols.get(tile) or tex_cols[default_char]
-                    scaled = scale(shades[shade][tx],
-                                   (COLUMN_WIDTH, wall_height))
-                    if len(wall_cache) >= CACHE_LIMIT:
-                        # Éviction douce des plus anciennes entrées (les
-                        # dicts gardent l'ordre d'insertion) : pas de purge
-                        # brutale qui ferait bégayer une caméra qui tourne.
-                        evict = iter(wall_cache)
-                        for old in [next(evict) for _ in range(2048)]:
-                            del wall_cache[old]
-                    wall_cache[key] = scaled
-                blit(scaled, (ray * COLUMN_WIDTH, top))
+            # Le mur d'énergie (limite du monde) ne se matérialise qu'à
+            # l'approche : invisible au loin, léger miroitement à distance
+            # moyenne, opaque seulement tout contre.
+            alpha = 255
+            if tile == energy_tile:
+                fade = (3.6 - depth) / 2.4
+                if fade <= 0.02:
+                    continue
+                alpha = int(min(1.0, fade) * 255)
+
+            if h_mult == 1.0:
+                column = (tex_cols.get(tile) or tex_cols[default_char])[shade][tx]
+                self._draw_column(screen, x, column, TEX_SIZE,
+                                  horizon - unit // 2, unit,
+                                  (tile, shade, tx, unit), alpha)
             else:
-                # Mur débordant de l'écran : on ne plie que la partie
-                # visible de la texture (surfaces bornées, pas de cache).
-                draw_top = 0 if top < 0 else top
-                draw_bottom = top + wall_height
-                if draw_bottom > scr_h:
-                    draw_bottom = scr_h
-                if draw_bottom > draw_top:
-                    tex_y0 = (draw_top - top) * TEX_SIZE / wall_height
-                    tex_y1 = (draw_bottom - top) * TEX_SIZE / wall_height
-                    tex_h = max(1, min(TEX_SIZE - int(tex_y0),
-                                       int(tex_y1 - tex_y0) + 1))
-                    shades = tex_cols.get(tile) or tex_cols[default_char]
-                    sub = shades[shade][tx].subsurface(
-                        (0, int(tex_y0), 1, tex_h))
-                    blit(scale(sub, (COLUMN_WIDTH, draw_bottom - draw_top)),
-                         (ray * COLUMN_WIDTH, draw_top))
-            angle += self.delta_angle
+                # Mur haut (gratte-ciel, barrière...) : base au sol, la
+                # colonne pré-empilée est étirée sur toute sa hauteur.
+                th = tall_h[tile]
+                total = int(unit * h_mult) & ~1
+                floor_y = horizon + unit // 2
+                column = tall_cols[tile][shade][tx]
+                self._draw_column(screen, x, column, th, floor_y - total,
+                                  total, (tile, shade, tx, total), alpha)
+
+    def _draw_column(self, screen, x, column, native_h, top, total_h,
+                     cache_key, alpha=255):
+        """Blit une colonne de mur (native `native_h` px) étirée à `total_h`
+        px, sommet en `top`. Mémoïse les colonnes entièrement visibles ;
+        clippe et redécoupe celles qui débordent de l'écran."""
+        scr_h = self.height
+        if total_h <= 0:
+            return
+        if top >= 0 and top + total_h <= scr_h:
+            scaled = self._wall_cache.get(cache_key)
+            if scaled is None:
+                scaled = pygame.transform.scale(column, (COLUMN_WIDTH, total_h))
+                if len(self._wall_cache) >= CACHE_LIMIT:
+                    evict = iter(self._wall_cache)
+                    for old in [next(evict) for _ in range(2048)]:
+                        del self._wall_cache[old]
+                self._wall_cache[cache_key] = scaled
+            if alpha < 255:
+                scaled = scaled.copy()
+                scaled.set_alpha(alpha)
+            screen.blit(scaled, (x, top))
+            return
+        # Débordement : on ne plie que la tranche de texture visible.
+        draw_top = 0 if top < 0 else top
+        draw_bottom = min(scr_h, top + total_h)
+        if draw_bottom <= draw_top:
+            return
+        ty0 = (draw_top - top) * native_h / total_h
+        th_ = max(1, min(native_h - int(ty0),
+                         int((draw_bottom - draw_top) * native_h / total_h) + 1))
+        sub = column.subsurface((0, int(ty0), 1, th_))
+        seg = pygame.transform.scale(sub, (COLUMN_WIDTH, draw_bottom - draw_top))
+        if alpha < 255:
+            seg = seg.copy()
+            seg.set_alpha(alpha)
+        screen.blit(seg, (x, draw_top))
 
     def _project(self, player, x, y):
         """Projection d'un point monde -> (distance projetée, delta d'angle).
@@ -307,7 +409,7 @@ class Raycaster:
         dist = math.hypot(dx, dy)
         delta = math.atan2(dy, dx) - player.angle
         delta = (delta + math.pi) % (2 * math.pi) - math.pi
-        if abs(delta) > HALF_FOV + 0.5 or dist < 0.25 or dist > MAX_DEPTH:
+        if abs(delta) > self.half_fov + 0.5 or dist < 0.25 or dist > MAX_DEPTH:
             return None
         return max(dist * math.cos(delta), 1e-4), delta
 
@@ -343,7 +445,7 @@ class Raycaster:
                 continue
             scaled = self._scaled_sprite(sprite, w, h)
 
-            screen_x = int((0.5 + delta / FOV) * self.width) - w // 2
+            screen_x = int((0.5 + delta / self.fov) * self.width) - w // 2
             # Les pieds reposent sur la ligne de sol (bas d'un mur de hauteur
             # 1 = horizon + proj/2) ; les objets flottants ont un décalage.
             lift = getattr(obj, "v_offset", 0.0)
@@ -377,7 +479,7 @@ class Raycaster:
             if projected is None:
                 continue
             proj_dist, delta = projected
-            ray = int((0.5 + delta / FOV) * self.num_rays)
+            ray = int((0.5 + delta / self.fov) * self.num_rays)
             if not (0 <= ray < self.num_rays) or self.z_buffer[ray] < proj_dist:
                 continue
             proj = self.screen_dist / proj_dist
@@ -386,7 +488,7 @@ class Raycaster:
             fade = p.life * 3.5
             size = int(p.size * proj * (fade if fade < 1.0 else 1.0))
             size = max(1, min(size, self.height // 12))
-            sx = int((0.5 + delta / FOV) * self.width) - size // 2
+            sx = int((0.5 + delta / self.fov) * self.width) - size // 2
             sy = self.horizon + int(proj * (0.5 - p.z)) - size // 2
             screen.fill(p.color, (sx, sy, size, size))
 

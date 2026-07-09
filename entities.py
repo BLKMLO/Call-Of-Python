@@ -42,15 +42,24 @@ class Player(Entity):
 
     SPEED = 3.2          # vitesse de déplacement (cases / s)
     SPRINT_MULT = 1.5    # multiplicateur de vitesse en sprint
+    ADS_MULT = 0.5       # ralentissement du déplacement en visée
+    ADS_ZOOM = 1.7       # grossissement de la lunette
     RADIUS = 0.25        # rayon de collision
     MAX_PITCH = 0.35     # amplitude de la visée verticale (fraction d'écran)
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
         self.pitch = 0.0        # visée verticale (fraction d'écran, +haut)
+        self.aiming = False     # visée maintenue (clic droit)
+        self.ads = 0.0          # transition de visée lissée (0 → 1)
         self.weapons = [Weapon(WEAPON_SPECS["pistol"])]  # arme de départ
         self.weapon_index = 0
         self.hurt_flash = 0.0   # minuterie du flash rouge quand on est touché
+
+    @property
+    def zoom(self):
+        """Facteur de zoom courant (interpolé), 1.0 hanche → ADS_ZOOM visée."""
+        return 1.0 + (self.ADS_ZOOM - 1.0) * self.ads
 
     # ------------------------------------------------------------------
     # Arsenal
@@ -94,10 +103,14 @@ class Player(Entity):
 
     # ------------------------------------------------------------------
     def rotate(self, mouse_dx, mouse_dy, mouse_factor):
-        """Tourne la vue avec la souris : horizontal = cap, vertical = tangage."""
-        self.angle = (self.angle + mouse_dx * mouse_factor) % (2 * math.pi)
+        """Tourne la vue avec la souris : horizontal = cap, vertical = tangage.
+
+        En visée, la sensibilité est réduite proportionnellement au zoom
+        (visée plus précise)."""
+        factor = mouse_factor / self.zoom
+        self.angle = (self.angle + mouse_dx * factor) % (2 * math.pi)
         self.pitch = max(-self.MAX_PITCH, min(
-            self.MAX_PITCH, self.pitch - mouse_dy * mouse_factor * 0.55))
+            self.MAX_PITCH, self.pitch - mouse_dy * factor * 0.55))
 
     def move(self, dt, keys_pressed, bindings, level):
         """Déplacement ZQSD/WASD relatif à la direction de vue, avec collisions.
@@ -120,7 +133,9 @@ class Player(Entity):
         # Normalise pour que la diagonale ne soit pas plus rapide.
         length = math.hypot(forward, strafe)
         speed = self.SPEED * dt / length
-        if keys_pressed[bindings["sprint"]]:
+        if self.aiming:
+            speed *= self.ADS_MULT           # on avance au ralenti en visée
+        elif keys_pressed[bindings["sprint"]]:
             speed *= self.SPRINT_MULT
         cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
         dx = (forward * cos_a - strafe * sin_a) * speed
@@ -136,6 +151,11 @@ class Player(Entity):
     def update(self, dt):
         self.weapon.update(dt)
         self.hurt_flash = max(0.0, self.hurt_flash - dt)
+        # Transition de visée lissée (montée/descente de lunette).
+        target = 1.0 if self.aiming else 0.0
+        self.ads += (target - self.ads) * min(1.0, dt * 12)
+        if abs(self.ads - target) < 0.02:
+            self.ads = target
 
 
 class Enemy(Entity):
@@ -325,6 +345,36 @@ class RemotePlayer(Enemy):
 
 ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
                "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss}
+
+
+# Décors : sprite, hauteur monde du billboard. Tous bloquent le passage
+# (leur case est infranchissable) mais laissent passer balles et regards.
+PROP_SPECS = {
+    "car":      {"sprite": "prop_car",      "height": 0.5},
+    "bench":    {"sprite": "prop_bench",    "height": 0.34},
+    "tribune":  {"sprite": "prop_tribune",  "height": 0.62},
+    "labtable": {"sprite": "prop_labtable", "height": 0.5},
+    "rock":     {"sprite": "prop_rock",     "height": 0.3},
+    "fissure":  {"sprite": "prop_fissure",  "height": 0.16},
+    "portal":   {"sprite": "prop_portal",   "height": 0.95},
+}
+
+
+class Prop:
+    """Décor statique rendu en billboard (voiture, pupitre, paillasse,
+    rocher lunaire...). Le sens est alterné selon la case pour varier."""
+
+    def __init__(self, x, y, kind):
+        self.x = x
+        self.y = y
+        self.kind = kind
+        spec = PROP_SPECS[kind]
+        self.sprite_name = spec["sprite"]
+        self.SPRITE_HEIGHT = spec["height"]
+        self.flipped = (int(x) + int(y)) % 2 == 1
+
+    def current_sprite(self, player=None):
+        return assets.get(self.sprite_name, self.flipped)
 
 
 class Pickup:

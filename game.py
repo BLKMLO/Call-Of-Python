@@ -12,7 +12,7 @@ import assets
 import pygame
 
 from ai import EnemyAI
-from entities import ENEMY_TYPES, Pickup, Player
+from entities import ENEMY_TYPES, Pickup, Player, Prop
 from hud import HUD
 from level import Level
 from particles import ParticleSystem
@@ -58,6 +58,8 @@ class Game:
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
         self.pickups = [Pickup(x, y, kind, level_index)
                         for x, y, kind in self.level.pickup_spawns]
+        self.props = [Prop(x, y, kind)
+                      for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
         self.raycaster = Raycaster(screen.get_size(), self.level)
@@ -97,10 +99,15 @@ class Game:
         elif event.type == pygame.MOUSEWHEEL and not self.paused:
             self.player.cycle_weapon(-1 if event.y > 0 else 1)
             self.sounds.play("click", volume_scale=0.4)
-        elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
-              and not self.paused and self.player.alive):
-            # Premier coup au clic : indispensable pour les armes semi-auto.
-            self._player_fire()
+        elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
+                and self.player.alive:
+            if event.button == 1:
+                # Premier coup au clic : indispensable pour le semi-auto.
+                self._player_fire()
+            elif event.button == 3:              # clic droit : mise en joue
+                self.player.aiming = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+            self.player.aiming = False
         return None
 
     # ------------------------------------------------------------------
@@ -346,10 +353,11 @@ class Game:
             self.shake = min(1.0, self.shake + 0.18)
 
         self.stats["shots"] += 1
+        # En visée, la dispersion est fortement réduite (tir précis).
+        spread = weapon.spec.spread * (1.0 - 0.75 * self.player.ads)
         results = []
         for _ in range(weapon.spec.pellets):
-            angle = self.player.angle + random.uniform(-weapon.spec.spread,
-                                                       weapon.spec.spread)
+            angle = self.player.angle + random.uniform(-spread, spread)
             results.append(self._hitscan(self.player.x, self.player.y, angle,
                                          weapon.damage,
                                          weapon.spec.hit_radius))
@@ -414,8 +422,8 @@ class Game:
     # Rendu
     # ------------------------------------------------------------------
     def draw(self, screen):
-        # Billboards : cadavres (dessous), ennemis, coéquipiers, objets.
-        sprites = list(self.enemies) + self._extra_sprites()
+        # Billboards : décors, cadavres, ennemis, coéquipiers, objets.
+        sprites = list(self.enemies) + self._extra_sprites() + self.props
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -427,6 +435,7 @@ class Game:
             pitch_px += int(random.uniform(-1, 1) * self.shake
                             * self.raycaster.height * 0.02)
 
+        self.raycaster.set_zoom(self.player.zoom)   # lunette de visée
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
         self.hud.draw(screen, self.player, self.enemies, self.level,

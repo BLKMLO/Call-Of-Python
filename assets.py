@@ -261,6 +261,152 @@ def _tex_door():
     return _upscale(s, 2)
 
 
+def _tex_tower():
+    """Gratte-ciel : grille de fenêtres vitrées, certaines allumées,
+    reflets diagonaux du ciel (métropole)."""
+    rng = random.Random(107)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (58, 60, 68), rng, 4)          # béton du cadre
+    for wy in range(4):
+        for wx in range(4):
+            x, y = wx * 8 + 1, wy * 8 + 1
+            if rng.random() < 0.2:                         # fenêtre allumée
+                _rect(s, x, y, 6, 6, (216, 188, 108), rng, 10)
+            else:
+                _rect(s, x, y, 6, 6, (38, 58, 88), rng, 6)
+                for k in range(3):                         # reflet diagonal
+                    rx, ry = x + 3 + k - 2, y + k
+                    if x <= rx < x + 6:
+                        s.set_at((rx, ry), (72, 104, 142))
+            _rect(s, x, y, 6, 1, (90, 112, 148))           # linteau clair
+    return _upscale(s, 2)
+
+
+def _tex_barrier():
+    """Barrière anti-émeute : bande de signalisation rouge/blanche,
+    grille métallique à barreaux (délimite la métropole)."""
+    rng = random.Random(108)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (20, 20, 26), rng, 3)           # vide derrière
+    _rect(s, 0, 0, 32, 3, (150, 155, 165), rng, 5)         # rail supérieur
+    for x in range(32):                                    # bande hachurée
+        color = (196, 52, 44) if (x // 4) % 2 == 0 else (222, 222, 224)
+        _rect(s, x, 4, 1, 5, color, rng, 6)
+    _rect(s, 0, 9, 32, 1, (110, 114, 124))
+    for x in range(1, 32, 4):                              # barreaux
+        _rect(s, x, 10, 2, 19, (128, 132, 142), rng, 5)
+        _rect(s, x, 10, 1, 19, (156, 160, 170))            # arête éclairée
+    _rect(s, 0, 29, 32, 3, (96, 100, 110), rng, 5)         # base lestée
+    return _upscale(s, 2)
+
+
+def _tex_marble():
+    """Marbre clair veiné avec moulures et pilastres (Gouvernement)."""
+    rng = random.Random(109)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (204, 196, 180), rng, 4)
+    for x in (7, 15, 23):                                  # pilastres
+        _rect(s, x, 3, 1, 26, (186, 178, 162))
+        _rect(s, x + 1, 3, 1, 26, (218, 210, 194))
+    for _ in range(5):                                     # veines
+        vx, vy = rng.randint(1, 30), rng.randint(4, 27)
+        for _ in range(rng.randint(4, 9)):
+            s.set_at((vx, vy), (172, 164, 150))
+            vx += rng.choice((-1, 0, 1))
+            vy += rng.choice((0, 1))
+            if not (0 <= vx < 32 and 0 <= vy < 32):
+                break
+    _rect(s, 0, 0, 32, 3, (224, 216, 200), rng, 4)         # moulure haute
+    _rect(s, 0, 3, 32, 1, (168, 160, 146))
+    _rect(s, 0, 29, 32, 3, (176, 168, 152), rng, 4)        # plinthe
+    return _upscale(s, 2)
+
+
+def _tex_govwood():
+    """Boiseries officielles : panneaux d'acajou à liserés dorés."""
+    rng = random.Random(110)
+    s = _tex_base()
+    for x in range(32):                                    # grain vertical
+        _rect(s, x, 0, 1, 32, _shift((94, 62, 40), rng.randint(-7, 7)), rng, 4)
+    for px in (0, 16):                                     # deux panneaux
+        _bevel(s, px, 0, 16, 32, (122, 86, 56), (58, 38, 24))
+        _rect(s, px + 3, 4, 10, 1, (188, 152, 70))         # liseré doré
+        _rect(s, px + 3, 27, 10, 1, (188, 152, 70))
+        _rect(s, px + 3, 4, 1, 24, (188, 152, 70))
+        _rect(s, px + 12, 4, 1, 24, (188, 152, 70))
+        s.set_at((px + 7, 15), (212, 176, 88))             # rosette
+        s.set_at((px + 8, 15), (212, 176, 88))
+        s.set_at((px + 7, 16), (166, 132, 60))
+        s.set_at((px + 8, 16), (166, 132, 60))
+    return _upscale(s, 2)
+
+
+def _tex_shelf():
+    """Rayonnage d'entrepôt : montants métalliques, étagères chargées de
+    cartons et de bacs (texture répétée sur toute la hauteur du rack)."""
+    rng = random.Random(112)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (34, 34, 40), rng, 3)           # fond sombre
+    _rect(s, 0, 0, 2, 32, (196, 120, 40))                  # montants orange
+    _rect(s, 30, 0, 2, 32, (196, 120, 40))
+    _rect(s, 15, 0, 2, 32, (176, 106, 36))
+    for shelf_y in (9, 20, 31):                            # traverses
+        _rect(s, 0, shelf_y, 32, 1, (150, 92, 32), rng, 6)
+    for shelf_y in (2, 12, 23):                            # cartons / bacs
+        x = 3
+        while x < 29:
+            w = rng.randint(3, 6)
+            if rng.random() < 0.75 and x + w < 30:
+                color = rng.choice(((150, 116, 74), (128, 96, 60),
+                                    (70, 96, 130), (96, 70, 54)))
+                h = rng.randint(4, 6)
+                _rect(s, x, shelf_y + (7 - h), w, h, color, rng, 7)
+                _rect(s, x, shelf_y + (7 - h), w, 1, _shift(color, 22))
+            x += w + 1
+    return _upscale(s, 2)
+
+
+def _tex_energy():
+    """Mur d'énergie : grille verte translucide sur fond nocturne — la
+    limite du monde lunaire, visible seulement de près (fondu au noir)."""
+    rng = random.Random(113)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (6, 12, 10), rng, 2)            # presque noir
+    for y in range(0, 32, 8):                              # trame lumineuse
+        _rect(s, 0, y, 32, 1, (44, 150, 96))
+    for x in range(0, 32, 8):
+        _rect(s, x, 0, 1, 32, (44, 150, 96))
+    for x in range(0, 32, 8):                              # nœuds brillants
+        for y in range(0, 32, 8):
+            s.set_at((x, y), (140, 255, 190))
+    for _ in range(14):                                    # scintillements
+        s.set_at((rng.randint(0, 31), rng.randint(0, 31)), (24, 80, 52))
+    return _upscale(s, 2)
+
+
+def _tex_moon():
+    """Régolithe lunaire : gris poussiéreux constellé de cratères."""
+    rng = random.Random(111)
+    s = _tex_base()
+    _rect(s, 0, 0, 32, 32, (106, 106, 112), rng, 7)
+    for cx_, cy_, r in ((7, 8, 4), (22, 20, 5), (26, 6, 3), (10, 25, 3)):
+        for dx in range(-r, r + 1):                        # cratères
+            for dy in range(-r, r + 1):
+                d2 = dx * dx + dy * dy
+                x, y = cx_ + dx, cy_ + dy
+                if not (0 <= x < 32 and 0 <= y < 32):
+                    continue
+                if d2 <= (r - 1) ** 2:
+                    s.set_at((x, y), _jit((76, 76, 84), rng, 5))   # fond
+                elif d2 <= r * r:
+                    rim = (142, 142, 148) if dy < 0 else (60, 60, 68)
+                    s.set_at((x, y), rim)                  # rebord éclairé
+    for _ in range(24):                                    # cailloux épars
+        s.set_at((rng.randint(0, 31), rng.randint(0, 31)),
+                 _jit((88, 88, 94), rng, 10))
+    return _upscale(s, 2)
+
+
 # ----------------------------------------------------------------------
 # Sprites d'ennemis (16x24, agrandis x4 -> 64x96) : style bonhomme
 # Minecraft, trois poses : repos, marche, tir.
@@ -597,6 +743,139 @@ def _pickup_lifepack():
 
 
 # ----------------------------------------------------------------------
+# Décors (billboards) : voiture, mobilier d'assemblée, paillasse, rocher
+# ----------------------------------------------------------------------
+def _prop_car():
+    """Berline vue de côté (48x20, x4) : abandonnée dans la métropole."""
+    rng = random.Random(120)
+    s = pygame.Surface((48, 20), pygame.SRCALPHA)
+    body = (66, 88, 118)
+    _rect(s, 12, 1, 22, 7, body, rng, 5)                   # cabine
+    _rect(s, 13, 2, 8, 5, (150, 190, 215))                 # vitres
+    _rect(s, 24, 2, 9, 5, (150, 190, 215))
+    _rect(s, 22, 2, 2, 5, body)                            # montant central
+    _rect(s, 2, 7, 44, 8, body, rng, 5)                    # caisse
+    _rect(s, 2, 7, 44, 1, (110, 134, 164))                 # arête éclairée
+    _rect(s, 2, 13, 44, 2, (40, 44, 52))                   # bas de caisse
+    s.set_at((45, 9), (255, 232, 140))                     # phare
+    s.set_at((2, 9), (216, 60, 50))                        # feu arrière
+    for wx in (9, 36):                                     # roues
+        pygame.draw.circle(s, (24, 24, 28), (wx, 15), 4)
+        pygame.draw.circle(s, (120, 124, 132), (wx, 15), 1)
+    return _upscale(s, 4)
+
+
+def _prop_bench():
+    """Rangée de pupitres d'assemblée : bois sombre, dossiers rouges."""
+    rng = random.Random(121)
+    s = pygame.Surface((40, 14), pygame.SRCALPHA)
+    for bx in (2, 15, 28):                                 # dossiers de sièges
+        _rect(s, bx, 0, 10, 5, (128, 44, 44), rng, 6)
+        _rect(s, bx, 0, 10, 1, (158, 66, 62))
+    _rect(s, 0, 4, 40, 2, (118, 84, 52), rng, 5)           # plateau
+    _rect(s, 0, 6, 40, 8, (88, 60, 38), rng, 5)            # façade
+    for vx in (13, 26):                                    # séparations
+        _rect(s, vx, 6, 1, 8, (62, 42, 26))
+    _rect(s, 5, 3, 4, 1, (232, 232, 228))                  # papiers posés
+    _rect(s, 30, 3, 4, 1, (232, 232, 228))
+    return _upscale(s, 4)
+
+
+def _prop_tribune():
+    """Tribune de l'orateur : pupitre massif, emblème doré, micros."""
+    rng = random.Random(122)
+    s = pygame.Surface((28, 26), pygame.SRCALPHA)
+    s.set_at((10, 0), (200, 204, 210))                     # micros
+    s.set_at((17, 0), (200, 204, 210))
+    _rect(s, 10, 1, 1, 4, (50, 50, 56))
+    _rect(s, 17, 1, 1, 4, (50, 50, 56))
+    _rect(s, 2, 5, 24, 3, (122, 88, 54), rng, 5)           # dessus du pupitre
+    _rect(s, 4, 8, 20, 18, (90, 62, 38), rng, 5)           # caisse
+    _bevel(s, 4, 8, 20, 18, (116, 82, 52), (56, 38, 24))
+    pygame.draw.circle(s, (196, 160, 76), (14, 16), 4)     # emblème
+    pygame.draw.circle(s, (90, 62, 38), (14, 16), 2)
+    return _upscale(s, 4)
+
+
+def _prop_labtable():
+    """Paillasse de laboratoire : microscope, portoir d'éprouvettes."""
+    rng = random.Random(123)
+    s = pygame.Surface((44, 22), pygame.SRCALPHA)
+    # microscope (à gauche)
+    _rect(s, 8, 2, 2, 3, (54, 58, 66))                     # oculaire incliné
+    _rect(s, 9, 4, 3, 4, (70, 76, 86))                     # bras
+    _rect(s, 10, 7, 2, 3, (54, 58, 66))                    # objectif
+    _rect(s, 6, 10, 9, 2, (70, 76, 86))                    # socle
+    # éprouvettes sur portoir (à droite)
+    for i, color in enumerate(((96, 220, 130), (90, 200, 230),
+                               (226, 90, 80), (230, 200, 90))):
+        tx = 24 + i * 4
+        _rect(s, tx, 5, 2, 7, color)                       # liquide
+        _rect(s, tx, 4, 2, 1, (210, 224, 230))             # verre
+    _rect(s, 22, 11, 18, 2, (96, 66, 44))                  # portoir bois
+    # fiole conique
+    _rect(s, 17, 8, 2, 2, (210, 224, 230))
+    _rect(s, 16, 10, 4, 2, (150, 110, 220))
+    # table métallique
+    _rect(s, 0, 12, 44, 3, (150, 154, 162), rng, 5)        # plateau
+    _rect(s, 0, 12, 44, 1, (188, 192, 200))
+    _rect(s, 3, 15, 3, 7, (96, 100, 110))                  # pieds
+    _rect(s, 38, 15, 3, 7, (96, 100, 110))
+    _rect(s, 5, 16, 34, 4, (120, 124, 132), rng, 5)        # caisson
+    return _upscale(s, 4)
+
+
+def _prop_rock():
+    """Rocher lunaire bosselé."""
+    rng = random.Random(124)
+    s = pygame.Surface((24, 14), pygame.SRCALPHA)
+    pygame.draw.ellipse(s, (112, 112, 118), (1, 3, 22, 11))
+    pygame.draw.ellipse(s, (128, 128, 134), (4, 1, 13, 8))   # bosse éclairée
+    pygame.draw.ellipse(s, (86, 86, 94), (5, 9, 16, 5))      # ombre basse
+    for _ in range(8):                                       # impacts
+        s.set_at((rng.randint(4, 20), rng.randint(4, 11)), (70, 70, 78))
+    return _upscale(s, 4)
+
+
+def _prop_fissure():
+    """Crevasse lunaire : lèvres de régolithe déchirées sur une lueur
+    verte surnaturelle qui monte des profondeurs."""
+    rng = random.Random(125)
+    s = pygame.Surface((30, 8), pygame.SRCALPHA)
+    # lèvres de la faille (crête sombre irrégulière)
+    for x in range(30):
+        h = 2 + (x * 7 + x * x) % 3
+        _rect(s, x, 7 - h, 1, h, (74, 74, 82))
+        s.set_at((x, 7 - h), (98, 98, 106))                # arête éclairée
+    # lueur verte au ras du sol
+    for x in range(2, 28):
+        if rng.random() < 0.75:
+            s.set_at((x, 6), (60, 210, 120))
+            if rng.random() < 0.4:
+                s.set_at((x, 5), (120, 255, 170))
+    return _upscale(s, 4)
+
+
+def _prop_portal():
+    """Portail du Déferlement : anneau vert surnaturel, cœur tourbillonnant."""
+    rng = random.Random(126)
+    s = pygame.Surface((26, 34), pygame.SRCALPHA)
+    pygame.draw.ellipse(s, (26, 90, 58), (1, 1, 24, 30))     # halo externe
+    pygame.draw.ellipse(s, (52, 200, 118), (3, 3, 20, 26))   # anneau
+    pygame.draw.ellipse(s, (10, 30, 22), (6, 6, 14, 20))     # gouffre
+    for _ in range(22):                                      # volutes internes
+        px, py = rng.randint(7, 18), rng.randint(7, 24)
+        s.set_at((px, py), rng.choice(((90, 255, 160), (40, 150, 96),
+                                       (150, 255, 200))))
+    pygame.draw.ellipse(s, (190, 255, 220), (11, 13, 4, 6))  # cœur
+    # éclats au pied du portail
+    for px in (4, 9, 16, 21):
+        s.set_at((px, 32), (60, 210, 120))
+        s.set_at((px, 33), (30, 110, 66))
+    return _upscale(s, 4)
+
+
+# ----------------------------------------------------------------------
 _BUILDERS = {
     "wall_brick": _tex_brick,
     "wall_crate": _tex_crate,
@@ -604,6 +883,20 @@ _BUILDERS = {
     "wall_metal": _tex_metal,
     "wall_tech": _tex_tech,
     "wall_door": _tex_door,
+    "wall_tower": _tex_tower,
+    "wall_barrier": _tex_barrier,
+    "wall_marble": _tex_marble,
+    "wall_govwood": _tex_govwood,
+    "wall_moon": _tex_moon,
+    "wall_shelf": _tex_shelf,
+    "wall_energy": _tex_energy,
+    "prop_car": _prop_car,
+    "prop_bench": _prop_bench,
+    "prop_tribune": _prop_tribune,
+    "prop_labtable": _prop_labtable,
+    "prop_rock": _prop_rock,
+    "prop_fissure": _prop_fissure,
+    "prop_portal": _prop_portal,
     "fp_pistol": _fp_pistol,
     "fp_shotgun": _fp_shotgun,
     "fp_rifle": _fp_rifle,
