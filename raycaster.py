@@ -32,7 +32,7 @@ MAX_DEPTH = 30                # portée maximale des rayons (en cases)
 COLUMN_WIDTH = 2              # largeur en pixels d'une colonne de rendu
 SHADE_LEVELS = 10             # nombre de variantes d'ombrage par texture
 FOG_COLOR = (14, 17, 26)      # brume bleutée ajoutée avec la distance
-CACHE_LIMIT = 1200            # entrées par génération de cache mural (petit = pas de pic à l'éviction)
+CACHE_LIMIT = 4000            # entrées du cache mural (éviction FIFO incrémentale)
 
 
 def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
@@ -168,7 +168,6 @@ class Raycaster:
         self.z_buffer = [MAX_DEPTH] * self.num_rays
         self.horizon = self.height // 2
         self._wall_cache = {}
-        self._wall_cache_old = {}
         self._sprite_cache = {}
         self._set_fov(FOV)
         self._build_background()
@@ -193,7 +192,6 @@ class Raycaster:
         self.level_config = level.config
         self._build_background()
         self._wall_cache.clear()
-        self._wall_cache_old = {}
         # Hauteurs des murs (multiplicateur d'unités monde ; 1.0 par défaut)
         # et repérage du mur d'énergie (limite du monde, rendu fondu).
         self.heights = self.level_config.get("heights", {})
@@ -424,19 +422,17 @@ class Raycaster:
         if total_h <= 0:
             return
         if top >= 0 and top + total_h <= scr_h:
-            # Cache générationnel : deux dicts. Quand le dict chaud est
-            # plein, il devient froid (et l'ancien froid est libéré d'un
-            # bloc) — pas de boucle de suppression coûteuse par frame.
+            # Cache borné à éviction incrémentale (FIFO) : quand il est
+            # plein, on retire UNE seule entrée (la plus ancienne) par
+            # insertion. Statique = 100 % de hits (aucun redimensionnement) ;
+            # en rotation, la libération d'une surface par colonne manquée
+            # est amortie (pas de pic d'éviction en bloc).
             hot = self._wall_cache
             scaled = hot.get(cache_key)
             if scaled is None:
-                scaled = self._wall_cache_old.get(cache_key)
-                if scaled is None:
-                    scaled = pygame.transform.scale(column,
-                                                    (COLUMN_WIDTH, total_h))
+                scaled = pygame.transform.scale(column, (COLUMN_WIDTH, total_h))
                 if len(hot) >= CACHE_LIMIT:
-                    self._wall_cache_old = hot
-                    self._wall_cache = hot = {}
+                    del hot[next(iter(hot))]
                 hot[cache_key] = scaled
             if alpha < 255:
                 scaled = scaled.copy()

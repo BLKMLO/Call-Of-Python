@@ -31,6 +31,7 @@ class HUD:
         self.damage_dirs = []  # [(angle_relatif, minuterie)] dégâts reçus
         self.announce_text = ""
         self.announce_timer = 0.0
+        self.time_acc = 0.0          # horloge continue (clignotements)
         self._scope_size = None      # cache de la vignette de lunette
         self._scope_vignette = None
 
@@ -44,7 +45,10 @@ class HUD:
         self._red_veil.fill((180, 20, 20))
         self._dark_veil = pygame.Surface(size)
         self._dark_veil.fill((10, 0, 0))
+        self._flash_veil = pygame.Surface(size)   # voile chaud du tir
+        self._flash_veil.fill((255, 226, 150))
         self._minimap_level = None
+        self._slot_cache = {}        # fonds d'emplacements d'armes mémoïsés
 
     # ------------------------------------------------------------------
     # Notifications venant du jeu
@@ -73,6 +77,7 @@ class HUD:
         self.announce_timer = 2.2
 
     def update(self, dt, moving):
+        self.time_acc += dt
         self.kick = max(0.0, self.kick - dt * 8)
         self.flash = max(0.0, self.flash - dt)
         self.spread = max(0.0, self.spread - dt * 18)
@@ -95,6 +100,11 @@ class HUD:
     # ------------------------------------------------------------------
     def draw(self, screen, player, enemies, level, pickups=(), fps=None,
              survival=None, stats=None):
+        if self.flash > 0.0 and player.ads < 0.5:
+            # Brève lueur chaude du coup de feu qui éclaire la scène
+            # (désactivée en visée à la lunette, où elle gênerait).
+            self._flash_veil.set_alpha(int(42 * (self.flash / 0.06)))
+            screen.blit(self._flash_veil, (0, 0))
         self._draw_weapon(screen, player)
         if player.ads > 0.55:
             self._draw_scope(screen, player)     # lunette de visée
@@ -251,11 +261,18 @@ class HUD:
         screen.blit(hp_text, (margin, y - hp_text.get_height() - 4))
 
         weapon = player.weapon
+        low = weapon.ammo <= max(1, weapon.spec.magazine_size // 4)
         if weapon.reloading > 0.0:
-            ammo_str = "RECHARGEMENT..."
+            ammo_str, ammo_col = "RECHARGEMENT...", (235, 200, 120)
+        elif weapon.ammo == 0:
+            # chargeur vide : invite au rechargement, clignotante.
+            blink = int(self.time_acc * 6) % 2 == 0
+            ammo_str = "RECHARGEZ [R]"
+            ammo_col = (235, 70, 60) if blink else (150, 40, 34)
         else:
             ammo_str = f"{weapon.ammo} / {weapon.spec.magazine_size}"
-        ammo_text = self.big_font.render(ammo_str, True, (235, 235, 235))
+            ammo_col = (235, 120, 90) if low else (235, 235, 235)
+        ammo_text = self.big_font.render(ammo_str, True, ammo_col)
         name_text = self.font.render(weapon.display_name, True, (220, 220, 160))
         ax = self.width - ammo_text.get_width() - margin
         ay = self.height - ammo_text.get_height() - margin
@@ -281,15 +298,22 @@ class HUD:
         total_w = len(WEAPON_ORDER) * (box + 6)
         x0 = self.width // 2 - total_w // 2
         y = self.height - box - 8
+        # Fonds semi-transparents mémoïsés (actif / inactif) : évite de
+        # recréer 4 surfaces SRCALPHA à chaque frame.
+        if box not in self._slot_cache:
+            variants = {}
+            for key, bg in (("on", (50, 50, 58, 210)), ("off", (22, 22, 26, 150))):
+                s = pygame.Surface((box, box), pygame.SRCALPHA)
+                s.fill(bg)
+                variants[key] = s
+            self._slot_cache[box] = variants
+        bgs = self._slot_cache[box]
         for slot in range(len(WEAPON_ORDER)):
             x = x0 + slot * (box + 6)
             rect = pygame.Rect(x, y, box, box)
             weapon = owned.get(slot)
             active = weapon is not None and weapon is player.weapon
-            bg = (50, 50, 58, 210) if active else (22, 22, 26, 150)
-            surf = pygame.Surface((box, box), pygame.SRCALPHA)
-            surf.fill(bg)
-            screen.blit(surf, rect)
+            screen.blit(bgs["on"] if active else bgs["off"], rect)
             border = (255, 210, 90) if active else (110, 110, 120)
             pygame.draw.rect(screen, border, rect, 2)
             num = self.font.render(str(slot + 1), True, border)

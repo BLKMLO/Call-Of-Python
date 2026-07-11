@@ -140,13 +140,16 @@ du portail, jusqu'à la trentième.
 - **Particules** : sang à l'impact (qui s'écrase au sol), gerbe à la
   mort, poussière teintée de la texture du mur touché, fondu de sortie.
 - **Performances** : colonnes de murs et sprites mis à l'échelle
-  mémoïsés, ombrage et brume pré-calculés, correction de perspective en
-  table, lancer de rayons optimisé, ligne de vue de l'IA cadencée —
-  100+ FPS en 1280x720 même en pleine horde.
+  mémoïsés (cache borné à éviction FIFO incrémentale — rapide en statique,
+  sans pic en rotation), ombrage et brume pré-calculés, correction de
+  perspective en table, lancer de rayons optimisé, zoom de visée en
+  post-traitement, ligne de vue de l'IA cadencée — 110+ FPS en 1280x720
+  sur tous les niveaux, sans pic de lag.
 - HUD complet : arme en vue subjective animée (balancement, recul,
-  éclair de bouche, abaissée au rechargement), munitions, emplacements
-  d'armes, minimap (ennemis, objets), voile rouge de dégâts, compteur
-  de FPS optionnel.
+  éclair de bouche + lueur chaude qui éclaire la scène, abaissée au
+  rechargement), compteur de munitions (rouge quand bas, invite
+  « RECHARGEZ [R] » clignotante à vide), emplacements d'armes, minimap
+  (ennemis, objets), voile rouge de dégâts, compteur de FPS optionnel.
 
 ## Architecture (pensée pour être étendue)
 
