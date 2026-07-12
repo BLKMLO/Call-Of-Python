@@ -44,7 +44,7 @@ class Settings:
         self.resolution_index = 3        # 1280x720 par défaut
         self.volume = 0.7                # volume global (0.0 → 1.0)
         self.sensitivity = 0.5           # sensibilité souris (0.1 → 1.0)
-        self.invert_mouse = False        # inverse l'axe horizontal de la souris
+        self.invert_mouse = False        # inverse les deux axes de la souris
         self.keys = dict(DEFAULT_KEYS)   # keycodes pygame par action
         self.best_level = 0              # meilleur niveau atteint (affiché au menu)
         self.survival_unlocked = False   # le Déferlement (après la mort du Sceau)

@@ -40,7 +40,8 @@ class MenuBase:
         return []
 
     def _layout(self, screen):
-        """Calcule le rect de chaque ligne pour la taille d'écran courante."""
+        """Calcule le rect (et le point de bascule gauche/droite) de chaque
+        ligne pour la taille d'écran courante."""
         w, h = screen.get_size()
         font = self._font(h)
         rows = []
@@ -50,8 +51,26 @@ class MenuBase:
         for i, (ident, label) in enumerate(items):
             surf = font.render(label, True, TEXT_COLOR)
             rect = surf.get_rect(center=(w // 2, start_y + i * line_h))
-            rows.append((ident, label, rect))
+            split_x = self._bracket_split(font, label, rect)
+            rows.append((ident, label, rect, split_x))
         return rows
+
+    @staticmethod
+    def _bracket_split(font, label, rect):
+        """Point de bascule gauche/droite d'un bouton "<  valeur  >".
+
+        Doit tomber entre les deux chevrons, pas au centre du texte entier :
+        le préfixe du libellé ("Sensibilité souris : ") et son suffixe
+        ("50 %  >") n'ont pas la même longueur, donc le milieu de la
+        surface rendue ne coïncide pas avec le milieu des chevrons — sans
+        quoi cliquer sur "<" pouvait à tort incrémenter la valeur."""
+        if "<" not in label or ">" not in label:
+            return rect.centerx
+        lt = label.index("<")
+        gt = label.index(">")
+        lt_x = rect.left + font.size(label[:lt])[0]
+        gt_x = rect.left + font.size(label[:gt + 1])[0]
+        return (lt_x + gt_x) // 2
 
     @staticmethod
     def _font(screen_h, small=False):
@@ -65,13 +84,13 @@ class MenuBase:
     # ------------------------------------------------------------------
     def handle_event(self, event, screen):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            for ident, _label, rect in self._layout(screen):
+            for ident, _label, rect, split_x in self._layout(screen):
                 if rect.collidepoint(event.pos):
                     self.sounds.play("click", volume_scale=0.5)
-                    return self.on_click(ident, event.pos, rect)
+                    return self.on_click(ident, event.pos, rect, split_x)
         return None
 
-    def on_click(self, ident, _pos, _rect):
+    def on_click(self, ident, _pos, _rect, _split_x=None):
         """Par défaut, l'identifiant de la ligne est l'action retournée."""
         return ident
 
@@ -83,7 +102,7 @@ class MenuBase:
 
         mouse = pygame.mouse.get_pos()
         font = self._font(h)
-        for ident, label, rect in self._layout(screen):
+        for ident, label, rect, _split_x in self._layout(screen):
             hovered = rect.collidepoint(mouse) and ident is not None
             color = HOVER_COLOR if hovered else TEXT_COLOR
             screen.blit(font.render(label, True, color), rect)
@@ -178,9 +197,10 @@ class SettingsMenu(MenuBase):
             return "back"
         return super().handle_event(event, screen)
 
-    def on_click(self, ident, pos, rect):
+    def on_click(self, ident, pos, rect, split_x=None):
         s = self.settings
-        direction = 1 if pos[0] >= rect.centerx else -1  # moitié droite = +
+        center = split_x if split_x is not None else rect.centerx
+        direction = 1 if pos[0] >= center else -1  # moitié droite = +
         if ident == "resolution":
             s.resolution_index = (s.resolution_index + direction) % len(RESOLUTIONS)
             s.save()
@@ -296,7 +316,7 @@ class MultiplayerMenu(MenuBase):
             return "back"
         return super().handle_event(event, screen)
 
-    def on_click(self, ident, _pos, _rect):
+    def on_click(self, ident, _pos, _rect, _split_x=None):
         if ident == "ip":
             self.editing = True
             self.error = ""

@@ -365,7 +365,7 @@ class CoopClientGame:
             self.stats["time"] += dt
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             if self.settings.invert_mouse:
-                mouse_dx = -mouse_dx     # option : axe horizontal inversé
+                mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
             player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
