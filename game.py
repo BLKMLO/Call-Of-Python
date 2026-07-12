@@ -50,6 +50,7 @@ class Game:
             self.player.weapon_index = carry_player.weapon_index
             self.player.health = min(self.player.max_health,
                                      carry_player.health + LEVEL_HEAL)
+        self.player.activate_shield()  # invulnérabilité le temps de s'orienter
 
         hp_mult = self.level.config["enemy_health_mult"]
         dmg_mult = self.level.config["enemy_damage_mult"]
