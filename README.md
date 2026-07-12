@@ -64,9 +64,16 @@ du portail, jusqu'à la trentième.
   **S'il meurt, il repart de zéro**. Le meilleur niveau atteint est
   mémorisé.
 - **Murs à hauteurs variables** : les gratte-ciel montent jusqu'au ciel
-  (×3,4), les rayonnages et immeubles de brique dominent le joueur, les
-  barrières anti-émeute restent basses — la texture est empilée
-  verticalement sur toute la hauteur du mur.
+  (×3,4, blocs pleins entre lesquels on circule), les rayonnages et la
+  rotonde du Gouvernement dominent le joueur, les barrières anti-émeute
+  restent basses — la texture est empilée verticalement sur toute la
+  hauteur du mur. Les portes ne sont placées que dans des murs de
+  hauteur normale (jamais de vide au-dessus).
+- **Soleil dynamique** : chaque niveau a son heure, de 8h (Entrepôt,
+  soleil bas et chaud) à midi (au plus haut) puis 19h (Laboratoire,
+  soleil rouge à l'horizon et ciel de crépuscule). Il occupe une
+  position fixe dans le monde (occulté par les bâtiments) et progresse
+  au fil de la campagne.
 - **Mise en joue (clic droit)** : lunette avec zoom optique, réticule et
   vignette circulaire, sensibilité et dispersion fortement réduites (tir
   de précision) au prix d'un déplacement ralenti.
@@ -133,13 +140,16 @@ du portail, jusqu'à la trentième.
 - **Particules** : sang à l'impact (qui s'écrase au sol), gerbe à la
   mort, poussière teintée de la texture du mur touché, fondu de sortie.
 - **Performances** : colonnes de murs et sprites mis à l'échelle
-  mémoïsés, ombrage et brume pré-calculés, correction de perspective en
-  table, lancer de rayons optimisé, ligne de vue de l'IA cadencée —
-  100+ FPS en 1280x720 même en pleine horde.
+  mémoïsés (cache borné à éviction FIFO incrémentale — rapide en statique,
+  sans pic en rotation), ombrage et brume pré-calculés, correction de
+  perspective en table, lancer de rayons optimisé, zoom de visée en
+  post-traitement, ligne de vue de l'IA cadencée — 110+ FPS en 1280x720
+  sur tous les niveaux, sans pic de lag.
 - HUD complet : arme en vue subjective animée (balancement, recul,
-  éclair de bouche, abaissée au rechargement), munitions, emplacements
-  d'armes, minimap (ennemis, objets), voile rouge de dégâts, compteur
-  de FPS optionnel.
+  éclair de bouche + lueur chaude qui éclaire la scène, abaissée au
+  rechargement), compteur de munitions (rouge quand bas, invite
+  « RECHARGEZ [R] » clignotante à vide), emplacements d'armes, minimap
+  (ennemis, objets), voile rouge de dégâts, compteur de FPS optionnel.
 
 ## Architecture (pensée pour être étendue)
 

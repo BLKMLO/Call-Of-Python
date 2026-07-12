@@ -16,7 +16,7 @@ from entities import ENEMY_TYPES, Pickup, Player, Prop
 from hud import HUD
 from level import Level
 from particles import ParticleSystem
-from raycaster import Raycaster, cast_ray
+from raycaster import Raycaster, cast_ray, zoom_screen
 
 MEDKIT_HEAL = 35
 PICKUP_RADIUS = 0.55         # distance de ramassage
@@ -435,9 +435,10 @@ class Game:
             pitch_px += int(random.uniform(-1, 1) * self.shake
                             * self.raycaster.height * 0.02)
 
-        self.raycaster.set_zoom(self.player.zoom)   # lunette de visée
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+        if self.player.ads > 0.01:
+            zoom_screen(screen, self.player.zoom)   # lunette de visée
         self.hud.draw(screen, self.player, self.enemies, self.level,
                       self.pickups, fps=self.fps if self.show_fps else None,
                       survival=self.survival_info(), stats=self.stats)

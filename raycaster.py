@@ -32,7 +32,7 @@ MAX_DEPTH = 30                # portée maximale des rayons (en cases)
 COLUMN_WIDTH = 2              # largeur en pixels d'une colonne de rendu
 SHADE_LEVELS = 10             # nombre de variantes d'ombrage par texture
 FOG_COLOR = (14, 17, 26)      # brume bleutée ajoutée avec la distance
-CACHE_LIMIT = 20000           # taille max des caches de mise à l'échelle
+CACHE_LIMIT = 4000            # entrées du cache mural (éviction FIFO incrémentale)
 
 
 def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
@@ -136,6 +136,22 @@ def has_line_of_sight(level, x0, y0, x1, y1):
     return depth > dist - 0.05
 
 
+def zoom_screen(screen, zoom):
+    """Zoom optique de visée en post-traitement : recadre le centre de
+    l'image déjà rendue et l'agrandit plein écran.
+
+    Bien plus rapide que re-rendre à un FOV réduit — qui invalidait tout
+    le cache des colonnes de murs à chaque frame de transition (gros pics
+    de lag). Pour un rendu pixel-art, l'agrandissement de l'image est
+    visuellement équivalent."""
+    if zoom <= 1.001:
+        return
+    w, h = screen.get_size()
+    cw, ch = int(w / zoom), int(h / zoom)
+    crop = screen.subsurface(((w - cw) // 2, (h - ch) // 2, cw, ch)).copy()
+    pygame.transform.scale(crop, (w, h), screen)
+
+
 class Raycaster:
     """Rendu du monde : ciel/sol thématisés, murs texturés, sprites, particules."""
 
@@ -166,13 +182,6 @@ class Raycaster:
         # Correction fisheye : l'écart angulaire de chaque colonne est fixe.
         self.ray_cos = [math.cos(-self.half_fov + (i + 0.5) * self.delta_angle)
                         for i in range(self.num_rays)]
-
-    def set_zoom(self, zoom):
-        """Applique un facteur de zoom (1.0 = normal, >1 = visée)."""
-        target = FOV / zoom
-        if abs(target - self.fov) > 1e-4:
-            self._set_fov(target)
-            self._wall_cache.clear()   # les hauteurs projetées ont changé
 
     def set_level(self, level):
         """Prépare les textures ombrées du thème de ce niveau.
@@ -232,6 +241,29 @@ class Raycaster:
                 tall_shades.append([stacked.subsurface((x, 0, 1, th))
                                     for x in range(TEX_SIZE)])
             self.tall_cols[char] = tall_shades
+
+        # Soleil du niveau (position fixe dans le monde, occulté par les murs).
+        self.sun = self.level_config.get("sun")
+        self._build_sun()
+
+    def _build_sun(self):
+        """Pré-dessine le disque solaire + son halo (blitté chaque frame à la
+        position écran calculée depuis l'azimut monde et la hauteur)."""
+        self.sun_surf = None
+        if not self.sun:
+            return
+        color = self.sun["color"]
+        r = max(16, int(self.height * 0.06))          # rayon du disque
+        glow = r * 4
+        surf = pygame.Surface((glow * 2, glow * 2), pygame.SRCALPHA)
+        c = glow
+        for i in range(glow, r, -1):                  # halo en dégradé
+            t = (i - r) / (glow - r)
+            a = int(60 * (1 - t) ** 2)
+            pygame.draw.circle(surf, (color[0], color[1], color[2], a), (c, c), i)
+        pygame.draw.circle(surf, (color[0], color[1], color[2], 255), (c, c), r)
+        pygame.draw.circle(surf, (255, 255, 245, 255), (c, c), int(r * 0.68))
+        self.sun_surf = surf
 
     def _build_background(self):
         """Pré-calcule le dégradé ciel/sol aux couleurs du niveau.
@@ -295,9 +327,25 @@ class Raycaster:
             screen.blit(self.background, (x_off, bg_y))
         else:
             screen.blit(self.background, (0, bg_y))
+        self._render_sun(screen, player)
         self._render_walls(screen, player, level)
         self._render_sprites(screen, player, sprites)
         self._render_particles(screen, player, particles)
+
+    def _render_sun(self, screen, player):
+        """Blit le soleil à sa position monde (avant les murs, qui l'occultent).
+
+        Il progresse d'un niveau à l'autre : bas et chaud à 8h (Entrepôt),
+        haut à midi, bas et rouge à 19h (Laboratoire)."""
+        if self.sun_surf is None:
+            return
+        delta = (self.sun["az"] - player.angle + math.pi) % (2 * math.pi) - math.pi
+        if abs(delta) > self.half_fov + 0.6:
+            return
+        sx = int((0.5 + delta / self.fov) * self.width)
+        sy = self.horizon - int(self.sun["el"] * self.height * 0.5)
+        surf = self.sun_surf
+        screen.blit(surf, (sx - surf.get_width() // 2, sy - surf.get_height() // 2))
 
     def _render_walls(self, screen, player, level):
         # Localise tout ce qui est utilisé dans la boucle chaude.
@@ -326,15 +374,17 @@ class Raycaster:
                 depth = 0.02
             z_buffer[ray] = depth
 
-            # Unité projetée = hauteur d'un mur d'une case. Quantifiée au
-            # pixel pair : divise par deux l'espace de clés du cache.
-            unit = int(screen_dist / depth) & ~1
+            # Unité projetée = hauteur d'un mur d'une case. Quantifiée à
+            # 4 px de haut et 2 colonnes de texture : réduit fortement le
+            # nombre de clés distinctes du cache (donc les redimensionnements
+            # et la pression mémoire) pour une différence imperceptible.
+            unit = int(screen_dist / depth) & ~3
             shade = int(depth * 0.55) + (0 if vertical else 2)
             if shade >= SHADE_LEVELS:
                 shade = SHADE_LEVELS - 1
-            tx = int(offset * TEX_SIZE)
+            tx = int(offset * TEX_SIZE) & ~1
             if tx >= TEX_SIZE:
-                tx = TEX_SIZE - 1
+                tx = TEX_SIZE - 2
             x = ray * COLUMN_WIDTH
             h_mult = heights.get(tile, 1.0)
 
@@ -357,7 +407,7 @@ class Raycaster:
                 # Mur haut (gratte-ciel, barrière...) : base au sol, la
                 # colonne pré-empilée est étirée sur toute sa hauteur.
                 th = tall_h[tile]
-                total = int(unit * h_mult) & ~1
+                total = int(unit * h_mult) & ~3
                 floor_y = horizon + unit // 2
                 column = tall_cols[tile][shade][tx]
                 self._draw_column(screen, x, column, th, floor_y - total,
@@ -372,14 +422,18 @@ class Raycaster:
         if total_h <= 0:
             return
         if top >= 0 and top + total_h <= scr_h:
-            scaled = self._wall_cache.get(cache_key)
+            # Cache borné à éviction incrémentale (FIFO) : quand il est
+            # plein, on retire UNE seule entrée (la plus ancienne) par
+            # insertion. Statique = 100 % de hits (aucun redimensionnement) ;
+            # en rotation, la libération d'une surface par colonne manquée
+            # est amortie (pas de pic d'éviction en bloc).
+            hot = self._wall_cache
+            scaled = hot.get(cache_key)
             if scaled is None:
                 scaled = pygame.transform.scale(column, (COLUMN_WIDTH, total_h))
-                if len(self._wall_cache) >= CACHE_LIMIT:
-                    evict = iter(self._wall_cache)
-                    for old in [next(evict) for _ in range(2048)]:
-                        del self._wall_cache[old]
-                self._wall_cache[cache_key] = scaled
+                if len(hot) >= CACHE_LIMIT:
+                    del hot[next(iter(hot))]
+                hot[cache_key] = scaled
             if alpha < 255:
                 scaled = scaled.copy()
                 scaled.set_alpha(alpha)
