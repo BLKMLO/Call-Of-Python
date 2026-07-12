@@ -97,8 +97,13 @@ class Game:
                 if self.player.select_weapon(SLOT_SCANCODES[event.scancode]):
                     self.sounds.play("click", volume_scale=0.4)
         elif event.type == pygame.MOUSEWHEEL and not self.paused:
-            self.player.cycle_weapon(-1 if event.y > 0 else 1)
-            self.sounds.play("click", volume_scale=0.4)
+            # `flipped` = défilement "naturel" (pavés tactiles) : SDL
+            # inverse alors le signe de y — on le rétablit pour que
+            # molette vers le haut = arme précédente sur tous les OS.
+            wheel_y = -event.y if getattr(event, "flipped", False) else event.y
+            if wheel_y:
+                self.player.cycle_weapon(-1 if wheel_y > 0 else 1)
+                self.sounds.play("click", volume_scale=0.4)
         elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
                 and self.player.alive:
             if event.button == 1:

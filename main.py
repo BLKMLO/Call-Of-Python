@@ -34,9 +34,19 @@ def create_window(settings):
 
 
 def set_mouse_captured(captured):
-    """Capture (jeu) ou libère (menus) la souris."""
+    """Capture (jeu) ou libère (menus) la souris.
+
+    Le mode relatif (pygame-ce), quand il existe, fournit des deltas bruts
+    même sous Wayland/X11 où le curseur peut buter sur le bord de la
+    fenêtre malgré le grab — les deltas gardent le même signe partout
+    (droite = positif), seule la fiabilité de la capture change."""
     pygame.event.set_grab(captured)
     pygame.mouse.set_visible(not captured)
+    if hasattr(pygame.mouse, "set_relative_mode"):
+        try:
+            pygame.mouse.set_relative_mode(captured)
+        except pygame.error:
+            pass  # pilote sans support : le grab classique suffit
 
 
 def main():
