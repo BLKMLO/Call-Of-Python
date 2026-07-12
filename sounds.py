@@ -22,6 +22,25 @@ SAMPLE_RATE = 22050
 HEARING_RANGE = 18.0     # distance au-delà de laquelle un son du monde est inaudible
 
 
+def stereo_gains(volume, pos, listener):
+    """Gains (gauche, droite) d'un son du monde en `pos` pour `listener`.
+
+    Atténuation avec la distance, panoramique selon la direction relative
+    au regard : une source à droite du joueur sonne plus fort à droite.
+    Retourne None si la source est trop loin pour être audible."""
+    dx, dy = pos[0] - listener.x, pos[1] - listener.y
+    dist = math.hypot(dx, dy)
+    attenuation = max(0.0, 1.0 - dist / HEARING_RANGE)
+    if attenuation <= 0.01:
+        return None
+    # pan dans [-1 (gauche), 1 (droite)] selon l'angle relatif au regard
+    rel = math.atan2(dy, dx) - listener.angle
+    pan = math.sin(rel)
+    left = volume * attenuation * min(1.0, 1.0 - pan * 0.8)
+    right = volume * attenuation * min(1.0, 1.0 + pan * 0.8)
+    return left, right
+
+
 def _pack(samples):
     """Liste de flottants [-1, 1] -> buffer stéréo 16 bits (canaux identiques)."""
     out = bytearray()
@@ -302,16 +321,10 @@ class SoundBank:
         volume = self.settings.volume * volume_scale
         left = right = volume
         if pos is not None and listener is not None:
-            dx, dy = pos[0] - listener.x, pos[1] - listener.y
-            dist = math.hypot(dx, dy)
-            attenuation = max(0.0, 1.0 - dist / HEARING_RANGE)
-            if attenuation <= 0.01:
+            gains = stereo_gains(volume, pos, listener)
+            if gains is None:
                 return
-            # pan dans [-1 (gauche), 1 (droite)] selon l'angle relatif au regard
-            rel = math.atan2(dy, dx) - listener.angle
-            pan = math.sin(rel)
-            left = volume * attenuation * min(1.0, 1.0 - pan * 0.8)
-            right = volume * attenuation * min(1.0, 1.0 + pan * 0.8)
+            left, right = gains
         channel = self.sounds[name].play()
         if channel is not None:
             channel.set_volume(max(0.0, left), max(0.0, right))

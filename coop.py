@@ -331,8 +331,12 @@ class CoopClientGame:
                 if self.player.select_weapon(SLOT_SCANCODES[event.scancode]):
                     self.sounds.play("click", volume_scale=0.4)
         elif event.type == pygame.MOUSEWHEEL and not self.paused:
-            self.player.cycle_weapon(-1 if event.y > 0 else 1)
-            self.sounds.play("click", volume_scale=0.4)
+            # Voir game.py : rétablit le sens de la molette en défilement
+            # "naturel" (event.flipped) et ignore les molettes horizontales.
+            wheel_y = -event.y if getattr(event, "flipped", False) else event.y
+            if wheel_y:
+                self.player.cycle_weapon(-1 if wheel_y > 0 else 1)
+                self.sounds.play("click", volume_scale=0.4)
         elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
                 and self.player.alive:
             if event.button == 1:

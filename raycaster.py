@@ -320,8 +320,10 @@ class Raycaster:
         if self.sky_scroll:
             # Ciel étoilé : défile horizontalement avec la rotation (deux
             # blits pour boucler sans couture ; x2 = un tour complet
-            # décale le fond de deux largeurs d'écran).
-            x_off = int(player.angle / (2 * math.pi)
+            # décale le fond de deux largeurs d'écran). Angle négué : en
+            # tournant à droite, les étoiles glissent vers la gauche,
+            # comme les murs et le soleil.
+            x_off = int(-player.angle / (2 * math.pi)
                         * self.width * 2) % self.width
             screen.blit(self.background, (x_off - self.width, bg_y))
             screen.blit(self.background, (x_off, bg_y))
