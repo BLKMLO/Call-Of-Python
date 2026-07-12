@@ -47,6 +47,15 @@ class HUD:
         self._dark_veil.fill((10, 0, 0))
         self._flash_veil = pygame.Surface(size)   # voile chaud du tir
         self._flash_veil.fill((255, 226, 150))
+        # Vignette du bouclier temporaire : bordure bleutée qui s'estompe
+        # vers le centre (construite une fois, modulée par set_alpha ensuite).
+        w, h = size
+        self._shield_veil = pygame.Surface(size, pygame.SRCALPHA)
+        border = max(24, h // 10)
+        for i in range(border):
+            alpha = int(140 * (1 - i / border))
+            pygame.draw.rect(self._shield_veil, (90, 175, 255, alpha),
+                             (i, i, w - 2 * i, h - 2 * i), 2)
         self._minimap_level = None
         self._slot_cache = {}        # fonds d'emplacements d'armes mémoïsés
 
@@ -112,6 +121,8 @@ class HUD:
             self._draw_crosshair(screen)
         self._draw_hit_marker(screen)
         self._draw_damage_dirs(screen)
+        if player.shield > 0.0:
+            self._draw_shield(screen, player)
         self._draw_status(screen, player, enemies, survival, stats)
         self._draw_slots(screen, player)
         self._draw_level_label(screen, level)
@@ -223,6 +234,21 @@ class HUD:
             pygame.draw.line(screen, color,
                              (cx + dx * 7, cy + dy * 7),
                              (cx + dx * 14, cy + dy * 14), 3)
+
+    def _draw_shield(self, screen, player):
+        """Bouclier temporaire à l'arrivée sur un niveau : vignette bleutée
+        pulsée, qui clignote dans la dernière seconde avant expiration."""
+        remaining = player.shield
+        pulse = 0.7 + 0.3 * math.sin(self.time_acc * 6.0)
+        if remaining < 1.0 and int(self.time_acc * 8) % 2 == 0:
+            pulse *= 0.25   # clignote pour prévenir de la fin imminente
+        self._shield_veil.set_alpha(int(255 * pulse))
+        screen.blit(self._shield_veil, (0, 0))
+        text = self.font.render(f"BOUCLIER  {remaining:.1f} s",
+                                True, (150, 210, 255))
+        margin = 14
+        screen.blit(text, (margin, self.height - 16 - margin
+                                    - text.get_height() * 2 - 6))
 
     def _draw_damage_dirs(self, screen):
         """Flèches rouges autour du centre indiquant d'où viennent les tirs.

@@ -263,6 +263,7 @@ class CoopClientGame:
         self.player.add_weapon("shotgun", 1)
         self.player.add_weapon("rifle", 1)
         self.player.select_weapon(2)
+        self.player.activate_shield()  # invulnérabilité le temps de s'orienter
         self.pickups = [Pickup(x, y, kind, 1)
                         for x, y, kind in self.level.pickup_spawns]
         self.props = [Prop(x, y, kind)

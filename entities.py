@@ -46,12 +46,14 @@ class Player(Entity):
     ADS_ZOOM = 1.7       # grossissement de la lunette
     RADIUS = 0.25        # rayon de collision
     MAX_PITCH = 0.35     # amplitude de la visée verticale (fraction d'écran)
+    SHIELD_DURATION = 3.0   # bouclier temporaire à l'arrivée sur un niveau (s)
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
         self.pitch = 0.0        # visée verticale (fraction d'écran, +haut)
         self.aiming = False     # visée maintenue (clic droit)
         self.ads = 0.0          # transition de visée lissée (0 → 1)
+        self.shield = 0.0       # secondes de bouclier (invulnérabilité) restantes
         self.weapons = [Weapon(WEAPON_SPECS["pistol"])]  # arme de départ
         self.weapon_index = 0
         self.hurt_flash = 0.0   # minuterie du flash rouge quand on est touché
@@ -60,6 +62,11 @@ class Player(Entity):
     def zoom(self):
         """Facteur de zoom courant (interpolé), 1.0 hanche → ADS_ZOOM visée."""
         return 1.0 + (self.ADS_ZOOM - 1.0) * self.ads
+
+    def activate_shield(self):
+        """Bouclier temporaire : le joueur est invulnérable à l'arrivée sur
+        un niveau (le temps de repérer les lieux avant le premier tir)."""
+        self.shield = self.SHIELD_DURATION
 
     # ------------------------------------------------------------------
     # Arsenal
@@ -135,7 +142,7 @@ class Player(Entity):
         speed = self.SPEED * dt / length
         if self.aiming:
             speed *= self.ADS_MULT           # on avance au ralenti en visée
-        elif keys_pressed[bindings["sprint"]]:
+        elif self._sprint_held(keys_pressed, bindings):
             speed *= self.SPRINT_MULT
         cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
         dx = (forward * cos_a - strafe * sin_a) * speed
@@ -144,13 +151,27 @@ class Player(Entity):
         self.x, self.y = level.move_with_collisions(self.x, self.y, dx, dy, self.RADIUS)
         return (self.x, self.y) != old
 
+    @staticmethod
+    def _sprint_held(keys_pressed, bindings):
+        """Touche sprint enfoncée. Par défaut (Maj gauche ou droite), les
+        deux touches Shift sprintent quel que soit le clavier (Windows et
+        Linux exposent les deux scancodes de la même façon) ; un re-mappage
+        vers une autre touche n'active que celle-ci."""
+        key = bindings["sprint"]
+        if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+            return keys_pressed[pygame.K_LSHIFT] or keys_pressed[pygame.K_RSHIFT]
+        return keys_pressed[key]
+
     def take_damage(self, amount):
+        if self.shield > 0.0:
+            return False              # bouclier actif : aucun dégât
         self.hurt_flash = 0.35
         return super().take_damage(amount)
 
     def update(self, dt):
         self.weapon.update(dt)
         self.hurt_flash = max(0.0, self.hurt_flash - dt)
+        self.shield = max(0.0, self.shield - dt)
         # Transition de visée lissée (montée/descente de lunette).
         target = 1.0 if self.aiming else 0.0
         self.ads += (target - self.ads) * min(1.0, dt * 12)

@@ -24,7 +24,7 @@ python main.py
 |---------------------|--------------|
 | Avancer / reculer   | `Z` / `S`    |
 | Gauche / droite     | `Q` / `D`    |
-| Sprint              | `Maj gauche` |
+| Sprint              | `Maj` (gauche ou droite) |
 | Viser (horizontal + vertical) | Souris |
 | Tirer               | Clic gauche (maintien = rafale pour les armes automatiques) |
 | Mise en joue (lunette) | Clic droit (maintenu) — zoom, précision accrue, déplacement ralenti |
@@ -62,7 +62,9 @@ du portail, jusqu'à la trentième.
   tenir. Le niveau suivant se débloque quand **tous les ennemis sont
   éliminés** ; le joueur y conserve son arsenal et récupère de la vie.
   **S'il meurt, il repart de zéro**. Le meilleur niveau atteint est
-  mémorisé.
+  mémorisé. À l'arrivée sur un niveau (ou sur le Déferlement), un
+  **bouclier temporaire** (quelques secondes, vignette bleutée) rend le
+  joueur invulnérable le temps de repérer les lieux.
 - **Murs à hauteurs variables** : les gratte-ciel montent jusqu'au ciel
   (×3,4, blocs pleins entre lesquels on circule), les rayonnages et la
   rotonde du Gouvernement dominent le joueur, les barrières anti-émeute
