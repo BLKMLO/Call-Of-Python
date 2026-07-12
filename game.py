@@ -132,7 +132,7 @@ class Game:
             # Visée à la souris (mouvement relatif, curseur capturé).
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             if self.settings.invert_mouse:
-                mouse_dx = -mouse_dx     # option : axe horizontal inversé
+                mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
             player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
 
             # Déplacements clavier (sprint compris).
