@@ -152,6 +152,7 @@ class SettingsMenu(MenuBase):
             ("resolution", f"Résolution :  <  {s.resolution[0]} x {s.resolution[1]}  >"),
             ("volume", f"Volume :  <  {int(s.volume * 100)} %  >"),
             ("sensitivity", f"Sensibilité souris :  <  {int(s.sensitivity * 100)} %  >"),
+            ("invert_mouse", f"Souris inversée :  <  {'Oui' if s.invert_mouse else 'Non'}  >"),
             (None, ""),  # séparateur
         ]
         for action in KEY_ACTIONS:
@@ -189,6 +190,9 @@ class SettingsMenu(MenuBase):
             s.save()
         elif ident == "sensitivity":
             s.sensitivity = round(min(1.0, max(0.1, s.sensitivity + 0.1 * direction)), 2)
+            s.save()
+        elif ident == "invert_mouse":
+            s.invert_mouse = not s.invert_mouse   # bascule (les deux moitiés)
             s.save()
         elif ident == "reset_keys":
             s.reset_keys()
