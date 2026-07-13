@@ -136,6 +136,28 @@ def has_line_of_sight(level, x0, y0, x1, y1):
     return depth > dist - 0.05
 
 
+def exposure_fraction(level, ex, ey, tx, ty, radius=0.25, samples=5):
+    """Fraction (0..1) de la largeur d'une cible visible depuis (ex, ey),
+    en échantillonnant des points le long de son diamètre perpendiculaire
+    à la ligne de tir.
+
+    Un joueur qui ne dépasse que partiellement d'une couverture (mur,
+    angle de bâtiment...) n'expose ainsi qu'une partie de sa silhouette —
+    utilisé pour réduire la précision des ennemis en conséquence."""
+    dx, dy = tx - ex, ty - ey
+    dist = math.hypot(dx, dy)
+    if dist < 1e-6:
+        return 1.0
+    perp_x, perp_y = -dy / dist, dx / dist
+    visible = 0
+    for i in range(samples):
+        t = (i / (samples - 1) - 0.5) * 2 if samples > 1 else 0.0
+        sx, sy = tx + perp_x * radius * t, ty + perp_y * radius * t
+        if has_line_of_sight(level, ex, ey, sx, sy):
+            visible += 1
+    return visible / samples
+
+
 def zoom_screen(screen, zoom):
     """Zoom optique de visée en post-traitement : recadre le centre de
     l'image déjà rendue et l'agrandit plein écran.

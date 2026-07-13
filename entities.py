@@ -200,6 +200,8 @@ class Enemy(Entity):
     ACCURACY = 0.75        # chance de toucher à bout portant
     ACCURACY_FALLOFF = 0.5 # perte de précision avec la distance
     TAKES_COVER = True     # cherche un abri quand il est blessé
+    USES_COVER = False     # tactique : alterne couverture et sorties pour tirer
+    FLANKS = False         # manoeuvre pour attaquer par le flanc/les arrières
     IS_BOSS = False
     MELEE = False          # fonce au contact au lieu de tirer (kamikaze)
     EXPLODES = False       # explose à la mort / au contact
@@ -293,8 +295,12 @@ class Grunt(Enemy):
 
 
 class Soldier(Enemy):
-    """Soldat entraîné : l'ennemi de référence."""
+    """Soldat entraîné : l'ennemi de référence — assez malin pour se mettre
+    à couvert entre deux tirs et pour manoeuvrer par le flanc quand il perd
+    le joueur de vue au lieu de foncer bêtement vers sa dernière position."""
     KIND = "soldier"
+    USES_COVER = True
+    FLANKS = True
 
 
 class Heavy(Enemy):
@@ -322,18 +328,21 @@ class Kamikaze(Enemy):
 
 
 class Sniper(Enemy):
-    """Tireur d'élite : mortel de loin, il recule si on s'approche."""
+    """Tireur d'élite : mortel de loin, il recule si on s'approche. Le plus
+    discipliné des ennemis : il se planque après chaque tir et ne ressort
+    qu'un instant pour retirer, ce qui le rend dur à repérer et à toucher."""
     KIND = "sniper"
     SPEED = 1.5
     MAX_HEALTH = 70
     DETECT_RANGE = 14.0
     ATTACK_RANGE = 12.0
     FIRE_DELAY = 2.3
-    DAMAGE = (18, 30)
+    DAMAGE = (17, 28)      # légèrement réduit (~5 %) pour l'équilibrage
     ACCURACY = 0.9         # redoutable même à longue portée...
     ACCURACY_FALLOFF = 0.25
     KEEP_DISTANCE = True
     MIN_RANGE = 5.0        # ... mais fébrile au corps à corps
+    USES_COVER = True
 
 
 class Boss(Enemy):
