@@ -6,10 +6,22 @@ par tous les types d'ennemis (y compris le boss) :
     idle   : patrouille localement ; passe en chasse s'il voit le joueur
              ou s'il est alerté (coup de feu, cri d'un allié).
     chase  : poursuit le joueur via un pathfinding BFS sur la grille
-             (contourne murs et piliers), ou en ligne directe à vue.
-    attack : à portée avec ligne de vue : strafe latéralement et tire.
+             (contourne murs et piliers), ou en ligne directe à vue. Un
+             ennemi FLANKS (le soldat) qui perd le joueur de vue tente de
+             le contourner pour l'attaquer par le flanc ou les arrières
+             plutôt que de foncer droit vers sa dernière position connue.
+    attack : à portée avec ligne de vue. Un ennemi USES_COVER (soldat,
+             sniper) alterne couverture (hors de vue) et brèves sorties
+             pour tirer ("peek") ; les autres se contentent de strafer.
     cover  : blessé, il se replie vers un point hors de vue du joueur
              (sauf les ennemis avec TAKES_COVER=False, comme le boss).
+
+L'intelligence est adaptée au type d'ennemi (les plus costauds/entraînés
+manoeuvrent, les miliciens et le kamikaze foncent tête baissée). Pour
+équilibrer ces tactiques, la précision d'un tir tient aussi compte de la
+part de la silhouette du joueur effectivement visible (`exposure_fraction`) :
+un joueur qui ne dépasse que partiellement d'une couverture est bien plus
+dur à toucher.
 
 L'IA retourne une liste d'événements ("enemy_shot", "player_hit",
 "spotted"...) que `game.py` transforme en sons, effets et alertes.
@@ -19,7 +31,7 @@ import math
 import random
 from collections import deque
 
-from raycaster import has_line_of_sight
+from raycaster import exposure_fraction, has_line_of_sight
 
 
 def find_path(level, sx, sy, tx, ty):
@@ -87,6 +99,14 @@ class EnemyAI:
         # Patrouille
         self.wander_target = None
         self.wander_timer = random.uniform(1.0, 4.0)
+        # Manoeuvre de flanc (FLANKS) : point visé pour attaquer de côté.
+        self.flank_point = None
+        self.flank_timer = 0.0
+        # Couverture tactique en combat (USES_COVER) : alterne planque et
+        # sortie brève pour tirer.
+        self.peek_phase = "exposed"
+        self.peek_timer = random.uniform(0.0, 0.6)   # déphasé entre ennemis
+        self.peek_point = None
 
     # ------------------------------------------------------------------
     def update(self, dt, player, level):
@@ -100,6 +120,7 @@ class EnemyAI:
         enemy.moving = False  # remis à True par les déplacements (pose "marche")
         enemy.update_timers(dt)
         self.path_timer += dt
+        self.flank_timer -= dt
         dist = enemy.distance_to(player)
 
         # Ligne de vue rafraîchie ~8 fois/s seulement : avec une horde
@@ -150,7 +171,12 @@ class EnemyAI:
                     enemy.last_seen = None
                     self.path = None
         elif state == "attack":
-            if not sees_player or dist > enemy.ATTACK_RANGE * 1.2:
+            # Un ennemi à couvert tolère de perdre le joueur de vue le
+            # temps de se planquer (sinon il ressortirait aussitôt de
+            # l'état "attack" dès qu'il n'est plus exposé) : même délai de
+            # grâce que pour abandonner une poursuite.
+            grace = self.LOSE_SIGHT_TIME if enemy.USES_COVER else 0.0
+            if self.lost_timer > grace or dist > enemy.ATTACK_RANGE * 1.2:
                 enemy.ai_state = "chase"
 
         # --- comportements -------------------------------------------------
@@ -159,15 +185,28 @@ class EnemyAI:
             self._wander(dt, level)
         elif state == "chase":
             target = (player.x, player.y) if sees_player else enemy.last_seen
+            if not sees_player and enemy.FLANKS and target is not None:
+                # Assez malin pour contourner plutôt que foncer droit sur
+                # la dernière position connue : cherche à revenir dans le
+                # dos ou sur le flanc du joueur.
+                if self.flank_point is None or self.flank_timer <= 0.0:
+                    self.flank_point = self._find_flank(player, level)
+                    self.flank_timer = 2.0
+                if self.flank_point is not None:
+                    target = self.flank_point
+            else:
+                self.flank_point = None
             if target is not None:
                 self._navigate_towards(dt, target, level)
         elif state == "attack":
             enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
             if enemy.KEEP_DISTANCE and dist < enemy.MIN_RANGE:
                 self._back_away(dt, player, level)   # le sniper se replie
+            elif enemy.USES_COVER:
+                events += self._peek_and_shoot(dt, player, level, dist)
             else:
                 self._strafe(dt, player, level)
-            events += self._try_shoot(player, dist)
+                events += self._try_shoot(player, level, dist)
 
         # Kamikaze : au contact, il se déclenche (game.py gère l'explosion).
         if (enemy.MELEE and enemy.EXPLODES and enemy.ai_state == "chase"
@@ -184,7 +223,7 @@ class EnemyAI:
                 enemy.ai_state = "chase"
             elif sees_player and dist < enemy.ATTACK_RANGE:
                 # On riposte quand même si le joueur nous suit à couvert.
-                events += self._try_shoot(player, dist)
+                events += self._try_shoot(player, level, dist)
 
         return events
 
@@ -307,7 +346,7 @@ class EnemyAI:
     # ------------------------------------------------------------------
     # Combat
     # ------------------------------------------------------------------
-    def _try_shoot(self, player, dist):
+    def _try_shoot(self, player, level, dist):
         """Tire sur le joueur si le temps de recharge est écoulé."""
         enemy = self.enemy
         if enemy.fire_cooldown > 0.0 or enemy.MELEE:
@@ -316,12 +355,93 @@ class EnemyAI:
         enemy.flash_timer = 0.12
         events = [("enemy_shot", enemy)]
         # Précision propre au type d'ennemi, décroissante avec la distance
-        # (le sniper reste précis de loin mais paie le corps à corps).
-        if random.random() < enemy.hit_chance(dist):
+        # (le sniper reste précis de loin mais paie le corps à corps), et
+        # réduite si le joueur n'est que partiellement exposé (à couvert) :
+        # dur à toucher quand seul un bout de sa silhouette dépasse.
+        exposure = exposure_fraction(level, enemy.x, enemy.y,
+                                     player.x, player.y, player.RADIUS)
+        chance = enemy.hit_chance(dist) * (0.35 + 0.65 * exposure)
+        if random.random() < chance:
             damage = enemy.roll_damage(random)  # tient compte du niveau
             player.take_damage(damage)
             events.append(("player_hit", (enemy, player)))
         return events
+
+    def _find_flank(self, player, level):
+        """Cherche un point d'où attaquer le joueur par le côté ou les
+        arrières plutôt que de front : on échantillonne un éventail de
+        directions centré dans son dos, on garde les points praticables
+        avec une ligne de tir sur lui, et on préfère le plus "dans le dos"."""
+        enemy = self.enemy
+        behind = player.angle + math.pi
+        best = None
+        best_score = -1.0
+        for i in range(9):
+            offset = (i - 4) * (math.pi / 9)   # éventail d'environ 180°
+            angle = behind + offset
+            for radius in (3.0, 5.0, 7.0):
+                cx = player.x + math.cos(angle) * radius
+                cy = player.y + math.sin(angle) * radius
+                if not level.can_stand(cx, cy, enemy.RADIUS):
+                    continue
+                if not has_line_of_sight(level, cx, cy, player.x, player.y):
+                    continue
+                # à quel point ce point tombe-t-il dans le dos du joueur ?
+                to_point = math.atan2(cy - player.y, cx - player.x)
+                rel = abs((to_point - player.angle + math.pi) % (2 * math.pi) - math.pi)
+                if rel > best_score:
+                    best_score = rel
+                    best = (cx, cy)
+                break   # ce cap est praticable : inutile d'essayer plus loin
+        return best
+
+    def _peek_and_shoot(self, dt, player, level, dist):
+        """Comportement des ennemis USES_COVER : alterne une phase cachée
+        (hors de vue, replié) et une brève phase exposée (sort tirer),
+        bien plus dur à toucher qu'un ennemi qui reste en terrain découvert."""
+        enemy = self.enemy
+        self.peek_timer -= dt
+        if self.peek_timer <= 0.0:
+            if self.peek_phase == "exposed":
+                self.peek_phase = "hidden"
+                self.peek_timer = random.uniform(1.0, 1.8)
+                self.peek_point = self._find_cover(player, level)
+            else:
+                self.peek_phase = "exposed"
+                self.peek_timer = random.uniform(1.0, 2.0)
+                self.peek_point = self._find_peek_spot(player, level)
+
+        if self.peek_point is not None:
+            reached = math.hypot(self.peek_point[0] - enemy.x,
+                                 self.peek_point[1] - enemy.y) < 0.3
+            if not reached:
+                self._navigate_towards(dt, self.peek_point, level, speed_mult=0.9)
+
+        if self.peek_phase != "exposed":
+            return []
+        enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
+        if not has_line_of_sight(level, enemy.x, enemy.y, player.x, player.y):
+            return []
+        return self._try_shoot(player, level, dist)
+
+    def _find_peek_spot(self, player, level):
+        """Depuis la planque actuelle, avance de quelques pas vers le
+        joueur jusqu'à retrouver une ligne de tir : une sortie minimale de
+        couverture plutôt qu'un retour en terrain totalement découvert."""
+        enemy = self.enemy
+        ox, oy = enemy.x, enemy.y
+        dx, dy = player.x - ox, player.y - oy
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6:
+            return (ox, oy)
+        ux, uy = dx / dist, dy / dist
+        for step in range(1, 9):
+            px, py = ox + ux * step * 0.35, oy + uy * step * 0.35
+            if not level.can_stand(px, py, enemy.RADIUS):
+                continue
+            if has_line_of_sight(level, px, py, player.x, player.y):
+                return (px, py)
+        return (ox, oy)
 
     def _find_cover(self, player, level):
         """Cherche un point proche, praticable et hors de vue du joueur.

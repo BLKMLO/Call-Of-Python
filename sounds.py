@@ -1,18 +1,24 @@
-"""Audio du jeu, synthétisé en pur Python (aucun fichier externe).
+"""Audio du jeu : essentiellement synthétisé en pur Python, avec quelques
+fichiers réels chargeables depuis `assets/sound/`.
 
 - Effets sonores : bruits/tonalités 16 bits générés avec `math`/`random`/
-  `struct`, chargés dans des `pygame.mixer.Sound`.
+  `struct`, chargés dans des `pygame.mixer.Sound`. Le rechargement utilise
+  un vrai fichier (`assets/sound/reload.*`) s'il est présent, sinon un
+  clic synthétisé de repli.
 - Son positionnel : le mixer est en stéréo ; les sons du monde (tirs
   ennemis, impacts) sont atténués avec la distance et panoramiqués
   gauche/droite selon leur direction par rapport au regard du joueur.
 - Musique : une nappe d'ambiance sombre est synthétisée par niveau
-  (accord bourdon + battements lents), bouclée sur un canal réservé.
+  (accord bourdon + battements lents), bouclée sur un canal réservé —
+  sauf si un fichier personnalisé existe dans `assets/sound/` (voir
+  `_custom_music_path`), auquel cas il est joué à la place.
 
 Si le mixer n'est pas disponible (pas de carte son), tout est silencieux
 mais le jeu fonctionne normalement.
 """
 
 import math
+import os
 import random
 import struct
 
@@ -20,6 +26,37 @@ import pygame
 
 SAMPLE_RATE = 22050
 HEARING_RANGE = 18.0     # distance au-delà de laquelle un son du monde est inaudible
+
+# Dossier des fichiers audio réels (effets et musiques personnalisées),
+# optionnel : tout est synthétisé par défaut si rien n'y est trouvé.
+SOUND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "assets", "sound")
+AUDIO_EXTENSIONS = ("ogg", "mp3", "wav", "flac")
+
+
+def _find_audio_file(stem):
+    """Cherche `assets/sound/<stem>.<ext>` (première extension trouvée)."""
+    for ext in AUDIO_EXTENSIONS:
+        path = os.path.join(SOUND_DIR, f"{stem}.{ext}")
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _custom_music_path(key):
+    """Fichier de musique personnalisé pour la nappe `key`, si présent.
+
+    Pour un niveau de campagne ("level0".."level4"), le nom de fichier
+    attendu est le numéro affiché au joueur (1..5, `assets/sound/1.*` pour
+    le niveau 1, etc.) — plus intuitif à déposer que l'index interne.
+    Pour les autres nappes ("menu", "survival"), le nom de fichier est la
+    clé elle-même. Absent : la nappe synthétisée sert de musique par défaut.
+    """
+    if key.startswith("level") and key[len("level"):].isdigit():
+        stem = str(int(key[len("level"):]) + 1)
+    else:
+        stem = key
+    return _find_audio_file(stem)
 
 
 def stereo_gains(volume, pos, listener):
@@ -295,7 +332,7 @@ class SoundBank:
             "player_hit": pygame.mixer.Sound(buffer=_tone(140, 0.18, slide=-60)),
             "enemy_hit": pygame.mixer.Sound(buffer=_tone(520, 0.08, slide=-120)),
             "enemy_die": pygame.mixer.Sound(buffer=_tone(300, 0.35, slide=-220)),
-            "reload": pygame.mixer.Sound(buffer=_reload_clack()),
+            "reload": self._load_reload_sound(),
             "click": pygame.mixer.Sound(buffer=_tone(900, 0.05)),
             "step": pygame.mixer.Sound(buffer=_footstep(1)),
             "step2": pygame.mixer.Sound(buffer=_footstep(2)),
@@ -308,6 +345,17 @@ class SoundBank:
             "wave": pygame.mixer.Sound(buffer=_horn()),
             "explosion": pygame.mixer.Sound(buffer=_explosion()),
         }
+
+    @staticmethod
+    def _load_reload_sound():
+        """`assets/sound/reload.*` si présent, sinon le clic synthétisé."""
+        path = _find_audio_file("reload")
+        if path is not None:
+            try:
+                return pygame.mixer.Sound(path)
+            except pygame.error:
+                pass  # fichier illisible : repli sur le son synthétisé
+        return pygame.mixer.Sound(buffer=_reload_clack())
 
     # ------------------------------------------------------------------
     # Effets
@@ -335,14 +383,24 @@ class SoundBank:
     def play_music(self, key):
         """Lance (ou continue) la nappe d'ambiance `key` ("menu", "level0"...).
 
-        La nappe est synthétisée à la première demande puis mise en cache.
+        Un fichier personnalisé dans `assets/sound/` (voir
+        `_custom_music_path`) est utilisé s'il existe ; sinon la nappe est
+        synthétisée à la première demande puis mise en cache.
         """
         if not self.enabled or key not in MUSIC_KEYS or key == self.music_key:
             return
         if key not in self.music_cache:
-            freq, seed = MUSIC_KEYS[key]
-            self.music_cache[key] = pygame.mixer.Sound(
-                buffer=_ambient_loop(freq, seed))
+            custom = _custom_music_path(key)
+            sound = None
+            if custom is not None:
+                try:
+                    sound = pygame.mixer.Sound(custom)
+                except pygame.error:
+                    sound = None  # fichier illisible : repli sur la synthèse
+            if sound is None:
+                freq, seed = MUSIC_KEYS[key]
+                sound = pygame.mixer.Sound(buffer=_ambient_loop(freq, seed))
+            self.music_cache[key] = sound
         self.music_channel.play(self.music_cache[key], loops=-1, fade_ms=600)
         self.music_key = key
         self.refresh_music_volume()

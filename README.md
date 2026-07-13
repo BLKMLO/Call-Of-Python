@@ -112,13 +112,20 @@ du portail, jusqu'à la trentième.
   **sniper** (mortel à longue portée, il recule si on l'approche) —
   **plus un boss** (le Colosse, 550 PV, barre de vie dédiée). IA :
   détection à vue, **pathfinding BFS** (ils contournent murs, piliers et
-  portes), **strafe latéral en combat**, **alerte des alliés** (un ennemi
-  qui vous repère crie, un coup de feu attire le secteur), patrouille au
-  repos, repli vers un point de couverture quand ils sont blessés. Leurs
-  vie et dégâts augmentent avec les niveaux. **Sprites directionnels**
-  (on les voit de face, de dos ou de profil selon leur orientation),
-  animations de marche/tir, barres de vie flottantes, **cadavres
-  persistants** au sol.
+  portes), **alerte des alliés** (un ennemi qui vous repère crie, un
+  coup de feu attire le secteur), patrouille au repos, repli vers un
+  point de couverture quand ils sont blessés. L'intelligence est adaptée
+  au type d'ennemi : le **soldat** manoeuvre par le flanc ou par les
+  arrières s'il perd le joueur de vue au lieu de foncer droit sur sa
+  dernière position, et lui comme le **sniper** alternent couverture et
+  brèves sorties pour tirer plutôt que de rester en terrain découvert ;
+  les autres (milicien, lourd, kamikaze, boss) foncent plus simplement.
+  En contrepartie, un joueur qui ne dépasse que partiellement d'une
+  couverture expose moins de sa silhouette et est bien plus dur à
+  toucher. Leurs vie et dégâts augmentent avec les niveaux. **Sprites
+  directionnels** (on les voit de face, de dos ou de profil selon leur
+  orientation), animations de marche/tir, barres de vie flottantes,
+  **cadavres persistants** au sol.
 - **Packs de vie cachés** : un par carte, hors minimap (dont une salle
   secrète derrière une porte dans la Base militaire). Bloc blanc à croix
   rouge dont les **étincelles vertes** trahissent la présence — soin
@@ -138,7 +145,13 @@ du portail, jusqu'à la trentième.
 - **Audio spatial** : sons du monde atténués avec la distance et
   panoramiqués gauche/droite (stéréo) selon la direction ; **musique
   d'ambiance procédurale** propre à chaque niveau — le tout synthétisé
-  en pur Python, sans aucun fichier audio.
+  en pur Python. Deux exceptions peuvent venir de vrais fichiers audio
+  dans `assets/sound/` (absent par défaut, entièrement optionnel) : le
+  son de rechargement (`reload.<ext>`) et la musique de chaque niveau
+  (`1.<ext>` pour le niveau 1, `2.<ext>` pour le niveau 2... `menu.<ext>`
+  et `survival.<ext>` pour le menu et le Déferlement) — extensions mp3,
+  ogg, wav ou flac. En l'absence de fichier, le son ou la nappe
+  synthétisé sert de musique par défaut.
 - **Particules** : sang à l'impact (qui s'écrase au sol), gerbe à la
   mort, poussière teintée de la texture du mur touché, fondu de sortie.
 - **Performances** : colonnes de murs et sprites mis à l'échelle
