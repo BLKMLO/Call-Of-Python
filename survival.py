@@ -7,12 +7,14 @@ par les sas de l'arène, vague après vague, jusqu'à la 50e.
 Règles :
 - une vague est "terminée" quand tous ses ennemis sont morts ; la
   suivante arrive après un court répit (et un petit bonus de soin) ;
-- MAIS si la vague n'est pas nettoyée en 60 secondes, la suivante
-  déferle quand même par-dessus : on peut être submergé ;
+- MAIS si la vague n'est pas nettoyée avant la submersion (30 secondes
+  pour la 1ère vague, puis 10 % de moins à chaque nouvelle vague), la
+  suivante déferle quand même par-dessus : on peut être submergé ;
 - les vagues grossissent et durcissent ; toutes les 10 vagues, un
   Colosse accompagne la horde ;
-- les trousses de soins réapparaissent toutes les 3 vagues, les armes
-  au sol toutes les 5 vagues (de plus en plus améliorées) ;
+- les trousses de soins réapparaissent toutes les 3 vagues, les packs de
+  vie complets toutes les 2 vagues, les armes au sol toutes les 5 vagues
+  (de plus en plus améliorées) ;
 - survivre à la vague 50 est la victoire ultime.
 """
 
@@ -22,14 +24,23 @@ import random
 from game import Game
 from level import SURVIVAL_LEVEL
 
-FINAL_WAVE = 30            # dernière vague
-WAVE_TIMEOUT = 15.0        # délai avant que la vague suivante déferle (s)
-INTERMISSION = 4.0         # répit entre deux vagues nettoyées (s)
-SPAWN_INTERVAL = 0.4       # étalement des apparitions dans une vague (s)
-MAX_ALIVE = 24             # ennemis simultanés (les autres attendent en file)
-MAX_CORPSES = 60           # cadavres conservés au sol (rendu)
-CLEAR_HEAL = 12            # PV rendus quand une vague est nettoyée à temps
-ALERT_PULSE = 2.5          # la horde re-flaire le joueur à cette fréquence (s)
+FINAL_WAVE = 30                # dernière vague
+WAVE_TIMEOUT_BASE = 30.0       # délai de submersion de la 1ère vague (s)
+WAVE_TIMEOUT_DECAY = 0.9       # -10 % de délai à chaque nouvelle vague
+WAVE_TIMEOUT_MIN = 3.0         # plancher : reste jouable en fin de partie
+INTERMISSION = 4.0             # répit entre deux vagues nettoyées (s)
+SPAWN_INTERVAL = 0.4           # étalement des apparitions dans une vague (s)
+MAX_ALIVE = 24                 # ennemis simultanés (les autres attendent en file)
+MAX_CORPSES = 60               # cadavres conservés au sol (rendu)
+CLEAR_HEAL = 12                # PV rendus quand une vague est nettoyée à temps
+ALERT_PULSE = 2.5              # la horde re-flaire le joueur à cette fréquence (s)
+
+
+def wave_timeout(wave):
+    """Délai de submersion de la vague `wave` (1-indexée) : 30 s pour la
+    1ère, réduit de 10 % à chaque vague suivante, avec un plancher."""
+    return max(WAVE_TIMEOUT_MIN,
+              WAVE_TIMEOUT_BASE * WAVE_TIMEOUT_DECAY ** max(0, wave - 1))
 
 
 def wave_composition(wave):
@@ -138,7 +149,7 @@ class SurvivalGame(Game):
                                          self.player.health + CLEAR_HEAL)
                 self.intermission = INTERMISSION
                 self.sounds.play("heal", volume_scale=0.7)
-        elif self.wave_timer >= WAVE_TIMEOUT and self.wave < FINAL_WAVE:
+        elif self.wave_timer >= wave_timeout(self.wave) and self.wave < FINAL_WAVE:
             # Submersion : la vague suivante déferle par-dessus.
             self._start_wave(self.wave + 1)
 
@@ -158,7 +169,7 @@ class SurvivalGame(Game):
                 if wave % 3 == 0:
                     pickup.taken = False
             elif pickup.kind == "lifepack":
-                if wave % 10 == 0:       # rare : un pack complet par Colosse
+                if wave % 2 == 0:
                     pickup.taken = False
             elif wave % 5 == 0:
                 pickup.taken = False
@@ -222,6 +233,6 @@ class SurvivalGame(Game):
             "final": FINAL_WAVE,
             "remaining": remaining,
             "next_in": (self.intermission if self.intermission > 0.0
-                        else max(0.0, WAVE_TIMEOUT - self.wave_timer)),
+                        else max(0.0, wave_timeout(self.wave) - self.wave_timer)),
             "intermission": self.intermission > 0.0,
         }

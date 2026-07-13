@@ -92,9 +92,12 @@ du portail, jusqu'à la trentième.
   brisant le Sceau (puis accessible depuis le menu). Des vagues de plus en
   plus grosses et dures, **jusqu'à la vague 30** ; un Colosse accompagne
   la horde toutes les 10 vagues. Une vague nettoyée accorde un répit et un
-  peu de vie ; mais **si elle n'est pas nettoyée en 15 secondes, la
-  suivante déferle par-dessus** — la submersion guette. Trousses de soins
-  toutes les 3 vagues, armes améliorées toutes les 5. Le record de vagues
+  peu de vie ; mais si elle n'est pas nettoyée à temps, **la suivante
+  déferle par-dessus** — la submersion guette, et de plus en plus vite :
+  le délai part de 30 secondes et se réduit de 10 % à chaque nouvelle
+  vague (avec un plancher de 3 secondes). Trousses de soins toutes les 3
+  vagues, **packs de vie toutes les 2 vagues**, armes améliorées toutes
+  les 5. Le record de vagues
   est sauvegardé.
 - **Portes coulissantes automatiques** sur les cartes : elles s'ouvrent
   à l'approche (du joueur comme des ennemis — l'IA les traverse), les
