@@ -33,6 +33,10 @@ COLUMN_WIDTH = 2              # largeur en pixels d'une colonne de rendu
 SHADE_LEVELS = 10             # nombre de variantes d'ombrage par texture
 FOG_COLOR = (14, 17, 26)      # brume bleutée ajoutée avec la distance
 CACHE_LIMIT = 4000            # entrées du cache mural (éviction FIFO incrémentale)
+MIN_SPRITE_DIST = 0.5          # distance de projection plancher des billboards
+                               # (évite qu'un décor/ennemi grossisse à l'infini
+                               # de très près) ; ne change pas l'occlusion,
+                               # seulement la taille affichée.
 
 
 def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
@@ -514,7 +518,11 @@ class Raycaster:
         visibles.sort(key=lambda item: -item[0])
 
         for proj_dist, delta, obj in visibles:
-            proj = self.screen_dist / proj_dist
+            # La taille affichée est plafonnée à une distance plancher (pas
+            # l'occlusion/le tri, qui utilisent la vraie distance) : sans
+            # ça, un décor ou un ennemi grossit de façon absurde quand on
+            # s'en approche de très près.
+            proj = self.screen_dist / max(proj_dist, MIN_SPRITE_DIST)
             sprite = obj.current_sprite(player)  # pose selon l'angle de vue
             ratio = sprite.get_width() / sprite.get_height()
             h = int(proj * obj.SPRITE_HEIGHT) & ~1   # quantifié (cache)
