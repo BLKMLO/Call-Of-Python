@@ -130,6 +130,80 @@ def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
     return depth_h, tile_h, False, off_h
 
 
+def cast_ray_layers(level, ox, oy, angle, heights, screen_dist, horizon,
+                    ray_cos, max_depth=MAX_DEPTH):
+    """Comme `cast_ray`, mais renvoie TOUS les murs traversés du plus proche
+    au plus loin — tant qu'aucun n'occulte entièrement la suite au-dessus de
+    l'horizon (ou jusqu'à la sortie de la carte / la portée max).
+
+    Permet de voir le sommet des murs hauts (gratte-ciel) situés DERRIÈRE
+    des murs plus bas (salles, barrières) : un raycaster classique s'arrête
+    au premier mur et masque tout ce qui est derrière, même plus haut.
+
+    Les profondeurs renvoyées sont déjà corrigées du fisheye (`ray_cos`).
+    Liste de (profondeur, tile, vertical, offset), du plus proche au plus loin.
+    """
+    grid = level.grid
+    width, height = level.width, level.height
+    doors = level.doors
+    sin_a = math.sin(angle) or 1e-8
+    cos_a = math.cos(angle) or 1e-8
+    map_x, map_y = int(ox), int(oy)
+    step_x = 1 if cos_a > 0 else -1
+    step_y = 1 if sin_a > 0 else -1
+    # Distance au prochain croisement de ligne de grille (DDA unifié).
+    next_x = map_x + 1 if step_x > 0 else map_x
+    next_y = map_y + 1 if step_y > 0 else map_y
+    t_max_x = (next_x - ox) / cos_a
+    t_max_y = (next_y - oy) / sin_a
+    t_delta_x = step_x / cos_a
+    t_delta_y = step_y / sin_a
+
+    hits = []
+    # `highest_top` = sommet (y écran) le plus haut déjà couvert par les murs
+    # plus proches. Un mur plus lointain n'est visible (et n'est donc gardé)
+    # que s'il dépasse au-dessus : sinon il est entièrement masqué. Ce filtre
+    # ramène le coût près de celui d'un rayon simple dans les zones dégagées.
+    highest_top = float(horizon + 1)
+    for _ in range(max_depth * 3):
+        if t_max_x < t_max_y:
+            map_x += step_x
+            depth = t_max_x * ray_cos
+            t_max_x += t_delta_x
+            vertical = True
+        else:
+            map_y += step_y
+            depth = t_max_y * ray_cos
+            t_max_y += t_delta_y
+            vertical = False
+        if not (0 <= map_x < width and 0 <= map_y < height):
+            break                 # hors carte : plus rien de modélisé derrière
+        if depth > max_depth:
+            break
+        tile = grid[map_y][map_x]
+        if tile == ".":
+            continue
+        off = ((oy + depth / ray_cos * sin_a) if vertical
+               else (ox + depth / ray_cos * cos_a)) % 1.0
+        if tile == "D":
+            door = doors.get((map_x, map_y))
+            gap = door["open"] if door else 0.0
+            if off >= gap:
+                off -= gap        # frappe le panneau (texture décalée)
+            else:
+                continue          # passe par l'entrebâillement
+        if depth < 0.02:
+            depth = 0.02
+        unit = screen_dist / depth
+        top = horizon + unit * (0.5 - heights.get(tile, 1.0))
+        if top < highest_top:     # dépasse au-dessus de tout ce qui est devant
+            hits.append((depth, tile, vertical, off))
+            highest_top = top
+            if highest_top <= 0:
+                break             # occulte jusqu'au haut de l'écran : on arrête
+    return hits
+
+
 def has_line_of_sight(level, x0, y0, x1, y1):
     """Vrai si aucun mur ne bloque le segment entre deux points."""
     dist = math.hypot(x1 - x0, y1 - y0)
@@ -380,66 +454,70 @@ class Raycaster:
         px, py, pangle = player.x, player.y, player.angle
         z_buffer = self.z_buffer
         ray_cos = self.ray_cos
-        tex_cols = self.tex_cols
-        tall_cols = self.tall_cols
-        tall_h = self.tall_h
         heights = self.heights
-        energy_tile = self.energy_tile
-        wall_cache = self._wall_cache
         screen_dist = self.screen_dist
         horizon = self.horizon
-        scr_h = self.height
-        scale = pygame.transform.scale
-        blit = screen.blit
-        default_char = next(iter(tex_cols))
         angle = pangle - self.half_fov + 0.5 * self.delta_angle
 
         for ray in range(self.num_rays):
-            depth, tile, vertical, offset = cast_ray(level, px, py, angle)
-            angle += self.delta_angle
-            depth *= ray_cos[ray]     # correction fisheye pré-calculée
-            if depth < 0.02:
-                depth = 0.02
-            z_buffer[ray] = depth
-
-            # Unité projetée = hauteur d'un mur d'une case. Quantifiée à
-            # 4 px de haut et 2 colonnes de texture : réduit fortement le
-            # nombre de clés distinctes du cache (donc les redimensionnements
-            # et la pression mémoire) pour une différence imperceptible.
-            unit = int(screen_dist / depth) & ~3
-            shade = int(depth * 0.55) + (0 if vertical else 2)
-            if shade >= SHADE_LEVELS:
-                shade = SHADE_LEVELS - 1
-            tx = int(offset * TEX_SIZE) & ~1
-            if tx >= TEX_SIZE:
-                tx = TEX_SIZE - 2
             x = ray * COLUMN_WIDTH
-            h_mult = heights.get(tile, 1.0)
+            # Tous les murs traversés par le rayon (du plus proche au plus
+            # loin) : le sommet d'un mur haut derrière un mur bas reste ainsi
+            # visible.
+            layers = cast_ray_layers(level, px, py, angle, heights,
+                                     screen_dist, horizon, ray_cos[ray])
+            angle += self.delta_angle
+            if not layers:
+                z_buffer[ray] = MAX_DEPTH
+                continue
+            z_buffer[ray] = layers[0][0]   # mur le plus proche (occlusion sprites)
+            # Dessin du plus loin au plus proche : les murs proches recouvrent
+            # le bas des murs lointains, mais leur sommet dépasse encore.
+            for depth, tile, vertical, offset in reversed(layers):
+                self._draw_wall_column(screen, x, depth, tile, vertical, offset)
 
-            # Le mur d'énergie (limite du monde) ne se matérialise qu'à
-            # l'approche : invisible au loin, léger miroitement à distance
-            # moyenne, opaque seulement tout contre.
-            alpha = 255
-            if tile == energy_tile:
-                fade = (3.6 - depth) / 2.4
-                if fade <= 0.02:
-                    continue
-                alpha = int(min(1.0, fade) * 255)
+    def _draw_wall_column(self, screen, x, depth, tile, vertical, offset):
+        """Projette et dessine une colonne de mur à la profondeur `depth`
+        (déjà corrigée du fisheye)."""
+        screen_dist = self.screen_dist
+        horizon = self.horizon
+        # Unité projetée = hauteur d'un mur d'une case. Quantifiée à 4 px de
+        # haut et 2 colonnes de texture : réduit fortement le nombre de clés
+        # distinctes du cache pour une différence imperceptible.
+        unit = int(screen_dist / depth) & ~3
+        shade = int(depth * 0.55) + (0 if vertical else 2)
+        if shade >= SHADE_LEVELS:
+            shade = SHADE_LEVELS - 1
+        tx = int(offset * TEX_SIZE) & ~1
+        if tx >= TEX_SIZE:
+            tx = TEX_SIZE - 2
+        h_mult = self.heights.get(tile, 1.0)
 
-            if h_mult == 1.0:
-                column = (tex_cols.get(tile) or tex_cols[default_char])[shade][tx]
-                self._draw_column(screen, x, column, TEX_SIZE,
-                                  horizon - unit // 2, unit,
-                                  (tile, shade, tx, unit), alpha)
-            else:
-                # Mur haut (gratte-ciel, barrière...) : base au sol, la
-                # colonne pré-empilée est étirée sur toute sa hauteur.
-                th = tall_h[tile]
-                total = int(unit * h_mult) & ~3
-                floor_y = horizon + unit // 2
-                column = tall_cols[tile][shade][tx]
-                self._draw_column(screen, x, column, th, floor_y - total,
-                                  total, (tile, shade, tx, total), alpha)
+        # Le mur d'énergie (limite du monde) ne se matérialise qu'à
+        # l'approche : invisible au loin, opaque seulement tout contre.
+        alpha = 255
+        if tile == self.energy_tile:
+            fade = (3.6 - depth) / 2.4
+            if fade <= 0.02:
+                return
+            alpha = int(min(1.0, fade) * 255)
+
+        if h_mult == 1.0:
+            default_char = next(iter(self.tex_cols))
+            column = (self.tex_cols.get(tile)
+                      or self.tex_cols[default_char])[shade][tx]
+            self._draw_column(screen, x, column, TEX_SIZE,
+                              horizon - unit // 2, unit,
+                              (tile, shade, tx, unit), alpha)
+        else:
+            # Mur haut (gratte-ciel, barrière...) : base au sol, la colonne
+            # pré-empilée est étirée sur toute sa hauteur.
+            th = self.tall_h[tile]
+            total = int(unit * h_mult) & ~3
+            floor_y = horizon + unit // 2
+            column = self.tall_cols[tile][shade][tx]
+            self._draw_column(screen, x, column, th, floor_y - total,
+                              total, (tile, shade, tx, total), alpha)
 
     def _draw_column(self, screen, x, column, native_h, top, total_h,
                      cache_key, alpha=255):

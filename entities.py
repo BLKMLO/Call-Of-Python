@@ -351,7 +351,7 @@ class Boss(Enemy):
     KIND = "boss"
     SPEED = 1.15
     RADIUS = 0.38
-    MAX_HEALTH = 550
+    MAX_HEALTH = 1650      # un vrai colosse : bien plus coriace (x3)
     SPRITE_HEIGHT = 0.95
     DEAD_HEIGHT = 0.26
     DAMAGE = (12, 20)

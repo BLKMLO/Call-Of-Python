@@ -39,6 +39,7 @@ class HUD:
         self.width, self.height = size
         self.font = pygame.font.Font(None, max(22, self.height // 24))
         self.big_font = pygame.font.Font(None, max(36, self.height // 12))
+        self.death_font = pygame.font.Font(None, max(60, self.height // 6))
         # Voiles plein écran pré-remplis : blittés avec set_alpha (rapide)
         # au lieu de recréer une surface SRCALPHA à chaque frame.
         self._red_veil = pygame.Surface(size)
@@ -469,6 +470,49 @@ class HUD:
                             self.height // 2 - 60))
         screen.blit(hint, ((self.width - hint.get_width()) // 2,
                            self.height // 2 + 10))
+
+    def draw_death_screen(self, screen, t):
+        """Écran de mort cinématique façon Dark Souls : la scène (déjà
+        basculée au sol par la caméra de mort) s'assombrit progressivement,
+        puis « VOUS ÊTES MORT » apparaît en lettres rouges espacées.
+
+        `t` : temps écoulé depuis la mort (s)."""
+        # Assombrissement progressif de toute la scène.
+        darkness = min(0.78, t / 1.6 * 0.78)
+        self._dark_veil.set_alpha(int(255 * darkness))
+        screen.blit(self._dark_veil, (0, 0))
+
+        # « VOUS ÊTES MORT » : fondu lent après une courte pause.
+        if t <= 0.7:
+            return
+        alpha = min(1.0, (t - 0.7) / 1.3)
+        cy = self.height // 2
+        # Bandeau sombre horizontal derrière le texte (contraste, façon DS).
+        band_h = self.death_font.get_height() + self.height // 12
+        band = pygame.Surface((self.width, band_h), pygame.SRCALPHA)
+        band.fill((0, 0, 0, int(160 * alpha)))
+        screen.blit(band, (0, cy - band_h // 2))
+        # Filet clair en haut et en bas du bandeau.
+        line_a = int(120 * alpha)
+        line = pygame.Surface((self.width, 2), pygame.SRCALPHA)
+        line.fill((150, 30, 30, line_a))
+        screen.blit(line, (0, cy - band_h // 2))
+        screen.blit(line, (0, cy + band_h // 2 - 2))
+        # Texte espacé (letter-spacing) centré.
+        self._blit_spaced(screen, self.death_font, "VOUS ÊTES MORT",
+                          (150, 22, 26), cy, alpha,
+                          spacing=self.death_font.get_height() // 5)
+
+    def _blit_spaced(self, screen, font, text, color, cy, alpha, spacing):
+        """Rend `text` centré horizontalement avec un espacement ajouté
+        entre les lettres, appliqué avec un fondu (`alpha` 0..1)."""
+        glyphs = [font.render(ch, True, color) for ch in text]
+        total = sum(g.get_width() for g in glyphs) + spacing * (len(glyphs) - 1)
+        x = (self.width - total) // 2
+        for g in glyphs:
+            g.set_alpha(int(255 * alpha))
+            screen.blit(g, (x, cy - g.get_height() // 2))
+            x += g.get_width() + spacing
 
     def draw_pause(self, screen):
         """Voile + texte de pause par-dessus la scène figée."""
