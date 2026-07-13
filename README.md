@@ -70,7 +70,14 @@ du portail, jusqu'à la trentième.
   rotonde du Gouvernement dominent le joueur, les barrières anti-émeute
   restent basses — la texture est empilée verticalement sur toute la
   hauteur du mur. Les portes ne sont placées que dans des murs de
-  hauteur normale (jamais de vide au-dessus).
+  hauteur normale (jamais de vide au-dessus). Le rendu se fait **en
+  couches** : le sommet d'un mur haut reste visible **derrière** un mur
+  plus bas (un gratte-ciel dépasse d'une salle basse au premier plan),
+  avec élagage des murs entièrement masqués pour rester rapide.
+- **Caméra de mort** cinématique (façon Dark Souls) : à la mort, le
+  protagoniste s'effondre — la vue bascule et plonge vers le ciel, la
+  scène s'assombrit, puis « VOUS ÊTES MORT » apparaît en lettres rouges
+  espacées, avant l'écran de fin.
 - **Soleil dynamique** : chaque niveau a son heure, de 8h (Entrepôt,
   soleil bas et chaud) à midi (au plus haut) puis 19h (Laboratoire,
   soleil rouge à l'horizon et ciel de crépuscule). Il occupe une

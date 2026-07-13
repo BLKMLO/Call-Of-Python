@@ -24,6 +24,11 @@ LEVEL_HEAL = 40              # PV rendus en passant au niveau suivant
 GUNSHOT_HEARING = 9.0        # rayon dans lequel un tir alerte les ennemis
 SHOUT_HEARING = 5.0          # rayon du cri d'alerte d'un ennemi
 
+# Caméra de mort (façon Dark Souls) : le protagoniste s'effondre au sol,
+# la vue bascule et plonge, puis « VOUS ÊTES MORT » s'affiche.
+DEATH_FALL_TIME = 1.3        # durée de la chute/bascule de la caméra (s)
+DEATH_CAM_TIME = 4.0         # durée totale avant l'écran de fin (s)
+
 # Scancodes des touches 1..4 (indépendants de la disposition AZERTY/QWERTY).
 SLOT_SCANCODES = {30: 0, 31: 1, 32: 2, 33: 3}
 
@@ -68,6 +73,7 @@ class Game:
         self.paused = False
         self.outcome = None      # None (en cours), "dead" ou "victory"
         self.end_delay = 0.0     # petit délai avant l'écran de fin
+        self.death_time = 0.0    # chrono de la caméra de mort (outcome "dead")
         self.time = 0.0
         self.shake = 0.0         # amplitude du tremblement d'écran (0 → 1)
         self.show_fps = False    # bascule F3
@@ -120,7 +126,16 @@ class Game:
     # Simulation
     # ------------------------------------------------------------------
     def update(self, dt):
-        if self.paused or (self.outcome is not None and self.end_delay > 0.8):
+        if self.paused:
+            return
+        # Mort : on fige le gameplay mais on laisse tourner la caméra de
+        # mort (chute + fondu) et les particules (le sang retombe).
+        if self.outcome == "dead":
+            self.death_time += dt
+            self.shake = max(0.0, self.shake - dt * 3.5)
+            self.particles.update(dt)
+            return
+        if self.outcome is not None and self.end_delay > 0.8:
             return
         self.time += dt
         self.fps = self.fps * 0.95 + (1.0 / max(dt, 1e-4)) * 0.05
@@ -288,6 +303,8 @@ class Game:
     @property
     def finished(self):
         """Vrai quand l'écran de fin peut être affiché."""
+        if self.outcome == "dead":
+            return self.death_time > DEATH_CAM_TIME   # laisse jouer la mort
         return self.outcome is not None and self.end_delay > 0.8
 
     def _alert_allies(self, position, radius, exclude=None):
@@ -443,8 +460,24 @@ class Game:
             pitch_px += int(random.uniform(-1, 1) * self.shake
                             * self.raycaster.height * 0.02)
 
+        # Caméra de mort : la vue plonge vers le sol pendant l'effondrement.
+        dead = self.outcome == "dead"
+        fall = 0.0
+        if dead:
+            fall = min(1.0, self.death_time / DEATH_FALL_TIME)
+            eased = fall * fall * (3 - 2 * fall)         # smoothstep
+            # la vue bascule vers le ciel : le protagoniste tombe à la
+            # renverse (l'horizon descend fortement à l'écran).
+            pitch_px += int(eased * self.raycaster.height * 0.33)
+
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+
+        if dead:
+            self._death_cam_roll(screen, fall)
+            self.hud.draw_death_screen(screen, self.death_time)
+            return
+
         if self.player.ads > 0.01:
             zoom_screen(screen, self.player.zoom)   # lunette de visée
         self.hud.draw(screen, self.player, self.enemies, self.level,
@@ -452,6 +485,21 @@ class Game:
                       survival=self.survival_info(), stats=self.stats)
         if self.paused:
             self.hud.draw_pause(screen)
+
+    def _death_cam_roll(self, screen, fall):
+        """Bascule la vue rendue sur le côté (la tête du protagoniste tombe
+        au sol) : rotation progressive de l'image, agrandie pour couvrir
+        les coins."""
+        eased = fall * fall * (3 - 2 * fall)
+        angle = eased * 16.0              # inclinaison (degrés)
+        if angle < 0.2:
+            return
+        scale = 1.0 + 0.5 * eased         # zoom pour masquer les coins vides
+        frame = screen.copy()
+        rotated = pygame.transform.rotozoom(frame, angle, scale)
+        rect = rotated.get_rect(center=(screen.get_width() // 2,
+                                        screen.get_height() // 2))
+        screen.blit(rotated, rect)
 
     def survival_info(self):
         """Infos de vagues pour le HUD ; None hors mode survie."""
