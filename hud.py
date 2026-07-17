@@ -14,6 +14,11 @@ import pygame
 import assets
 from weapons import WEAPON_ORDER
 
+HUD_GREEN = (82, 220, 153)
+HUD_AMBER = (238, 166, 75)
+HUD_TEXT = (220, 231, 230)
+HUD_DIM = (115, 139, 143)
+
 
 class HUD:
     def __init__(self, size):
@@ -37,9 +42,18 @@ class HUD:
 
     def resize(self, size):
         self.width, self.height = size
-        self.font = pygame.font.Font(None, max(22, self.height // 24))
-        self.big_font = pygame.font.Font(None, max(36, self.height // 12))
-        self.death_font = pygame.font.Font(None, max(60, self.height // 6))
+        self.font = pygame.font.SysFont(
+            "consolas,dejavusansmono,couriernew",
+            max(18, self.height // 28), bold=True,
+        )
+        self.big_font = pygame.font.SysFont(
+            "consolas,dejavusansmono,couriernew",
+            max(32, self.height // 13), bold=True,
+        )
+        self.death_font = pygame.font.SysFont(
+            "impact,arialblack,dejavusanscondensed",
+            max(60, self.height // 6), bold=True,
+        )
         # Voiles plein écran pré-remplis : blittés avec set_alpha (rapide)
         # au lieu de recréer une surface SRCALPHA à chaque frame.
         self._red_veil = pygame.Surface(size)
@@ -59,6 +73,7 @@ class HUD:
                              (i, i, w - 2 * i, h - 2 * i), 2)
         self._minimap_level = None
         self._slot_cache = {}        # fonds d'emplacements d'armes mémoïsés
+        self._panel_cache = {}       # plaques translucides du HUD
 
     # ------------------------------------------------------------------
     # Notifications venant du jeu
@@ -136,6 +151,22 @@ class HUD:
         if fps is not None:
             self._draw_fps(screen, fps)
         self._draw_hurt_flash(screen, player)
+
+    def _panel(self, size, accent=HUD_GREEN):
+        """Plaque tactique translucide, construite une fois par variante."""
+        key = (size, accent)
+        if key not in self._panel_cache:
+            surf = pygame.Surface(size, pygame.SRCALPHA)
+            rect = surf.get_rect()
+            pygame.draw.rect(surf, (5, 11, 16, 210), rect, border_radius=4)
+            pygame.draw.rect(surf, (71, 92, 96, 205), rect, 1,
+                             border_radius=4)
+            pygame.draw.line(surf, (*accent, 230), (1, 1),
+                             (rect.width - 2, 1), 2)
+            pygame.draw.rect(surf, (*accent, 215),
+                             (0, 0, 3, rect.height), border_radius=2)
+            self._panel_cache[key] = surf
+        return self._panel_cache[key]
 
     def _draw_weapon(self, screen, player):
         """Sprite pixel-art de l'arme courante, vu à la première personne.
@@ -247,9 +278,7 @@ class HUD:
         screen.blit(self._shield_veil, (0, 0))
         text = self.font.render(f"BOUCLIER  {remaining:.1f} s",
                                 True, (150, 210, 255))
-        margin = 14
-        screen.blit(text, (margin, self.height - 16 - margin
-                                    - text.get_height() * 2 - 6))
+        screen.blit(text, (14, self.height - 92 - text.get_height() - 4))
 
     def _draw_damage_dirs(self, screen):
         """Flèches rouges autour du centre indiquant d'où viennent les tirs.
@@ -276,16 +305,38 @@ class HUD:
 
     def _draw_status(self, screen, player, enemies, survival=None, stats=None):
         """Barre de vie + arme/munitions + ennemis restants + éliminations."""
-        margin = 14
-        bar_w, bar_h = int(self.width * 0.22), 16
-        y = self.height - bar_h - margin
+        margin = 12
+        panel_h = 78
+        left_w = max(230, int(self.width * 0.23))
+        right_w = max(225, int(self.width * 0.21))
+        panel_y = self.height - panel_h - margin
+        left_rect = pygame.Rect(margin, panel_y, left_w, panel_h)
+        right_rect = pygame.Rect(self.width - margin - right_w, panel_y,
+                                 right_w, panel_h)
+        screen.blit(self._panel(left_rect.size), left_rect)
+        screen.blit(self._panel(right_rect.size, HUD_AMBER), right_rect)
+
         frac = max(0.0, player.health / player.max_health)
-        color = (70, 190, 80) if frac > 0.35 else (210, 60, 50)
-        pygame.draw.rect(screen, (25, 25, 28), (margin, y, bar_w, bar_h))
-        pygame.draw.rect(screen, color, (margin, y, int(bar_w * frac), bar_h))
-        pygame.draw.rect(screen, (200, 200, 200), (margin, y, bar_w, bar_h), 1)
-        hp_text = self.font.render(f"{player.health} PV", True, (235, 235, 235))
-        screen.blit(hp_text, (margin, y - hp_text.get_height() - 4))
+        health_color = HUD_GREEN if frac > 0.35 else (230, 75, 67)
+        label = self.font.render("INTÉGRITÉ", True, HUD_DIM)
+        hp_text = self.font.render(f"{player.health:03d} PV", True, HUD_TEXT)
+        screen.blit(label, (left_rect.x + 14, left_rect.y + 10))
+        screen.blit(hp_text, (left_rect.right - hp_text.get_width() - 12,
+                              left_rect.y + 10))
+        segments = 10
+        gap = 3
+        bar_x = left_rect.x + 14
+        bar_y = left_rect.bottom - 24
+        bar_w = left_rect.width - 28
+        seg_w = (bar_w - gap * (segments - 1)) // segments
+        filled = math.ceil(frac * segments)
+        for idx in range(segments):
+            rect = pygame.Rect(bar_x + idx * (seg_w + gap), bar_y,
+                               seg_w, 10)
+            pygame.draw.rect(screen,
+                             health_color if idx < filled else (28, 43, 47),
+                             rect)
+            pygame.draw.rect(screen, (78, 98, 101), rect, 1)
 
         weapon = player.weapon
         low = weapon.ammo <= max(1, weapon.spec.magazine_size // 4)
@@ -298,26 +349,31 @@ class HUD:
             ammo_col = (235, 70, 60) if blink else (150, 40, 34)
         else:
             ammo_str = f"{weapon.ammo} / {weapon.spec.magazine_size}"
-            ammo_col = (235, 120, 90) if low else (235, 235, 235)
+            ammo_col = (235, 100, 78) if low else HUD_TEXT
         ammo_text = self.big_font.render(ammo_str, True, ammo_col)
-        name_text = self.font.render(weapon.display_name, True, (220, 220, 160))
-        ax = self.width - ammo_text.get_width() - margin
-        ay = self.height - ammo_text.get_height() - margin
-        screen.blit(ammo_text, (ax, ay))
-        screen.blit(name_text, (self.width - name_text.get_width() - margin,
-                                ay - name_text.get_height() - 2))
+        name_text = self.font.render(weapon.display_name.upper(), True, HUD_AMBER)
+        screen.blit(name_text, (right_rect.x + 12, right_rect.y + 8))
+        screen.blit(ammo_text,
+                    (right_rect.right - ammo_text.get_width() - 12,
+                     right_rect.bottom - ammo_text.get_height() - 5))
 
         if survival is not None:
             remaining = survival["remaining"]   # inclut la file d'attente
         else:
             remaining = sum(1 for e in enemies if e.alive)
-        info = self.font.render(f"Ennemis restants : {remaining}", True, (220, 220, 160))
-        screen.blit(info, (self.width - info.get_width() - margin, margin))
+        info = self.font.render(f"CONTACTS  {remaining:02d}", True, HUD_AMBER)
+        kill_count = stats["kills"] if stats is not None else 0
+        kills = self.font.render(f"NEUTRALISÉS  {kill_count:02d}",
+                                 True, HUD_TEXT)
+        info_w = max(info.get_width(), kills.get_width()) + 26
+        info_h = info.get_height() + kills.get_height() + 17
+        info_rect = pygame.Rect(self.width - margin - info_w, margin,
+                                info_w, info_h)
+        screen.blit(self._panel(info_rect.size, HUD_AMBER), info_rect)
+        screen.blit(info, (info_rect.x + 12, info_rect.y + 8))
         if stats is not None:
-            kills = self.font.render(f"Éliminations : {stats['kills']}",
-                                     True, (200, 200, 200))
-            screen.blit(kills, (self.width - kills.get_width() - margin,
-                                margin + info.get_height() + 2))
+            screen.blit(kills, (info_rect.x + 12,
+                                info_rect.y + 8 + info.get_height()))
 
     def _draw_slots(self, screen, player, box=44):
         """Emplacements d'armes (touches 1..4), l'arme active surlignée."""
@@ -329,7 +385,8 @@ class HUD:
         # recréer 4 surfaces SRCALPHA à chaque frame.
         if box not in self._slot_cache:
             variants = {}
-            for key, bg in (("on", (50, 50, 58, 210)), ("off", (22, 22, 26, 150))):
+            for key, bg in (("on", (20, 54, 48, 230)),
+                            ("off", (7, 14, 19, 205))):
                 s = pygame.Surface((box, box), pygame.SRCALPHA)
                 s.fill(bg)
                 variants[key] = s
@@ -341,8 +398,12 @@ class HUD:
             weapon = owned.get(slot)
             active = weapon is not None and weapon is player.weapon
             screen.blit(bgs["on"] if active else bgs["off"], rect)
-            border = (255, 210, 90) if active else (110, 110, 120)
+            border = HUD_GREEN if active else (72, 91, 95)
             pygame.draw.rect(screen, border, rect, 2)
+            if active:
+                pygame.draw.line(screen, HUD_AMBER,
+                                 (rect.x + 3, rect.y + 3),
+                                 (rect.right - 4, rect.y + 3), 2)
             num = self.font.render(str(slot + 1), True, border)
             screen.blit(num, (x + 4, y + 2))
             if weapon is not None:
@@ -355,8 +416,11 @@ class HUD:
             text = level.name       # "Le Déferlement" (les vagues suivent)
         else:
             text = f"Niveau {level.index + 1} — {level.name}"
-        label = self.font.render(text, True, (235, 235, 235))
-        screen.blit(label, ((self.width - label.get_width()) // 2, 10))
+        label = self.font.render(text.upper(), True, HUD_TEXT)
+        plate = self._panel((label.get_width() + 28, label.get_height() + 12))
+        x = (self.width - plate.get_width()) // 2
+        screen.blit(plate, (x, 8))
+        screen.blit(label, (x + 14, 14))
 
     def _draw_survival(self, screen, info):
         """Sous le titre : vague courante, et compte à rebours (répit ou
@@ -374,7 +438,7 @@ class HUD:
             # le compte à rebours vire au rouge quand la submersion menace
             color = (230, 90, 70) if info["next_in"] < 15 else (220, 220, 160)
         label = self.font.render(text, True, color)
-        screen.blit(label, ((self.width - label.get_width()) // 2, 36))
+        screen.blit(label, ((self.width - label.get_width()) // 2, 50))
 
     def _draw_announce(self, screen):
         """Grande annonce centrale fugace ("VAGUE 12")."""
@@ -392,16 +456,23 @@ class HUD:
         if boss is None:
             return
         bar_w = int(self.width * 0.44)
-        bar_h = 14
+        bar_h = 12
         x = (self.width - bar_w) // 2
-        y = 40
+        y = 72
         frac = boss.health / boss.max_health
-        pygame.draw.rect(screen, (30, 12, 12), (x, y, bar_w, bar_h))
-        pygame.draw.rect(screen, (235, 120, 40), (x, y, int(bar_w * frac), bar_h))
-        pygame.draw.rect(screen, (240, 200, 160), (x, y, bar_w, bar_h), 1)
-        name = self.font.render("LE COLOSSE", True, (240, 200, 160))
-        screen.blit(name, ((self.width - name.get_width()) // 2,
-                           y + bar_h + 2))
+        panel = self._panel((bar_w + 28, 52), HUD_AMBER)
+        screen.blit(panel, (x - 14, y - 25))
+        name = self.font.render("LE COLOSSE", True, HUD_AMBER)
+        screen.blit(name, ((self.width - name.get_width()) // 2, y - 21))
+        pygame.draw.rect(screen, (40, 18, 17), (x, y, bar_w, bar_h))
+        pygame.draw.rect(screen, (226, 91, 45),
+                         (x, y, int(bar_w * frac), bar_h))
+        for marker in range(1, 10):
+            mx = x + marker * bar_w // 10
+            pygame.draw.line(screen, (65, 35, 30),
+                             (mx, y), (mx, y + bar_h - 1), 1)
+        pygame.draw.rect(screen, (211, 151, 92),
+                         (x, y, bar_w, bar_h), 1)
 
     def _draw_fps(self, screen, fps):
         text = self.font.render(f"{fps:.0f} FPS", True, (160, 230, 160))
@@ -450,6 +521,12 @@ class HUD:
         tip = (px + int(math.cos(player.angle) * scale * 1.5),
                py + int(math.sin(player.angle) * scale * 1.5))
         pygame.draw.line(surf, (90, 220, 90), (px, py), tip, 1)
+        frame = pygame.Rect(8, 8, surf.get_width() + 4, surf.get_height() + 4)
+        pygame.draw.rect(screen, (4, 10, 15), frame)
+        pygame.draw.rect(screen, (92, 116, 119), frame, 1)
+        pygame.draw.line(screen, HUD_GREEN,
+                         (frame.x + 1, frame.y + 1),
+                         (frame.right - 2, frame.y + 1), 2)
         screen.blit(surf, (10, 10))
 
     def _draw_hurt_flash(self, screen, player):

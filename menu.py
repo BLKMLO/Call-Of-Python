@@ -8,12 +8,15 @@ aux changements de résolution). Chaque menu retourne une chaîne d'action
 
 import pygame
 
+import assets
 from settings import KEY_ACTIONS, RESOLUTIONS
 
-TITLE_COLOR = (235, 235, 240)
-TEXT_COLOR = (205, 205, 210)
-HOVER_COLOR = (255, 210, 90)
-DIM_COLOR = (130, 130, 140)
+TITLE_COLOR = (238, 242, 240)
+TEXT_COLOR = (205, 214, 216)
+HOVER_COLOR = (105, 238, 174)
+DIM_COLOR = (132, 148, 151)
+ACCENT_COLOR = (64, 198, 137)
+WARM_COLOR = (230, 151, 67)
 
 
 def format_stats(stats):
@@ -31,6 +34,8 @@ class MenuBase:
     """Mécanique commune : lignes centrées, survol à la souris, clic."""
 
     title = ""
+    _background_cache = {}
+    _panel_cache = {}
 
     def __init__(self, sounds):
         self.sounds = sounds
@@ -43,14 +48,17 @@ class MenuBase:
         """Calcule le rect (et le point de bascule gauche/droite) de chaque
         ligne pour la taille d'écran courante."""
         w, h = screen.get_size()
-        font = self._font(h)
         rows = []
         items = self.items()
-        line_h = int(font.get_height() * 1.7)
+        compact = len(items) > 8
+        font = self._font(h, small=compact)
+        line_h = int(font.get_height() * (1.5 if compact else 1.7))
         start_y = h // 2 - (len(items) * line_h) // 2 + h // 12
+        button_w = min(int(w * 0.36), 560)
+        button_h = max(font.get_height() + 12, line_h - 7)
         for i, (ident, label) in enumerate(items):
-            surf = font.render(label, True, TEXT_COLOR)
-            rect = surf.get_rect(center=(w // 2, start_y + i * line_h))
+            rect = pygame.Rect(0, 0, button_w, button_h)
+            rect.center = (w // 2, start_y + i * line_h)
             split_x = self._bracket_split(font, label, rect)
             rows.append((ident, label, rect, split_x))
         return rows
@@ -68,18 +76,87 @@ class MenuBase:
             return rect.centerx
         lt = label.index("<")
         gt = label.index(">")
-        lt_x = rect.left + font.size(label[:lt])[0]
-        gt_x = rect.left + font.size(label[:gt + 1])[0]
+        text_left = rect.centerx - font.size(label)[0] // 2
+        lt_x = text_left + font.size(label[:lt])[0]
+        gt_x = text_left + font.size(label[:gt + 1])[0]
         return (lt_x + gt_x) // 2
 
     @staticmethod
     def _font(screen_h, small=False):
         size = max(20, screen_h // (34 if small else 22))
-        return pygame.font.Font(None, size)
+        return pygame.font.SysFont(
+            "consolas,dejavusansmono,couriernew", size,
+            bold=not small,
+        )
 
     @staticmethod
     def _title_font(screen_h):
-        return pygame.font.Font(None, max(40, screen_h // 8))
+        return pygame.font.SysFont(
+            "impact,arialblack,dejavusanscondensed",
+            max(40, screen_h // 8), bold=True,
+        )
+
+    @classmethod
+    def _background(cls, size):
+        """Fond cinématique recadré en mode cover, mis en cache par taille."""
+        if size in cls._background_cache:
+            return cls._background_cache[size]
+        w, h = size
+        try:
+            source = assets.get("menu_background")
+        except (KeyError, pygame.error):
+            source = pygame.Surface(size)
+            source.fill((9, 14, 20))
+        sw, sh = source.get_size()
+        factor = max(w / sw, h / sh)
+        scaled_size = (max(w, round(sw * factor)),
+                       max(h, round(sh * factor)))
+        scaled = pygame.transform.smoothscale(source, scaled_size)
+        x = (scaled.get_width() - w) // 2
+        y = (scaled.get_height() - h) // 2
+        result = scaled.subsurface((x, y, w, h)).copy()
+        veil = pygame.Surface(size, pygame.SRCALPHA)
+        veil.fill((3, 8, 13, 68))
+        result.blit(veil, (0, 0))
+        cls._background_cache[size] = result
+        return result
+
+    @classmethod
+    def _panel(cls, size):
+        """Panneau central verre fumé, mis en cache par taille."""
+        if size in cls._panel_cache:
+            return cls._panel_cache[size]
+        panel = pygame.Surface(size, pygame.SRCALPHA)
+        rect = panel.get_rect()
+        pygame.draw.rect(panel, (4, 10, 15, 214), rect, border_radius=10)
+        pygame.draw.rect(panel, (71, 101, 104, 190), rect, 1,
+                         border_radius=10)
+        pygame.draw.line(panel, (*ACCENT_COLOR, 220), (1, 1),
+                         (rect.width - 2, 1), 3)
+        cls._panel_cache[size] = panel
+        return panel
+
+    def _draw_title(self, screen):
+        w, h = screen.get_size()
+        title_font = self._title_font(h)
+        title_text = self.title.upper()
+        shadow = title_font.render(title_text, True, (0, 0, 0))
+        title = title_font.render(title_text, True, TITLE_COLOR)
+        title_y = h // 8 if len(self.items()) > 8 else h // 5
+        pos = title.get_rect(center=(w // 2, title_y))
+        screen.blit(shadow, pos.move(3, 4))
+        screen.blit(title, pos)
+        line_w = min(title.get_width(), int(w * 0.32))
+        line_y = pos.bottom + max(5, h // 120)
+        pygame.draw.line(screen, ACCENT_COLOR,
+                         (w // 2 - line_w // 2, line_y),
+                         (w // 2 + line_w // 2, line_y), 2)
+        if self.title == "Call of Python":
+            tag_font = self._font(h, small=True)
+            tag = tag_font.render("TACTICAL RAYCASTING // INCIDENT LUNAIRE",
+                                  True, (160, 185, 180))
+            screen.blit(tag, tag.get_rect(
+                center=(w // 2, line_y + tag.get_height())))
 
     # ------------------------------------------------------------------
     def handle_event(self, event, screen):
@@ -96,16 +173,38 @@ class MenuBase:
 
     def draw(self, screen):
         w, h = screen.get_size()
-        screen.fill((18, 18, 24))
-        title = self._title_font(h).render(self.title, True, TITLE_COLOR)
-        screen.blit(title, title.get_rect(center=(w // 2, h // 5)))
+        screen.blit(self._background((w, h)), (0, 0))
+
+        panel_w = min(int(w * 0.42), 650)
+        panel_h = int(h * 0.82)
+        panel_rect = pygame.Rect(0, 0, panel_w, panel_h)
+        panel_rect.center = (w // 2, h // 2 + h // 40)
+        screen.blit(self._panel(panel_rect.size), panel_rect)
+        self._draw_title(screen)
 
         mouse = pygame.mouse.get_pos()
-        font = self._font(h)
-        for ident, label, rect, _split_x in self._layout(screen):
+        rows = self._layout(screen)
+        font = self._font(h, small=len(rows) > 8)
+        for ident, label, rect, _split_x in rows:
             hovered = rect.collidepoint(mouse) and ident is not None
+            if ident is not None:
+                fill = (29, 59, 54, 225) if hovered else (10, 20, 26, 188)
+                border = HOVER_COLOR if hovered else (62, 84, 88)
+                button = pygame.Surface(rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(button, fill, button.get_rect(),
+                                 border_radius=4)
+                pygame.draw.rect(button, border, button.get_rect(), 1,
+                                 border_radius=4)
+                if hovered:
+                    pygame.draw.rect(button, WARM_COLOR,
+                                     (0, 0, 4, rect.height), border_radius=2)
+                screen.blit(button, rect)
             color = HOVER_COLOR if hovered else TEXT_COLOR
-            screen.blit(font.render(label, True, color), rect)
+            text = font.render(label, True, color)
+            screen.blit(text, text.get_rect(center=rect.center))
+        footer = pygame.Surface((w, max(42, h // 11)), pygame.SRCALPHA)
+        footer.fill((3, 8, 12, 205))
+        screen.blit(footer, (0, h - footer.get_height()))
         self._draw_footer(screen)
 
     def _draw_footer(self, screen):
@@ -138,7 +237,7 @@ class MainMenu(MenuBase):
             w, h = screen.get_size()
             font = self._font(h, small=True)
             text = font.render("   —   ".join(parts), True, DIM_COLOR)
-            screen.blit(text, text.get_rect(center=(w // 2, h // 5 + h // 9)))
+            screen.blit(text, text.get_rect(center=(w // 2, h - h // 6)))
 
     def _draw_footer(self, screen):
         w, h = screen.get_size()

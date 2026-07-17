@@ -1,17 +1,18 @@
-"""Assets pixel-art du jeu, façon Minecraft.
+"""Chargement du pack graphique pixel-art du jeu.
 
 Chaque asset (texture de mur, sprite d'ennemi, arme, objet à ramasser)
-est un petit fichier PNG dans `assets/`, dessiné en basse résolution puis
-agrandi sans lissage pour garder le rendu "gros pixels". Les textures de
-murs sont ensuite "pliées" sur les murs 3D par le raycaster.
+est un fichier PNG optimisé dans `assets/`. Les textures de murs sont
+"pliées" sur les murs 3D par le raycaster et les sprites sont affichés
+en billboards sans lissage.
 
-Les PNG sont générés par ce module (dessin procédural, graine fixe) :
-- au premier lancement s'ils manquent ;
-- ou tous d'un coup avec `python assets.py`.
-Ils peuvent donc aussi être retouchés à la main dans n'importe quel
-éditeur d'images, comme un pack de textures.
+Les générateurs procéduraux historiques restent disponibles comme secours :
+- au premier lancement, uniquement pour un PNG manquant ;
+- avec `python assets.py`, uniquement pour compléter les fichiers manquants ;
+- avec `python assets.py --force-procedural`, pour remplacer explicitement
+  le pack graphique par les anciens visuels procéduraux.
 """
 
+import argparse
 import os
 import random
 
@@ -917,14 +918,30 @@ for _kind in ENEMY_PALETTES:
         )
 
 
-def generate_all():
-    """Régénère tous les PNG dans assets/ (écrase les fichiers existants)."""
+def generate_all(force=False):
+    """Complète les PNG manquants avec les générateurs procéduraux.
+
+    `force=True` est volontairement explicite : il remplace le pack graphique
+    livré et sert surtout au diagnostic du fallback historique.
+    """
     os.makedirs(ASSET_DIR, exist_ok=True)
     for name, builder in _BUILDERS.items():
-        pygame.image.save(builder(), os.path.join(ASSET_DIR, name + ".png"))
-        print("assets/" + name + ".png")
+        path = os.path.join(ASSET_DIR, name + ".png")
+        if os.path.exists(path) and not force:
+            print("conservé : assets/" + name + ".png")
+            continue
+        pygame.image.save(builder(), path)
+        print("généré : assets/" + name + ".png")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Complète les assets manquants avec le fallback procédural.",
+    )
+    parser.add_argument(
+        "--force-procedural", action="store_true",
+        help="écrase explicitement le pack graphique existant",
+    )
+    args = parser.parse_args()
     pygame.init()
-    generate_all()
+    generate_all(force=args.force_procedural)

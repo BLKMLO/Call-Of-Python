@@ -4,12 +4,14 @@ FPS façon rétro (rendu pseudo-3D par raycasting, comme Wolfenstein 3D),
 écrit en Python 3.12 avec **pygame comme seule dépendance externe** —
 y compris le multijoueur LAN (sockets UDP de la bibliothèque standard).
 
-Les graphismes sont en **pixel-art façon Minecraft** : de petits fichiers
-PNG (`assets/`) dessinés en basse résolution, "pliés" sur les murs 3D par
-le raycaster et affichés en billboards pour les personnages et objets.
-Les PNG sont générés par `assets.py` (et régénérables avec
-`python assets.py`), mais peuvent aussi être retouchés à la main dans
-n'importe quel éditeur d'images, comme un pack de textures.
+Les graphismes utilisent un **pixel-art militaire/SF détaillé**, conçu pour
+rester lisible dans un raycaster : textures 64×64 "pliées" sur les murs,
+sprites directionnels affichés en billboards, armes en vue subjective et
+illustration cinématique pour les menus. Le pack PNG livré dans `assets/`
+est utilisé en priorité. `assets.py` conserve un générateur procédural de
+secours : `python assets.py` complète seulement les fichiers manquants ;
+`python assets.py --force-procedural` restaure explicitement les anciens
+visuels procéduraux.
 
 ## Lancer le jeu
 
@@ -195,7 +197,7 @@ du portail, jusqu'à la trentième.
 | `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss |
 | `particles.py` | Particules 3D (sang, impacts, poussière, surgissements) |
 | `sounds.py`    | Effets + musique d'ambiance synthétisés en pur Python, stéréo positionnelle |
-| `assets.py`    | Génération/chargement des PNG pixel-art (`assets/`) |
+| `assets.py`    | Chargement du pack PNG et fallback procédural pour les fichiers manquants |
 
 ### Pistes d'extension
 
@@ -207,8 +209,8 @@ du portail, jusqu'à la trentième.
   dans `PROP_SPECS` (`entities.py`) et un caractère dans `PROP_CHARS`.
 - **Nouveau type d'ennemi** : hériter d'`Enemy` (`entities.py`) et
   ajouter sa palette dans `assets.py` — l'IA est réutilisable telle quelle.
-- **Nouvelles textures** : éditer les PNG de `assets/` directement, ou
-  ajouter un builder dans `assets.py`.
+- **Nouvelles textures** : éditer ou ajouter les PNG de `assets/` directement ;
+  un builder dans `assets.py` peut fournir un fallback procédural optionnel.
 - **Multijoueur** : le protocole de `coop.py` (instantanés JSON) est
   simple à étendre — nouveaux événements, plus de joueurs, coop sur la
   campagne, voire un mode versus.
