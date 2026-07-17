@@ -42,7 +42,7 @@ dans un dossier `tests/` du repo pour ne pas les reperdre à chaque session.
 | Fichier        | Rôle |
 |----------------|------|
 | `main.py`      | Point d'entrée, machine à états (menu / jeu / Sceau / Déferlement / fin), musique |
-| `settings.py`  | Paramètres + persistance JSON (résolution, volume, sensibilité, souris inversée, touches, progression, records) |
+| `settings.py`  | Paramètres + persistance JSON (résolution, volume, sensibilité, souris inversée, plein écran F11, touches, progression, records) |
 | `menu.py`      | Menu principal, paramètres, fin de niveau, écran du Sceau, game over / victoire |
 | `game.py`      | Boucle de gameplay : entrées, tir hitscan, ramassages, alertes, portes, stats, caméra de mort |
 | `survival.py`  | Le Déferlement : vagues, délai de submersion dégressif, apparitions, ravitaillement |
@@ -56,7 +56,7 @@ dans un dossier `tests/` du repo pour ne pas les reperdre à chaque session.
 | `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss, écran de mort |
 | `particles.py` | Particules 3D (sang, impacts, poussière, surgissements) |
 | `sounds.py`    | Effets + musique synthétisés en pur Python (+ overrides fichiers réels dans `assets/sound/`) |
-| `assets.py`    | Génération/chargement des PNG pixel-art (`assets/`) |
+| `assets.py`    | Chargement des PNG (`assets/`) ; générateurs procéduraux de secours (`_BUILDERS`) si un PNG manque |
 
 `README.md` documente le gameplay côté joueur en détail — s'y référer pour
 la liste des features. Ce fichier se concentre sur les détails
@@ -135,6 +135,21 @@ d'implémentation et les décisions techniques non triviales.
   bouclier de spawn) plutôt que d'hériter de `Game` — à garder en tête si
   on ajoute un champ à `Player`/`Game.__init__` : il faudra le répliquer
   ici aussi.
+- **Textures (refonte graphique)** : les PNG d'`assets/` ont été refaits
+  à la main en art détaillé (via ChatGPT, branche `agent/refonte-graphique`),
+  bien plus riches que les générateurs procéduraux d'`assets.py` — ces
+  derniers ne servent plus que de secours si un PNG manque. Ne PAS relancer
+  `python assets.py` (il écraserait les textures détaillées par les
+  procédurales). Ajout au passage : polices système (`SysFont`), fond de
+  menu (`assets/menu_background.png`), plein écran F11.
+- **Cadrage des décors (`prop_*`)** : la refonte a découpé une planche de
+  sprites aux mauvais décalages → certains décors contenaient des
+  fragments d'objets voisins et/ou étaient tronqués. Nettoyés en ne
+  gardant que la plus grande composante connexe puis en recadrant dessus.
+  Le banc du Gouvernement (`prop_bench`), tronqué à droite, a été
+  reconstruit en miroitant sa moitié gauche (objet symétrique). Si de
+  nouveaux décors détaillés arrivent, vérifier composantes/marges avant
+  de committer. `PROP_SPECS` (hauteurs monde) est resté inchangé.
 
 ## Historique des sessions (dans l'ordre)
 
@@ -170,6 +185,13 @@ d'implémentation et les décisions techniques non triviales.
 17. Caméra de mort cinématique (façon Dark Souls), vie du Colosse x3
     (550→1650), rendu des murs en couches (gratte-ciels visibles
     derrière les salles basses).
+18. **Refonte graphique** (par ChatGPT, hors sessions Claude) : tous les
+    PNG refaits en art détaillé, fond de menu, polices système, plein
+    écran F11. Fusionnée dans `main`.
+19. Correction du cadrage des décors régénérés : suppression des fragments
+    parasites et des marges (plus grande composante connexe + recadrage),
+    reconstruction du banc du Gouvernement tronqué (miroir). La voiture,
+    au nez volontairement court, n'était pas réellement tronquée.
 
 ## Dette / manques à connaître
 
