@@ -45,6 +45,7 @@ class Settings:
         self.volume = 0.7                # volume global (0.0 → 1.0)
         self.sensitivity = 0.5           # sensibilité souris (0.1 → 1.0)
         self.invert_mouse = False        # inverse les deux axes de la souris
+        self.fullscreen = False          # F11 : plein écran / mode fenêtré
         self.keys = dict(DEFAULT_KEYS)   # keycodes pygame par action
         self.best_level = 0              # meilleur niveau atteint (affiché au menu)
         self.survival_unlocked = False   # le Déferlement (après la mort du Sceau)
@@ -81,6 +82,7 @@ class Settings:
             self.volume = min(1.0, max(0.0, float(data.get("volume", self.volume))))
             self.sensitivity = min(1.0, max(0.1, float(data.get("sensitivity", self.sensitivity))))
             self.invert_mouse = bool(data.get("invert_mouse", self.invert_mouse))
+            self.fullscreen = bool(data.get("fullscreen", self.fullscreen))
             self.best_level = max(0, int(data.get("best_level", 0)))
             self.survival_unlocked = bool(data.get("survival_unlocked", False))
             self.best_wave = max(0, int(data.get("best_wave", 0)))
@@ -98,6 +100,7 @@ class Settings:
             "volume": self.volume,
             "sensitivity": self.sensitivity,
             "invert_mouse": self.invert_mouse,
+            "fullscreen": self.fullscreen,
             "best_level": self.best_level,
             "survival_unlocked": self.survival_unlocked,
             "best_wave": self.best_wave,

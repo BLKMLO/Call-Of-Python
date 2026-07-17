@@ -347,22 +347,69 @@ class Raycaster:
         self._build_sun()
 
     def _build_sun(self):
-        """Pré-dessine le disque solaire + son halo (blitté chaque frame à la
-        position écran calculée depuis l'azimut monde et la hauteur)."""
+        """Construit un soleil cohérent avec son heure et son élévation.
+
+        À midi le disque est petit, blanc-jaune et net. Près de l'horizon il
+        devient plus large, orangé, légèrement aplati et entouré d'une brume
+        horizontale plus présente. La position reste gérée par `_render_sun`.
+        """
         self.sun_surf = None
         if not self.sun:
             return
         color = self.sun["color"]
-        r = max(16, int(self.height * 0.06))          # rayon du disque
-        glow = r * 4
+        hour = float(self.sun.get("hour", 12))
+        elevation = max(0.0, min(1.0, float(self.sun.get("el", 0.5))))
+        time_warmth = min(1.0, abs(hour - 13.0) / 6.0)
+        horizon_warmth = max(0.0, min(1.0, (0.65 - elevation) / 0.55))
+        warmth = max(time_warmth, horizon_warmth)
+
+        # Le soleil paraît plus grand dans les couches épaisses de
+        # l'atmosphère, près du lever et du coucher.
+        r = max(13, int(self.height * (0.036 + 0.027 * horizon_warmth)))
+        ry = max(10, int(r * (1.0 - 0.17 * horizon_warmth)))
+        glow = max(r * 4, int(r * (3.5 + 1.7 * horizon_warmth)))
         surf = pygame.Surface((glow * 2, glow * 2), pygame.SRCALPHA)
         c = glow
-        for i in range(glow, r, -1):                  # halo en dégradé
+
+        # Brume atmosphérique étirée sur l'horizon, quasi absente à midi.
+        if horizon_warmth > 0.05:
+            haze_h = max(ry * 2, int(r * (2.0 + horizon_warmth)))
+            for layer in range(7, 0, -1):
+                factor = layer / 7
+                width = int(glow * 2 * factor)
+                height = int(haze_h * factor)
+                alpha = int(20 * horizon_warmth * (1.0 - factor * 0.55))
+                rect = pygame.Rect(c - width // 2, c - height // 2,
+                                   width, height)
+                pygame.draw.ellipse(surf, (*color, alpha), rect)
+
+        for i in range(glow, r, -1):                  # halo radial
             t = (i - r) / (glow - r)
-            a = int(60 * (1 - t) ** 2)
+            a = int((38 + 34 * warmth) * (1 - t) ** 2)
             pygame.draw.circle(surf, (color[0], color[1], color[2], a), (c, c), i)
-        pygame.draw.circle(surf, (color[0], color[1], color[2], 255), (c, c), r)
-        pygame.draw.circle(surf, (255, 255, 245, 255), (c, c), int(r * 0.68))
+
+        # Disque : cœur presque blanc à midi, franchement doré/rouge le soir.
+        noon_core = (255, 255, 242)
+        core_mix = 0.18 + 0.67 * warmth
+        core = tuple(int(noon_core[i] * (1.0 - core_mix)
+                         + color[i] * core_mix) for i in range(3))
+        outer = pygame.Rect(c - r, c - ry, r * 2, ry * 2)
+        inner = pygame.Rect(c - int(r * 0.82), c - int(ry * 0.82),
+                            int(r * 1.64), int(ry * 1.64))
+        pygame.draw.ellipse(surf, (*color, 255), outer)
+        pygame.draw.ellipse(surf, (*core, 255), inner)
+
+        # Quelques irrégularités ne deviennent perceptibles qu'au couchant.
+        if horizon_warmth > 0.55:
+            spot = tuple(max(0, int(channel * 0.72)) for channel in color)
+            rng = random.Random(round(hour * 100))
+            for _ in range(3):
+                sx = c + rng.randint(-max(1, r // 2), max(1, r // 2))
+                sy = c + rng.randint(-max(1, ry // 3), max(1, ry // 3))
+                pygame.draw.ellipse(
+                    surf, (*spot, 85),
+                    (sx, sy, max(2, r // 5), max(1, ry // 10)),
+                )
         self.sun_surf = surf
 
     def _build_background(self):

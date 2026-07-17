@@ -212,6 +212,17 @@ class Enemy(Entity):
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
+        # Les nouvelles silhouettes n'occupent pas toujours les 96 pixels de
+        # haut de leur toile. La taille physique porte sur le personnage
+        # visible, pas sur les marges transparentes du PNG.
+        target_height = type(self).SPRITE_HEIGHT
+        self.SPRITE_HEIGHT = _height_for_visible_height(
+            f"enemy_{self.KIND}_idle", target_height,
+        )
+        # Le générateur historique occupait 75 % de la toile des cadavres.
+        self._dead_sprite_height = _height_for_visible_height(
+            f"enemy_{self.KIND}_dead", type(self).DEAD_HEIGHT * 0.75,
+        )
         self.damage_mult = damage_mult
         self.flash_timer = 0.0   # affiche la pose "tir" du sprite
         self.hurt_timer = 0.0    # flash blanc quand il encaisse une balle
@@ -260,7 +271,7 @@ class Enemy(Entity):
         died = super().take_damage(amount)
         if died:
             # Le billboard devient un cadavre bas posé au sol.
-            self.SPRITE_HEIGHT = self.DEAD_HEIGHT
+            self.SPRITE_HEIGHT = self._dead_sprite_height
             self.moving = False
         else:
             self.hurt_timer = 0.09   # flash blanc bref
@@ -377,16 +388,53 @@ ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
                "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss}
 
 
-# Décors : sprite, hauteur monde du billboard. Tous bloquent le passage
-# (leur case est infranchissable) mais laissent passer balles et regards.
+def _height_for_visible_width(sprite_name, target_width):
+    """Hauteur de projection qui donne au contenu opaque la largeur voulue.
+
+    Les PNG générés conservent des toiles historiques parfois beaucoup plus
+    larges que leur dessin visible. La projection ne doit donc pas utiliser
+    la toile transparente comme mesure physique de l'objet.
+    """
+    sprite = assets.get(sprite_name)
+    bounds = sprite.get_bounding_rect(min_alpha=8)
+    if bounds.width <= 0:
+        return 0.1
+    return target_width * sprite.get_height() / bounds.width
+
+
+def _height_for_visible_height(sprite_name, target_height):
+    """Hauteur de projection qui donne au contenu opaque la hauteur voulue."""
+    sprite = assets.get(sprite_name)
+    bounds = sprite.get_bounding_rect(min_alpha=8)
+    if bounds.height <= 0:
+        return target_height
+    return target_height * sprite.get_height() / bounds.height
+
+
+# Décors : largeur physique visée du dessin opaque, en unités monde. Ces
+# valeurs reprennent l'emprise des anciens sprites procéduraux et permettent
+# aux nouvelles illustrations de garder la bonne échelle sans être déformées.
+# Tous bloquent leur case mais laissent passer balles et regards.
 PROP_SPECS = {
-    "car":      {"sprite": "prop_car",      "height": 0.5},
-    "bench":    {"sprite": "prop_bench",    "height": 0.34},
-    "tribune":  {"sprite": "prop_tribune",  "height": 0.62},
-    "labtable": {"sprite": "prop_labtable", "height": 0.5},
-    "rock":     {"sprite": "prop_rock",     "height": 0.3},
-    "fissure":  {"sprite": "prop_fissure",  "height": 0.16},
-    "portal":   {"sprite": "prop_portal",   "height": 0.95},
+    "car":      {"sprite": "prop_car",      "width": 1.10},
+    "bench":    {"sprite": "prop_bench",    "width": 0.97},
+    "tribune":  {"sprite": "prop_tribune",  "width": 0.57},
+    "labtable": {"sprite": "prop_labtable", "width": 1.00},
+    "rock":     {"sprite": "prop_rock",      "width": 0.47},
+    "fissure":  {"sprite": "prop_fissure",  "width": 0.60},
+    "portal":   {"sprite": "prop_portal",   "width": 0.67},
+}
+
+# Largeur visible historique des objets ramassables. Les armes longues
+# restent comparables entre elles, sans que le pistolet ou les soins occupent
+# soudain toute une case à cause d'un cadrage PNG différent.
+PICKUP_WIDTHS = {
+    "pistol": 0.19,
+    "shotgun": 0.30,
+    "rifle": 0.30,
+    "minigun": 0.30,
+    "medkit": 0.26,
+    "lifepack": 0.34,
 }
 
 
@@ -400,7 +448,9 @@ class Prop:
         self.kind = kind
         spec = PROP_SPECS[kind]
         self.sprite_name = spec["sprite"]
-        self.SPRITE_HEIGHT = spec["height"]
+        self.SPRITE_HEIGHT = _height_for_visible_width(
+            self.sprite_name, spec["width"],
+        )
         self.flipped = (int(x) + int(y)) % 2 == 1
 
     def current_sprite(self, player=None):
@@ -429,6 +479,10 @@ class Pickup:
             self.sprite_name = "pickup_" + kind
         else:
             self.sprite_name = "pickup_" + kind.split(":", 1)[1]
+        pickup_id = kind.split(":", 1)[-1]
+        self.SPRITE_HEIGHT = _height_for_visible_width(
+            self.sprite_name, PICKUP_WIDTHS[pickup_id],
+        )
 
     def current_sprite(self, player=None):
         return assets.get(self.sprite_name)

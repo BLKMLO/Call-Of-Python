@@ -88,6 +88,16 @@ class Game:
     # ------------------------------------------------------------------
     def handle_event(self, event):
         """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
+        # La mort doit toujours aboutir au menu de fin. Échap ne doit surtout
+        # pas activer la pause ici, car cela gelait le chronomètre de la caméra
+        # et laissait « VOUS ÊTES MORT » affiché indéfiniment.
+        if self.outcome == "dead":
+            if ((event.type == pygame.KEYDOWN
+                 and event.key in (pygame.K_ESCAPE, pygame.K_RETURN,
+                                   pygame.K_KP_ENTER, pygame.K_SPACE))
+                    or event.type == pygame.MOUSEBUTTONDOWN):
+                self.death_time = DEATH_CAM_TIME + 0.01
+            return None
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.paused = not self.paused
@@ -126,14 +136,16 @@ class Game:
     # Simulation
     # ------------------------------------------------------------------
     def update(self, dt):
-        if self.paused:
-            return
         # Mort : on fige le gameplay mais on laisse tourner la caméra de
-        # mort (chute + fondu) et les particules (le sang retombe).
+        # mort (chute + fondu) et les particules, même si une pause avait été
+        # activée juste avant le coup fatal.
         if self.outcome == "dead":
+            self.paused = False
             self.death_time += dt
             self.shake = max(0.0, self.shake - dt * 3.5)
             self.particles.update(dt)
+            return
+        if self.paused:
             return
         if self.outcome is not None and self.end_delay > 0.8:
             return
@@ -306,6 +318,11 @@ class Game:
         if self.outcome == "dead":
             return self.death_time > DEATH_CAM_TIME   # laisse jouer la mort
         return self.outcome is not None and self.end_delay > 0.8
+
+    def resize(self, size):
+        """Adapte le rendu et le HUD après un changement de mode vidéo."""
+        self.raycaster.resize(size)
+        self.hud.resize(size)
 
     def _alert_allies(self, position, radius, exclude=None):
         """Réveille les ennemis inactifs proches d'un bruit (tir, cri)."""
