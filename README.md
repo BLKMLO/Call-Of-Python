@@ -38,6 +38,7 @@ Les touches sont modifiables dans **Paramètres**.
 | Changer d'arme | `1`–`4` ou molette |
 | Recharger | `R` |
 | Afficher les FPS | `F3` |
+| Plein écran / fenêtré | `F11` |
 | Pause | `Échap` |
 
 La résolution, le volume, la sensibilité et les touches sont sauvegardés

@@ -311,6 +311,11 @@ class CoopClientGame:
     def finished(self):
         return self.outcome is not None and self.end_delay > 0.8
 
+    def resize(self, size):
+        """Adapte le client répliqué après un changement de mode vidéo."""
+        self.raycaster.resize(size)
+        self.hud.resize(size)
+
     def survival_info(self):
         return self.wave_info
 

@@ -30,7 +30,14 @@ from survival import SurvivalGame
 
 
 def create_window(settings):
-    return pygame.display.set_mode(settings.resolution)
+    flags = pygame.FULLSCREEN if settings.fullscreen else 0
+    try:
+        return pygame.display.set_mode(settings.resolution, flags)
+    except pygame.error:
+        # Certains pilotes refusent une résolution donnée en plein écran.
+        # On revient alors proprement en mode fenêtré plutôt que de quitter.
+        settings.fullscreen = False
+        return pygame.display.set_mode(settings.resolution)
 
 
 def set_mouse_captured(captured):
@@ -80,6 +87,17 @@ def main():
         if game is not None and hasattr(game, "close"):
             game.close()
         game = None
+
+    def toggle_fullscreen():
+        """Bascule F11 et redimensionne le rendu de l'état courant."""
+        nonlocal screen
+        settings.fullscreen = not settings.fullscreen
+        screen = create_window(settings)
+        settings.save()
+        if game is not None and hasattr(game, "resize"):
+            game.resize(screen.get_size())
+        # set_mode peut relâcher le grab et réafficher le curseur.
+        set_mouse_captured(state == "game")
 
     def start_level(index, carry=None, stats=None):
         """Crée le Game du niveau `index` et passe en état de jeu."""
@@ -150,6 +168,11 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                continue
+
+            # Raccourci global : menus, partie, pause et écrans de transition.
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                toggle_fullscreen()
                 continue
 
             if state == "menu":

@@ -34,6 +34,7 @@ class MenuBase:
     """Mécanique commune : lignes centrées, survol à la souris, clic."""
 
     title = ""
+    menu_vertical_offset = 0.0
     _background_cache = {}
     _panel_cache = {}
 
@@ -53,7 +54,8 @@ class MenuBase:
         compact = len(items) > 8
         font = self._font(h, small=compact)
         line_h = int(font.get_height() * (1.5 if compact else 1.7))
-        start_y = h // 2 - (len(items) * line_h) // 2 + h // 12
+        start_y = (h // 2 - (len(items) * line_h) // 2 + h // 12
+                   + int(h * self.menu_vertical_offset))
         button_w = min(int(w * 0.36), 560)
         button_h = max(font.get_height() + 12, line_h - 7)
         for i, (ident, label) in enumerate(items):
@@ -142,6 +144,78 @@ class MenuBase:
         cls._panel_cache[size] = panel
         return panel
 
+    @staticmethod
+    def _panel_rect(screen):
+        """Cadre central commun, également utilisé par les sous-écrans."""
+        w, h = screen.get_size()
+        panel_w = min(int(w * 0.42), 650)
+        panel_h = int(h * 0.82)
+        rect = pygame.Rect(0, 0, panel_w, panel_h)
+        rect.center = (w // 2, h // 2 + h // 40)
+        return rect
+
+    @staticmethod
+    def _wrap_text(font, text, max_width):
+        """Découpe un texte en lignes tenant dans `max_width`."""
+        words = text.split()
+        if not words:
+            return [""]
+        lines = []
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
+
+    def _draw_info_blocks(self, screen, blocks):
+        """Centre plusieurs paragraphes dans l'espace avant les boutons.
+
+        `blocks` contient des couples (texte, couleur). La police et les
+        retours à la ligne s'adaptent à la largeur et à la hauteur réellement
+        disponibles, afin qu'aucun bilan ne déborde du panneau.
+        """
+        blocks = [(text, color) for text, color in blocks if text]
+        if not blocks:
+            return
+        w, h = screen.get_size()
+        panel = self._panel_rect(screen)
+        rows = self._layout(screen)
+        top = h // 5 + h // 11
+        bottom = rows[0][2].top - max(10, h // 60) if rows else panel.bottom - 20
+        max_width = panel.width - max(36, panel.width // 10)
+        available = max(1, bottom - top)
+
+        # Réduit progressivement le corps si un bilan très long ne tient pas.
+        size = max(17, h // 38)
+        while True:
+            font = pygame.font.SysFont(
+                "dejavusans,arial,liberationsans", size,
+            )
+            wrapped = [(self._wrap_text(font, text, max_width), color)
+                       for text, color in blocks]
+            line_h = font.get_linesize() + max(1, size // 8)
+            gap = max(6, size // 2)
+            total_h = (sum(len(lines) for lines, _ in wrapped) * line_h
+                       + gap * (len(wrapped) - 1))
+            if total_h <= available or size <= 14:
+                break
+            size -= 1
+
+        y = top + max(0, (available - total_h) // 2)
+        for index, (lines, color) in enumerate(wrapped):
+            for line in lines:
+                surf = font.render(line, True, color)
+                screen.blit(surf, surf.get_rect(center=(w // 2,
+                                                        y + line_h // 2)))
+                y += line_h
+            if index + 1 < len(wrapped):
+                y += gap
+
     def _draw_title(self, screen):
         w, h = screen.get_size()
         # La casse naturelle et une sans-serif moins massive évitent les
@@ -184,10 +258,7 @@ class MenuBase:
         w, h = screen.get_size()
         screen.blit(self._background((w, h)), (0, 0))
 
-        panel_w = min(int(w * 0.42), 650)
-        panel_h = int(h * 0.82)
-        panel_rect = pygame.Rect(0, 0, panel_w, panel_h)
-        panel_rect.center = (w // 2, h // 2 + h // 40)
+        panel_rect = self._panel_rect(screen)
         screen.blit(self._panel(panel_rect.size), panel_rect)
         self._draw_title(screen)
 
@@ -348,6 +419,8 @@ class EndScreen(MenuBase):
     affiche la vague atteinte.
     """
 
+    menu_vertical_offset = 0.13
+
     def __init__(self, sounds, victory, title=None, subtitle=None,
                  survival=False, stats=None):
         super().__init__(sounds)
@@ -373,14 +446,10 @@ class EndScreen(MenuBase):
 
     def draw(self, screen):
         super().draw(screen)
-        w, h = screen.get_size()
-        font = self._font(h, small=True)
-        surf = font.render(self.subtitle, True, DIM_COLOR)
-        screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))
-        if self.stats_line:
-            stat = font.render(self.stats_line, True, (200, 180, 130))
-            screen.blit(stat, stat.get_rect(
-                center=(w // 2, h // 5 + h // 9 + int(font.get_height() * 1.5))))
+        self._draw_info_blocks(screen, [
+            (self.subtitle, DIM_COLOR),
+            (self.stats_line, (200, 180, 130)),
+        ])
 
 
 class MultiplayerMenu(MenuBase):
@@ -474,6 +543,8 @@ class SealBrokenScreen(MenuBase):
 class LevelCompleteScreen(MenuBase):
     """Transition entre deux niveaux : annonce le suivant + bilan chiffré."""
 
+    menu_vertical_offset = 0.13
+
     def __init__(self, sounds, finished_index, next_name, stats=None):
         super().__init__(sounds)
         self.title = f"Niveau {finished_index + 1} terminé !"
@@ -485,13 +556,9 @@ class LevelCompleteScreen(MenuBase):
 
     def draw(self, screen):
         super().draw(screen)
-        w, h = screen.get_size()
-        font = self._font(h, small=True)
         text = (f"Prochain niveau : {self.next_name} — "
                 "vous gardez vos armes et récupérez de la vie.")
-        surf = font.render(text, True, DIM_COLOR)
-        screen.blit(surf, surf.get_rect(center=(w // 2, h // 5 + h // 9)))
-        if self.stats_line:
-            stat = font.render(self.stats_line, True, (200, 180, 130))
-            screen.blit(stat, stat.get_rect(
-                center=(w // 2, h // 5 + h // 9 + int(font.get_height() * 1.5))))
+        self._draw_info_blocks(screen, [
+            (text, DIM_COLOR),
+            (self.stats_line, (200, 180, 130)),
+        ])
