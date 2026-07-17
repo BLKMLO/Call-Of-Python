@@ -268,6 +268,9 @@ LEVELS = [
         "name": "Laboratoire — Assaut final",
         "grid": MAP_LAB,
         "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone"},
+        # Enceinte technique légèrement surélevée et murs de confinement
+        # renforcés autour des salles sensibles et de la chambre du Colosse.
+        "heights": {"1": 1.25, "3": 1.55},
         "sky": ((44, 22, 18), (150, 70, 44)),   # crépuscule rougeoyant (19h)
         "floor": ((58, 40, 36), (26, 20, 20)),
         "sun": {"hour": 19, "az": 0.8, "el": 0.1, "color": (255, 120, 60)},
