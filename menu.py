@@ -90,11 +90,17 @@ class MenuBase:
         )
 
     @staticmethod
-    def _title_font(screen_h):
-        return pygame.font.SysFont(
-            "impact,arialblack,dejavusanscondensed",
-            max(40, screen_h // 8), bold=True,
-        )
+    def _title_font(screen_h, text="", max_width=None):
+        """Police de titre lisible, avec réduction si le texte est long."""
+        size = max(36, screen_h // 11)
+        while True:
+            font = pygame.font.SysFont(
+                "dejavusans,arial,liberationsans", size, bold=True,
+            )
+            if (max_width is None or not text
+                    or font.size(text)[0] <= max_width or size <= 28):
+                return font
+            size -= 2
 
     @classmethod
     def _background(cls, size):
@@ -138,13 +144,16 @@ class MenuBase:
 
     def _draw_title(self, screen):
         w, h = screen.get_size()
-        title_font = self._title_font(h)
-        title_text = self.title.upper()
+        # La casse naturelle et une sans-serif moins massive évitent les
+        # titres étalés/empâtés, notamment sur le menu principal et l'écran
+        # de fin de niveau. Les intitulés longs sont ajustés à la largeur.
+        title_text = self.title
+        title_font = self._title_font(h, title_text, w - max(80, w // 10))
         shadow = title_font.render(title_text, True, (0, 0, 0))
         title = title_font.render(title_text, True, TITLE_COLOR)
         title_y = h // 8 if len(self.items()) > 8 else h // 5
         pos = title.get_rect(center=(w // 2, title_y))
-        screen.blit(shadow, pos.move(3, 4))
+        screen.blit(shadow, pos.move(2, 2))
         screen.blit(title, pos)
         line_w = min(title.get_width(), int(w * 0.32))
         line_y = pos.bottom + max(5, h // 120)
