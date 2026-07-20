@@ -14,7 +14,8 @@ import assets
 from ai import EnemyAI, cover_adjusted_chance
 from coop import CoopClientGame
 from entities import PORTAL_FRAME_MS, PORTAL_FRAMES, PROP_SPECS, Prop, Sniper
-from level import LEVELS, MAP_LAB
+from level import LEVELS, MAP_LAB, SURVIVAL_LEVEL, Level
+from raycaster import Raycaster
 
 
 class RequestedChangesTests(unittest.TestCase):
@@ -75,7 +76,7 @@ class RequestedChangesTests(unittest.TestCase):
         self.assertLess(cover_adjusted_chance(0.8, 0.5), 0.8 * 0.675)
         self.assertAlmostEqual(cover_adjusted_chance(0.8, 0.0), 0.224)
 
-    def test_sniper_waits_125_seconds_before_firing(self):
+    def test_sniper_waits_075_seconds_before_firing(self):
         sniper = Sniper(1.5, 1.5)
         ai = EnemyAI(sniper)
         player = SimpleNamespace(
@@ -85,12 +86,12 @@ class RequestedChangesTests(unittest.TestCase):
 
         self.assertEqual(ai._try_shoot(player, None, 7.0), [])
         self.assertTrue(sniper.aiming)
-        self.assertAlmostEqual(sniper.aim_timer, 1.25)
-        sniper.update_timers(1.24)
+        self.assertAlmostEqual(sniper.aim_timer, 0.75)
+        sniper.update_timers(0.74)
         self.assertEqual(ai._try_shoot(player, None, 7.0), [])
 
         # Dépasse très légèrement le seuil pour éviter le bruit flottant de
-        # 1.24 + 0.01 ; en jeu, le tir part à la première frame après 1,25 s.
+        # 0.74 + 0.01 ; en jeu, le tir part à la première frame après 0,75 s.
         sniper.update_timers(0.02)
         with patch("ai.exposure_fraction", return_value=1.0), \
                 patch("ai.random.random", return_value=1.0):
@@ -128,6 +129,31 @@ class RequestedChangesTests(unittest.TestCase):
         new_snapshot = [[7, "sniper", 2.5, 3.5, 0.0, 70, 0, 0, 1]]
         client._apply_enemies(new_snapshot)
         self.assertTrue(client.ghosts[7].aiming)
+
+    def test_other_ranged_fire_sprites_keep_their_idle_scale(self):
+        # Le sniper est contrôlé séparément entre sa pose de visée accroupie
+        # et son tir. Ici, on verrouille les cinq personnages qui tirent debout.
+        for kind in ("grunt", "soldier", "heavy", "boss", "ally"):
+            idle = assets.get(f"enemy_{kind}_idle").get_bounding_rect(min_alpha=8)
+            fire = assets.get(f"enemy_{kind}_fire").get_bounding_rect(min_alpha=8)
+            self.assertLessEqual(abs(fire.height - idle.height), 6, kind)
+            self.assertEqual(fire.bottom, idle.bottom, kind)
+
+    def test_laboratory_uses_dedicated_white_walls(self):
+        lab_theme = LEVELS[4]["theme"]
+        self.assertEqual(lab_theme["1"], "wall_lab_tech")
+        self.assertEqual(lab_theme["2"], "wall_lab_metal")
+        self.assertEqual(lab_theme["3"], "wall_lab_reinforced")
+        for name in (lab_theme["1"], lab_theme["2"], lab_theme["3"]):
+            color = pygame.transform.average_color(assets.get(name))[:3]
+            self.assertGreater(sum(color) / 3, 175, name)
+
+    def test_clouds_exist_in_campaign_but_not_on_the_moon(self):
+        campaign = Raycaster((320, 240), Level(0))
+        moon = Raycaster((320, 240), Level(4, config=SURVIVAL_LEVEL))
+        self.assertIsNotNone(campaign.cloud_panorama)
+        self.assertGreater(campaign.cloud_panorama.get_bounding_rect().height, 0)
+        self.assertIsNone(moon.cloud_panorama)
 
 
 if __name__ == "__main__":

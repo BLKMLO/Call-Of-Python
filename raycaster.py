@@ -453,6 +453,61 @@ class Raycaster:
                     for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                         if 0 <= sx + ox < self.width:
                             self.background.set_at((sx + ox, sy + oy), color)
+        self._build_clouds(half, sky_bot)
+
+    def _build_clouds(self, sky_height, sky_horizon):
+        """Précalcule un panorama nuageux transparent et horizontalement bouclé.
+
+        Il est reconstruit uniquement au changement de niveau/résolution. Le
+        rendu courant se limite ensuite à deux blits alpha, sans génération ni
+        transformation de formes dans la boucle de jeu.
+        """
+        self.cloud_panorama = None
+        if (self.level_config.get("stars")
+                or not self.level_config.get("clouds", True)):
+            return
+
+        width = max(2, self.width * 2)
+        surf = pygame.Surface((width, sky_height), pygame.SRCALPHA)
+        name = self.level_config.get("name", "")
+        seed = sum((i + 1) * ord(char) for i, char in enumerate(name)) + width
+        rng = random.Random(seed)
+        scale = max(0.65, self.height / 720)
+
+        # Blanc/gris teinté par la couleur d'horizon : froid à midi, rosé au
+        # couchant. L'alpha modéré laisse toujours lire le dégradé du niveau.
+        light = tuple(min(238, int(150 + channel * 0.35))
+                      for channel in sky_horizon)
+        shadow = tuple(max(28, int(channel * 0.58)) for channel in light)
+
+        def cloud_cluster(cx, cy, cw, ch):
+            # Copies aux bords pour que le panorama boucle sans coupure.
+            for wrap_x in (cx - width, cx, cx + width):
+                pygame.draw.ellipse(
+                    surf, (*shadow, 72),
+                    (wrap_x - cw // 2, cy, cw, max(2, ch // 2)),
+                )
+                lobes = ((-0.30, 0.18, 0.44, 0.72),
+                         (-0.08, 0.00, 0.48, 0.90),
+                         (0.18, 0.12, 0.43, 0.78),
+                         (0.37, 0.28, 0.30, 0.56))
+                for ox, oy, wf, hf in lobes:
+                    lw, lh = max(3, int(cw * wf)), max(2, int(ch * hf))
+                    pygame.draw.ellipse(
+                        surf, (*light, 104),
+                        (int(wrap_x + cw * ox - lw / 2),
+                         int(cy + ch * oy - lh / 2), lw, lh),
+                    )
+
+        count = max(12, self.width // 90)
+        for _ in range(count):
+            cx = rng.randrange(width)
+            cy = rng.randint(int(sky_height * 0.50),
+                             int(sky_height * 0.82))
+            cw = int(rng.randint(100, 240) * scale)
+            ch = int(cw * rng.uniform(0.25, 0.40))
+            cloud_cluster(cx, cy, cw, ch)
+        self.cloud_panorama = surf
 
     # ------------------------------------------------------------------
     # Rendu
@@ -477,9 +532,20 @@ class Raycaster:
         else:
             screen.blit(self.background, (0, bg_y))
         self._render_sun(screen, player)
+        self._render_clouds(screen, player, bg_y)
         self._render_walls(screen, player, level)
         self._render_sprites(screen, player, sprites)
         self._render_particles(screen, player, particles)
+
+    def _render_clouds(self, screen, player, bg_y):
+        """Fait défiler le panorama avec la caméra ; désactivé sur la Lune."""
+        surf = self.cloud_panorama
+        if surf is None:
+            return
+        width = surf.get_width()
+        x_off = int(-player.angle / (2 * math.pi) * width) % width
+        screen.blit(surf, (x_off - width, bg_y))
+        screen.blit(surf, (x_off, bg_y))
 
     def _render_sun(self, screen, player):
         """Blit le soleil à sa position monde (avant les murs, qui l'occultent).

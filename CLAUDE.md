@@ -195,7 +195,8 @@ d'implémentation et les décisions techniques non triviales.
     reconstruction temporaire du banc du Gouvernement tronqué (miroir).
 20. Régénération définitive de la voiture et des sièges, suppression d'une
     porte isolée du Laboratoire, couvert renforcé et télégraphie du sniper à
-    genou pendant 1,25 s (synchronisée en coop). Contexte dans `GPT.md`.
+    genou pendant 0,75 s (synchronisée en coop), tirs ennemis frontaux, murs
+    blancs du Laboratoire et nuages hors niveau lunaire. Contexte dans `GPT.md`.
 
 ## Dette / manques à connaître
 

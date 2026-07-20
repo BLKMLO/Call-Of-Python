@@ -368,7 +368,7 @@ class Sniper(Enemy):
     KEEP_DISTANCE = True
     MIN_RANGE = 5.0        # ... mais fébrile au corps à corps
     USES_COVER = True
-    AIM_DELAY = 1.25       # se met à genou et stabilise sa visée avant le tir
+    AIM_DELAY = 0.75       # télégraphie brève : lisible sans rendre le tir poussif
 
 
 class Boss(Enemy):

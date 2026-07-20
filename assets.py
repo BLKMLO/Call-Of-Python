@@ -888,9 +888,28 @@ def _prop_portal():
     return _upscale(s, 4)
 
 
+def _brighten_lab_texture(builder, amount):
+    """Transforme un fallback historique en variante de laboratoire claire."""
+    s = builder()
+    s.fill((amount, amount, amount), special_flags=pygame.BLEND_RGB_ADD)
+    return s
+
+
+def _tex_lab_tech():
+    return _brighten_lab_texture(_tex_tech, 150)
+
+
+def _tex_lab_metal():
+    return _brighten_lab_texture(_tex_metal, 165)
+
+
+def _tex_lab_reinforced():
+    return _brighten_lab_texture(_tex_stone, 155)
+
+
 def _tex_sealed_portal():
     """Mur de secours : minuscule brèche verte verrouillée par des chaînes."""
-    s = _tex_stone()
+    s = _tex_lab_reinforced()
     # Brèche sombre et halo contenu au centre de la maçonnerie.
     pygame.draw.circle(s, (20, 72, 42), (32, 33), 9)
     pygame.draw.circle(s, (18, 142, 68), (32, 33), 6)
@@ -923,6 +942,9 @@ _BUILDERS = {
     "wall_moon": _tex_moon,
     "wall_shelf": _tex_shelf,
     "wall_energy": _tex_energy,
+    "wall_lab_tech": _tex_lab_tech,
+    "wall_lab_metal": _tex_lab_metal,
+    "wall_lab_reinforced": _tex_lab_reinforced,
     "wall_sealed_portal": _tex_sealed_portal,
     "prop_car": _prop_car,
     "prop_bench": _prop_bench,

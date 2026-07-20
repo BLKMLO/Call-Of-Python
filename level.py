@@ -268,7 +268,9 @@ LEVELS = [
     {
         "name": "Laboratoire — Assaut final",
         "grid": MAP_LAB,
-        "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone",
+        # Textures dédiées : ne pas blanchir les murs partagés avec la Base.
+        "theme": {"1": "wall_lab_tech", "2": "wall_lab_metal",
+                  "3": "wall_lab_reinforced",
                   "4": "wall_sealed_portal"},
         # Enceinte technique légèrement surélevée et murs de confinement
         # renforcés autour des salles sensibles et de la chambre du Colosse.
