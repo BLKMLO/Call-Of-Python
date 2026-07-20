@@ -27,12 +27,12 @@ DEFAULT_KEYS = {
     "reculer": pygame.K_s,
     "gauche": pygame.K_q,
     "droite": pygame.K_d,
-    "sprint": pygame.K_LSHIFT,
+    "roulade": pygame.K_LSHIFT,
     "recharger": pygame.K_r,
 }
 
 # L'ordre d'affichage des actions dans le menu des paramètres.
-KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "sprint", "recharger"]
+KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "roulade", "recharger"]
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
@@ -88,6 +88,10 @@ class Settings:
             self.best_wave = max(0, int(data.get("best_wave", 0)))
             self.last_ip = str(data.get("last_ip", self.last_ip))[:40]
             for action, code in data.get("keys", {}).items():
+                # Migration transparente des anciens réglages : la touche de
+                # sprint devient celle de roulade au premier chargement.
+                if action == "sprint":
+                    action = "roulade"
                 if action in self.keys:
                     self.keys[action] = int(code)
         except (OSError, ValueError, json.JSONDecodeError):

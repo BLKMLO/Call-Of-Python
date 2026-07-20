@@ -13,6 +13,21 @@ import assets
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
 
+def _move_with_substeps(level, x, y, dx, dy, radius):
+    """Découpe une impulsion rapide pour qu'un pic de `dt` ne saute pas un mur."""
+    distance = math.hypot(dx, dy)
+    steps = max(1, math.ceil(distance / max(0.08, radius * 0.5)))
+    step_x, step_y = dx / steps, dy / steps
+    for _ in range(steps):
+        next_x, next_y = level.move_with_collisions(
+            x, y, step_x, step_y, radius,
+        )
+        if (next_x, next_y) == (x, y):
+            break
+        x, y = next_x, next_y
+    return x, y
+
+
 class Entity:
     """Base commune : position, angle de vue, points de vie."""
 
@@ -41,12 +56,14 @@ class Player(Entity):
     """Le personnage jouable : déplacement clavier, visée souris, arsenal."""
 
     SPEED = 3.2          # vitesse de déplacement (cases / s)
-    SPRINT_MULT = 1.5    # multiplicateur de vitesse en sprint
     ADS_MULT = 0.5       # ralentissement du déplacement en visée
     ADS_ZOOM = 1.7       # grossissement de la lunette
     RADIUS = 0.25        # rayon de collision
     MAX_PITCH = 0.35     # amplitude de la visée verticale (fraction d'écran)
     SHIELD_DURATION = 3.0   # bouclier temporaire à l'arrivée sur un niveau (s)
+    ROLL_DURATION = 0.5     # durée du déplacement et des i-frames (s)
+    ROLL_COOLDOWN = 3.0     # délai minimal entre deux roulades (s)
+    ROLL_SPEED = 5.0        # impulsion, collisionnée et sans traversée de mur
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
@@ -57,11 +74,27 @@ class Player(Entity):
         self.weapons = [Weapon(WEAPON_SPECS["pistol"])]  # arme de départ
         self.weapon_index = 0
         self.hurt_flash = 0.0   # minuterie du flash rouge quand on est touché
+        self.roll_timer = 0.0
+        self.roll_cooldown = 0.0
+        self.roll_invuln = 0.0
+        self.roll_dx = 0.0
+        self.roll_dy = 0.0
+        self.roll_strafe = 0.0   # inclinaison de caméra (-gauche, +droite)
 
     @property
     def zoom(self):
         """Facteur de zoom courant (interpolé), 1.0 hanche → ADS_ZOOM visée."""
         return 1.0 + (self.ADS_ZOOM - 1.0) * self.ads
+
+    @property
+    def rolling(self):
+        return self.roll_timer > 0.0
+
+    @property
+    def roll_progress(self):
+        if not self.rolling:
+            return 0.0
+        return 1.0 - self.roll_timer / self.ROLL_DURATION
 
     def activate_shield(self):
         """Bouclier temporaire : le joueur est invulnérable à l'arrivée sur
@@ -124,16 +157,21 @@ class Player(Entity):
 
         Retourne True si le joueur a effectivement bougé (pour l'animation).
         """
-        forward = 0.0
-        strafe = 0.0
-        if keys_pressed[bindings["avancer"]]:
-            forward += 1.0
-        if keys_pressed[bindings["reculer"]]:
-            forward -= 1.0
-        if keys_pressed[bindings["droite"]]:
-            strafe += 1.0
-        if keys_pressed[bindings["gauche"]]:
-            strafe -= 1.0
+        if self.rolling:
+            old = (self.x, self.y)
+            distance = self.ROLL_SPEED * min(dt, self.roll_timer)
+            self.x, self.y = _move_with_substeps(
+                level, self.x, self.y,
+                self.roll_dx * distance, self.roll_dy * distance,
+                self.RADIUS,
+            )
+            moved = (self.x, self.y) != old
+            if not moved:              # mur de face : pas d'i-frames sur place
+                self.roll_timer = 0.0
+                self.roll_invuln = 0.0
+            return moved
+
+        forward, strafe = self._movement_axes(keys_pressed, bindings)
         if forward == 0.0 and strafe == 0.0:
             return False
 
@@ -142,8 +180,6 @@ class Player(Entity):
         speed = self.SPEED * dt / length
         if self.aiming:
             speed *= self.ADS_MULT           # on avance au ralenti en visée
-        elif self._sprint_held(keys_pressed, bindings):
-            speed *= self.SPRINT_MULT
         cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
         dx = (forward * cos_a - strafe * sin_a) * speed
         dy = (forward * sin_a + strafe * cos_a) * speed
@@ -152,19 +188,35 @@ class Player(Entity):
         return (self.x, self.y) != old
 
     @staticmethod
-    def _sprint_held(keys_pressed, bindings):
-        """Touche sprint enfoncée. Par défaut (Maj gauche ou droite), les
-        deux touches Shift sprintent quel que soit le clavier (Windows et
-        Linux exposent les deux scancodes de la même façon) ; un re-mappage
-        vers une autre touche n'active que celle-ci."""
-        key = bindings["sprint"]
-        if key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
-            return keys_pressed[pygame.K_LSHIFT] or keys_pressed[pygame.K_RSHIFT]
-        return keys_pressed[key]
+    def _movement_axes(keys_pressed, bindings):
+        forward = float(keys_pressed[bindings["avancer"]])
+        forward -= float(keys_pressed[bindings["reculer"]])
+        strafe = float(keys_pressed[bindings["droite"]])
+        strafe -= float(keys_pressed[bindings["gauche"]])
+        return forward, strafe
+
+    def start_roll(self, keys_pressed, bindings):
+        """Déclenche une roulade dans la direction tenue, en avant par défaut."""
+        if not self.alive or self.rolling or self.roll_cooldown > 0.0:
+            return False
+        forward, strafe = self._movement_axes(keys_pressed, bindings)
+        if forward == 0.0 and strafe == 0.0:
+            forward = 1.0
+        length = math.hypot(forward, strafe)
+        forward, strafe = forward / length, strafe / length
+        cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
+        self.roll_dx = forward * cos_a - strafe * sin_a
+        self.roll_dy = forward * sin_a + strafe * cos_a
+        self.roll_strafe = strafe
+        self.roll_timer = self.ROLL_DURATION
+        self.roll_invuln = self.ROLL_DURATION
+        self.roll_cooldown = self.ROLL_COOLDOWN
+        self.aiming = False
+        return True
 
     def take_damage(self, amount):
-        if self.shield > 0.0:
-            return False              # bouclier actif : aucun dégât
+        if self.shield > 0.0 or self.roll_invuln > 0.0:
+            return False              # bouclier / roulade : aucun dégât
         self.hurt_flash = 0.35
         return super().take_damage(amount)
 
@@ -172,6 +224,9 @@ class Player(Entity):
         self.weapon.update(dt)
         self.hurt_flash = max(0.0, self.hurt_flash - dt)
         self.shield = max(0.0, self.shield - dt)
+        self.roll_timer = max(0.0, self.roll_timer - dt)
+        self.roll_invuln = max(0.0, self.roll_invuln - dt)
+        self.roll_cooldown = max(0.0, self.roll_cooldown - dt)
         # Transition de visée lissée (montée/descente de lunette).
         target = 1.0 if self.aiming else 0.0
         self.ads += (target - self.ads) * min(1.0, dt * 12)
@@ -210,6 +265,10 @@ class Enemy(Entity):
     KEEP_DISTANCE = False  # recule si le joueur approche (sniper)
     MIN_RANGE = 0.0
     AIM_DELAY = 0.0        # anticipation avant le tir (sniper uniquement)
+    CAN_ROLL = False        # le soldat entraîné est le seul à esquiver
+    ROLL_DURATION = 1.0
+    ROLL_COOLDOWN = 5.0
+    ROLL_SPEED = 2.8
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
@@ -239,6 +298,21 @@ class Enemy(Entity):
         self.aim_timer = 0.0      # temps restant avant que le tir parte
         self.last_seen = None    # dernière position connue du joueur
         self.cover_target = None # point de couverture visé
+        self.roll_timer = 0.0
+        self.roll_cooldown = 0.0
+        self.roll_invuln = 0.0
+        self.roll_dx = 0.0
+        self.roll_dy = 0.0
+
+    @property
+    def rolling(self):
+        return self.roll_timer > 0.0
+
+    @property
+    def roll_progress(self):
+        if not self.rolling:
+            return 0.0
+        return 1.0 - self.roll_timer / self.ROLL_DURATION
 
     def current_sprite(self, player=None):
         """Pose selon l'état ET l'angle de vue : on voit les ennemis de
@@ -247,6 +321,9 @@ class Enemy(Entity):
         cycle à deux frames ; un ennemi qui encaisse flashe en blanc."""
         if not self.alive:
             return assets.get(f"enemy_{self.KIND}_dead")
+        if self.rolling and self.KIND == "soldier":
+            frame = min(2, int(self.roll_progress * 3))
+            return assets.get(f"enemy_soldier_roll_{frame}")
         if self.flash_timer > 0.0:
             # Quand il tire, il fait face au joueur : pose de face armée.
             return assets.get(f"enemy_{self.KIND}_fire")
@@ -274,6 +351,8 @@ class Enemy(Entity):
         return assets.get(name, flipped)
 
     def take_damage(self, amount):
+        if self.roll_invuln > 0.0:
+            return False
         died = super().take_damage(amount)
         if died:
             # Le billboard devient un cadavre bas posé au sol.
@@ -298,6 +377,9 @@ class Enemy(Entity):
         self.flash_timer = max(0.0, self.flash_timer - dt)
         self.hurt_timer = max(0.0, self.hurt_timer - dt)
         self.fire_cooldown = max(0.0, self.fire_cooldown - dt)
+        self.roll_timer = max(0.0, self.roll_timer - dt)
+        self.roll_invuln = max(0.0, self.roll_invuln - dt)
+        self.roll_cooldown = max(0.0, self.roll_cooldown - dt)
         if self.aiming:
             self.aim_timer = max(0.0, self.aim_timer - dt)
         self.ai_timer += dt
@@ -309,11 +391,41 @@ class Enemy(Entity):
         self.aiming = False
         self.aim_timer = 0.0
 
+    def start_roll(self, dx, dy):
+        """Démarre une esquive collisionnée ; retourne False si indisponible."""
+        length = math.hypot(dx, dy)
+        if (not self.alive or not self.CAN_ROLL or self.rolling
+                or self.roll_cooldown > 0.0 or length < 1e-6):
+            return False
+        self.roll_dx, self.roll_dy = dx / length, dy / length
+        self.roll_timer = self.ROLL_DURATION
+        self.roll_invuln = self.ROLL_DURATION
+        self.roll_cooldown = self.ROLL_COOLDOWN
+        self.moving = False
+        self.cancel_aim()
+        return True
+
+    def advance_roll(self, dt, level):
+        """Applique l'impulsion de roulade sans permettre de traverser un mur."""
+        if not self.rolling:
+            return False
+        old = (self.x, self.y)
+        distance = self.ROLL_SPEED * min(dt, self.roll_timer)
+        self.x, self.y = _move_with_substeps(
+            level, self.x, self.y,
+            self.roll_dx * distance, self.roll_dy * distance, self.RADIUS,
+        )
+        if (self.x, self.y) == old:
+            self.roll_timer = 0.0
+            self.roll_invuln = 0.0
+            return False
+        return True
+
 
 class Grunt(Enemy):
-    """Milicien : faible et lent, mais tenace."""
+    """Milicien : faible mais très mobile, tout en gardant un tir lent."""
     KIND = "grunt"
-    SPEED = 1.7
+    SPEED = 2.55          # +50 %, FIRE_DELAY reste volontairement inchangé
     MAX_HEALTH = 80
     DAMAGE = (5, 10)
     FIRE_DELAY = 1.3
@@ -326,6 +438,7 @@ class Soldier(Enemy):
     KIND = "soldier"
     USES_COVER = True
     FLANKS = True
+    CAN_ROLL = True
 
 
 class Heavy(Enemy):
@@ -368,7 +481,7 @@ class Sniper(Enemy):
     KEEP_DISTANCE = True
     MIN_RANGE = 5.0        # ... mais fébrile au corps à corps
     USES_COVER = True
-    AIM_DELAY = 1.25       # se met à genou et stabilise sa visée avant le tir
+    AIM_DELAY = 0.75       # télégraphie brève : lisible sans rendre le tir poussif
 
 
 class Boss(Enemy):
@@ -436,6 +549,7 @@ PROP_SPECS = {
     "tribune":  {"sprite": "prop_tribune",  "width": 0.57},
     "labtable": {"sprite": "prop_labtable", "width": 1.00},
     "rock":     {"sprite": "prop_rock",      "width": 0.47},
+    "alien_crystal": {"sprite": "prop_alien_crystal", "width": 0.88},
     "fissure":  {"sprite": "prop_fissure",  "width": 0.60},
     "portal":   {"sprite": "prop_portal",   "width": 0.67},
 }
@@ -470,6 +584,7 @@ class Prop:
             self.sprite_name, spec["width"],
         )
         self.flipped = (int(x) + int(y)) % 2 == 1
+        self.v_offset = 0.0
 
     def current_sprite(self, player=None):
         if self.kind == "portal":
@@ -477,6 +592,10 @@ class Prop:
             # l'animation ne fait donc aucune transformation coûteuse en jeu.
             frame = ((pygame.time.get_ticks() // PORTAL_FRAME_MS)
                      % len(PORTAL_FRAMES))
+            # Anneau sans support : lévitation lente au-dessus du régolithe.
+            self.v_offset = 0.11 + 0.018 * math.sin(
+                pygame.time.get_ticks() * 0.003,
+            )
             return assets.get(PORTAL_FRAMES[frame])
         return assets.get(self.sprite_name, self.flipped)
 

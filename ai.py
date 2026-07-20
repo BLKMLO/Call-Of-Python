@@ -118,6 +118,10 @@ class EnemyAI:
         self.peek_phase = "exposed"
         self.peek_timer = random.uniform(0.0, 0.6)   # déphasé entre ennemis
         self.peek_point = None
+        if enemy.CAN_ROLL:
+            # Évite que tous les soldats roulent dès la première frame où
+            # ils aperçoivent le joueur.
+            enemy.roll_cooldown = random.uniform(1.5, 3.5)
 
     # ------------------------------------------------------------------
     def update(self, dt, player, level):
@@ -149,6 +153,12 @@ class EnemyAI:
             self.lost_timer = 0.0
         else:
             self.lost_timer += dt
+
+        # Une roulade déjà engagée remplace temporairement navigation et tir.
+        # Les timers et la perception continuent toutefois d'avancer.
+        if enemy.rolling:
+            enemy.advance_roll(dt, level)
+            return events
 
         # --- transitions ---------------------------------------------------
         state = enemy.ai_state
@@ -194,6 +204,10 @@ class EnemyAI:
 
         # --- comportements -------------------------------------------------
         state = enemy.ai_state
+        if (state == "attack" and sees_player and enemy.CAN_ROLL
+                and enemy.roll_cooldown <= 0.0 and enemy.flash_timer <= 0.0):
+            if self._start_side_roll(player, level):
+                return events
         if state == "idle":
             self._wander(dt, level)
         elif state == "chase":
@@ -240,6 +254,23 @@ class EnemyAI:
                 events += self._try_shoot(player, level, dist)
 
         return events
+
+    def _start_side_roll(self, player, level):
+        """Choisit un côté praticable et lance l'esquive du soldat."""
+        enemy = self.enemy
+        facing = math.atan2(player.y - enemy.y, player.x - enemy.x)
+        for direction in (self.strafe_dir, -self.strafe_dir):
+            angle = facing + direction * math.pi / 2
+            dx, dy = math.cos(angle), math.sin(angle)
+            if not level.can_stand(enemy.x + dx * 0.75,
+                                   enemy.y + dy * 0.75, enemy.RADIUS):
+                continue
+            self.strafe_dir = direction
+            enemy.angle = facing
+            return enemy.start_roll(dx, dy)
+        # Espace trop étroit : retente bientôt, sans brûler les 5 secondes.
+        enemy.roll_cooldown = 0.35
+        return False
 
     def alert(self, position):
         """Alerte extérieure (coup de feu, cri d'un allié) : part enquêter."""
@@ -392,8 +423,10 @@ class EnemyAI:
         chance = cover_adjusted_chance(enemy.hit_chance(dist), exposure)
         if random.random() < chance:
             damage = enemy.roll_damage(random)  # tient compte du niveau
+            health_before = player.health
             player.take_damage(damage)
-            events.append(("player_hit", (enemy, player)))
+            if player.health < health_before:
+                events.append(("player_hit", (enemy, player)))
         return events
 
     def _find_flank(self, player, level):

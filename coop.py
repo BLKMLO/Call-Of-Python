@@ -21,7 +21,7 @@ import random
 import pygame
 
 from entities import ENEMY_TYPES, Pickup, Player, Prop, RemotePlayer
-from game import GUNSHOT_HEARING, SLOT_SCANCODES, new_stats
+from game import GUNSHOT_HEARING, SLOT_SCANCODES, Game, new_stats
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
 from network import DEFAULT_PORT, UdpPeer
@@ -42,6 +42,8 @@ def _revive(entity, health):
     entity.health = health
     entity.SPRITE_HEIGHT = type(entity).SPRITE_HEIGHT
     entity.exploded = False
+    entity.roll_timer = 0.0
+    entity.roll_invuln = 0.0
 
 
 # ----------------------------------------------------------------------
@@ -125,6 +127,8 @@ class CoopHostGame(SurvivalGame):
     def update(self, dt):
         self.net_time += dt
         self._net_receive()
+        for client in self.clients.values():
+            client["player"].update_timers(dt)
         super().update(dt)
         self._update_respawns(dt)
         self._prune_clients()
@@ -169,6 +173,10 @@ class CoopHostGame(SurvivalGame):
             remote.x = float(message["x"])
             remote.y = float(message["y"])
             remote.angle = float(message["a"])
+            remote.roll_timer = max(0.0, min(
+                Player.ROLL_DURATION, float(message.get("rt", 0.0)),
+            ))
+            remote.roll_invuln = remote.roll_timer
             for angle, damage in message.get("fx", []):
                 self._resolve_remote_fire(message["id"], remote,
                                           float(angle), int(damage))
@@ -211,15 +219,18 @@ class CoopHostGame(SurvivalGame):
         players = [[0, round(self.player.x, 2), round(self.player.y, 2),
                     round(self.player.angle, 3), self.player.health,
                     int(getattr(self, "player_moving", False)),
-                    int(self.hud.flash > 0)]]
+                    int(self.hud.flash > 0), int(self.player.rolling),
+                    round(self.player.roll_timer, 2)]]
         for pid, client in self.clients.items():
             remote = client["player"]
             players.append([pid, round(remote.x, 2), round(remote.y, 2),
                             round(remote.angle, 3), remote.health,
-                            int(remote.moving), int(remote.flash_timer > 0)])
+                            int(remote.moving), int(remote.flash_timer > 0),
+                            int(remote.rolling), round(remote.roll_timer, 2)])
         enemies = [[e.net_id, e.KIND, round(e.x, 2), round(e.y, 2),
                     round(e.angle, 3), e.health, int(e.moving),
-                    int(e.flash_timer > 0), int(e.aiming)]
+                    int(e.flash_timer > 0), int(e.aiming), int(e.rolling),
+                    round(e.roll_timer, 2)]
                    for e in self.enemies if e.net_id is not None]
         snapshot = {
             "t": "snap",
@@ -329,6 +340,15 @@ class CoopClientGame:
                 return "menu"
             elif event.key == pygame.K_F3:
                 self.show_fps = not self.show_fps
+            elif (not self.paused and self.player.alive
+                  and (event.key == self.settings.keys["roulade"]
+                       or (self.settings.keys["roulade"] in
+                           (pygame.K_LSHIFT, pygame.K_RSHIFT)
+                           and event.key in (pygame.K_LSHIFT,
+                                             pygame.K_RSHIFT)))):
+                self.player.start_roll(
+                    pygame.key.get_pressed(), self.settings.keys,
+                )
             elif event.key == self.settings.keys["recharger"]:
                 self.player.weapon.start_reload()
                 if self.player.weapon.reloading > 0.0:
@@ -347,7 +367,7 @@ class CoopClientGame:
                 and self.player.alive:
             if event.button == 1:
                 self._fire()
-            elif event.button == 3:              # clic droit : mise en joue
+            elif event.button == 3 and not self.player.rolling:
                 self.player.aiming = True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
             self.player.aiming = False
@@ -372,18 +392,23 @@ class CoopClientGame:
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
-            player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
+            if not player.rolling:
+                player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
             moving = player.move(dt, keys, self.settings.keys, self.level)
-            self.step_distance += math.hypot(player.x - old_x,
-                                             player.y - old_y)
+            if player.rolling:
+                self.step_distance = 0.0
+            else:
+                self.step_distance += math.hypot(player.x - old_x,
+                                                 player.y - old_y)
             if self.step_distance > 1.05:
                 self.step_distance = 0.0
                 self.step_side = not self.step_side
                 self.sounds.play("step" if self.step_side else "step2",
                                  volume_scale=0.35)
-            if pygame.mouse.get_pressed()[0] and player.weapon.spec.automatic:
+            if (not player.rolling and pygame.mouse.get_pressed()[0]
+                    and player.weapon.spec.automatic):
                 self._fire()
             player.update(dt)
             self.hud.update(dt, moving)
@@ -413,6 +438,8 @@ class CoopClientGame:
 
     # -- tir local ------------------------------------------------------
     def _fire(self):
+        if self.player.rolling:
+            return
         weapon = self.player.weapon
         if not weapon.fire():
             return
@@ -456,6 +483,7 @@ class CoopClientGame:
             "t": "in", "id": self.pid,
             "x": round(self.player.x, 3), "y": round(self.player.y, 3),
             "a": round(self.player.angle, 3),
+            "rt": round(self.player.roll_timer, 3),
             "fx": self.pending_fires,
         }, self.host_addr)
         self.pending_fires = []
@@ -485,7 +513,12 @@ class CoopClientGame:
 
     def _apply_players(self, players):
         seen = set()
-        for pid, x, y, angle, health, moving, flash in players:
+        for data in players:
+            # Roulade ajoutée en fin de ligne : accepte les anciens hôtes à
+            # sept champs sans casser une session LAN mixte.
+            pid, x, y, angle, health, moving, flash = data[:7]
+            rolling = bool(data[7]) if len(data) > 7 else False
+            roll_timer = float(data[8]) if len(data) > 8 else 0.0
             if pid == self.pid:
                 # Sa propre vie est décidée par l'hôte.
                 if health < self.player.health:
@@ -506,6 +539,8 @@ class CoopClientGame:
             ally.net_x, ally.net_y = x, y
             ally.angle = angle
             ally.moving = bool(moving)
+            ally.roll_timer = roll_timer if rolling else 0.0
+            ally.roll_invuln = ally.roll_timer
             if flash and ally.flash_timer <= 0.0:
                 ally.flash_timer = 0.12
                 self.sounds.play("player_shot", volume_scale=0.5,
@@ -523,10 +558,12 @@ class CoopClientGame:
     def _apply_enemies(self, enemies):
         seen = set()
         for data in enemies:
-            # Le dernier champ (visée) a été ajouté sans casser les hôtes
-            # plus anciens : un instantané à 8 champs reste accepté.
+            # Visée puis roulade ont été ajoutées en fin de ligne : les
+            # instantanés historiques à huit ou neuf champs restent acceptés.
             net_id, kind, x, y, angle, health, moving, flash = data[:8]
             aiming = bool(data[8]) if len(data) > 8 else False
+            rolling = bool(data[9]) if len(data) > 9 else False
+            roll_timer = float(data[10]) if len(data) > 10 else 0.0
             seen.add(net_id)
             ghost = self.ghosts.get(net_id)
             if ghost is None:
@@ -541,6 +578,8 @@ class CoopClientGame:
             ghost.angle = angle
             ghost.moving = bool(moving)
             ghost.aiming = aiming
+            ghost.roll_timer = roll_timer if rolling else 0.0
+            ghost.roll_invuln = ghost.roll_timer
             if not aiming:
                 ghost.aim_timer = 0.0
             if flash and ghost.flash_timer <= 0.0:
@@ -615,6 +654,8 @@ class CoopClientGame:
                             * self.raycaster.height * 0.02)
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+        if self.player.rolling:
+            Game._player_roll_camera(self, screen)
         if self.player.ads > 0.01:
             zoom_screen(screen, self.player.zoom)   # lunette de visée
         self.hud.draw(screen, self.player, list(self.ghosts.values()),

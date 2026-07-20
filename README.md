@@ -31,7 +31,7 @@ Les touches sont modifiables dans **Paramètres**.
 |---|---|
 | Avancer / reculer | `Z` / `S` |
 | Gauche / droite | `Q` / `D` |
-| Sprint | `Maj` |
+| Roulade | `Maj` |
 | Regarder / viser | Souris |
 | Tirer | Clic gauche |
 | Mise en joue | Clic droit maintenu |
@@ -82,8 +82,8 @@ tous les joueurs sont à terre simultanément.
   Colosse, avec sprites directionnels et animations.
 - **IA tactique** : détection, patrouille, alerte des alliés, couverture,
   contournement et pathfinding BFS.
-- **Décors interactifs** : véhicules, mobilier, rochers, crevasses et
-  portail influencent les déplacements et le pathfinding.
+- **Décors interactifs** : véhicules, mobilier, rochers et cristaux aliens
+  influencent déplacements, pathfinding et lignes de tir.
 - **HUD complet** : vie, munitions, arsenal, minimap, statistiques,
   indicateurs de dégâts, barre de boss et compteur de FPS optionnel.
 - **Ambiance dynamique** : cycle solaire propre à chaque niveau, audio

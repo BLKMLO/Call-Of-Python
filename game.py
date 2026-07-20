@@ -106,6 +106,15 @@ class Game:
                 return "menu"
             elif event.key == pygame.K_F3:
                 self.show_fps = not self.show_fps
+            elif (not self.paused and self.player.alive
+                  and (event.key == self.settings.keys["roulade"]
+                       or (self.settings.keys["roulade"] in
+                           (pygame.K_LSHIFT, pygame.K_RSHIFT)
+                           and event.key in (pygame.K_LSHIFT,
+                                             pygame.K_RSHIFT)))):
+                self.player.start_roll(
+                    pygame.key.get_pressed(), self.settings.keys,
+                )
             elif event.key == self.settings.keys["recharger"]:
                 self.player.weapon.start_reload()
                 if self.player.weapon.reloading > 0.0:
@@ -126,7 +135,7 @@ class Game:
             if event.button == 1:
                 # Premier coup au clic : indispensable pour le semi-auto.
                 self._player_fire()
-            elif event.button == 3:              # clic droit : mise en joue
+            elif event.button == 3 and not self.player.rolling:
                 self.player.aiming = True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
             self.player.aiming = False
@@ -161,18 +170,21 @@ class Game:
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
-            player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
+            if not player.rolling:
+                player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
 
-            # Déplacements clavier (sprint compris).
+            # Déplacement normal ou impulsion de roulade collisionnée.
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
             moving = player.move(dt, keys, self.settings.keys, self.level)
             self.player_moving = moving   # relayé aux clients en coop LAN
 
-            # Bruits de pas cadencés par la distance parcourue : le rythme
-            # s'accélère naturellement en sprint.
-            self.step_distance += math.hypot(player.x - old_x,
-                                             player.y - old_y)
+            # Une roulade ne produit pas une rafale artificielle de pas.
+            if player.rolling:
+                self.step_distance = 0.0
+            else:
+                self.step_distance += math.hypot(player.x - old_x,
+                                                 player.y - old_y)
             if self.step_distance > 1.05:
                 self.step_distance = 0.0
                 self.step_side = not self.step_side
@@ -180,7 +192,8 @@ class Game:
                                  volume_scale=0.35)
 
             # Tir maintenu (armes automatiques uniquement).
-            if pygame.mouse.get_pressed()[0] and player.weapon.spec.automatic:
+            if (not player.rolling and pygame.mouse.get_pressed()[0]
+                    and player.weapon.spec.automatic):
                 self._player_fire()
 
             player.update(dt)
@@ -284,8 +297,10 @@ class Game:
             if dist < radius:
                 damage = round(enemy.EXPLOSION_DAMAGE * (1 - dist / radius / 2)
                                * enemy.damage_mult)
+                health_before = victim.health
                 victim.take_damage(damage)
-                self._on_player_hit(enemy, victim)
+                if victim.health < health_before:
+                    self._on_player_hit(enemy, victim)
         for other in self.enemies:
             if other is enemy or not other.alive:
                 continue
@@ -386,6 +401,8 @@ class Game:
     # Tir du joueur (hitscan, multi-plombs pour le fusil à pompe)
     # ------------------------------------------------------------------
     def _player_fire(self):
+        if self.player.rolling:
+            return
         weapon = self.player.weapon
         if not weapon.fire():
             return
@@ -419,6 +436,10 @@ class Game:
         en coopération LAN (résolus par l'hôte).
         """
         wall_dist, wall_tile, _, _ = cast_ray(self.level, ox, oy, angle)
+        cover_dist = self.level.first_cover_hit(ox, oy, angle, wall_dist)
+        hit_cover = cover_dist < wall_dist
+        if hit_cover:
+            wall_dist = cover_dist
         best = None
         best_dist = wall_dist
         for enemy in self.enemies:
@@ -439,10 +460,14 @@ class Game:
             hx = ox + math.cos(angle) * (wall_dist - 0.05)
             hy = oy + math.sin(angle) * (wall_dist - 0.05)
             tex = self.level.config["theme"].get(wall_tile)
-            color = assets.average_color(tex) if tex else (120, 120, 120)
+            if hit_cover:
+                color = assets.average_color("prop_alien_crystal")
+            else:
+                color = assets.average_color(tex) if tex else (120, 120, 120)
             self.particles.spawn_wall_dust(hx, hy, color)
             return None
 
+        health_before = best.health
         died = best.take_damage(damage)
         if died:
             self.particles.spawn_death(best.x, best.y)
@@ -451,6 +476,10 @@ class Game:
             if best.EXPLODES:
                 self._explode(best)   # un kamikaze abattu détone
             return "kill"
+        if best.health == health_before:
+            # Roulade invulnérable : la balle a croisé la silhouette, mais
+            # ne compte ni comme touche ni comme dégâts.
+            return None
         self.particles.spawn_blood(best.x, best.y)
         self.sounds.play("enemy_hit", volume_scale=0.6,
                          pos=(best.x, best.y), listener=self.player)
@@ -495,6 +524,8 @@ class Game:
             self.hud.draw_death_screen(screen, self.death_time)
             return
 
+        if self.player.rolling:
+            self._player_roll_camera(screen)
         if self.player.ads > 0.01:
             zoom_screen(screen, self.player.zoom)   # lunette de visée
         self.hud.draw(screen, self.player, self.enemies, self.level,
@@ -502,6 +533,18 @@ class Game:
                       survival=self.survival_info(), stats=self.stats)
         if self.paused:
             self.hud.draw_pause(screen)
+
+    def _player_roll_camera(self, screen):
+        """Donne du poids à la roulade sans transformer le HUD avec le monde."""
+        progress = self.player.roll_progress
+        arc = math.sin(progress * math.pi)
+        angle = -self.player.roll_strafe * arc * 8.0
+        scale = 1.02 + arc * 0.04
+        frame = screen.copy()
+        transformed = pygame.transform.rotozoom(frame, angle, scale)
+        center = (screen.get_width() // 2,
+                  screen.get_height() // 2 + int(arc * screen.get_height() * 0.035))
+        screen.blit(transformed, transformed.get_rect(center=center))
 
     def _death_cam_roll(self, screen, fall):
         """Bascule la vue rendue sur le côté (la tête du protagoniste tombe

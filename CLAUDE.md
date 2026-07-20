@@ -177,7 +177,8 @@ d'implémentation et les décisions techniques non triviales.
 12. Option "souris inversée" dans les Paramètres.
 13. Fix bouton de sensibilité (calcul du point de bascule), inversion
     souris étendue à l'axe vertical.
-14. Bouclier temporaire au changement de niveau, sprint Maj gauche/droite.
+14. Bouclier temporaire au changement de niveau, ancien sprint Maj
+    gauche/droite (remplacé depuis par la roulade).
 15. Son de rechargement réel (fichier fourni), musiques de niveau
     personnalisables (`assets/sound/`), IA tactique (flanc, couverture,
     exposition partielle), nerf sniper (-5% dégâts).
@@ -195,7 +196,11 @@ d'implémentation et les décisions techniques non triviales.
     reconstruction temporaire du banc du Gouvernement tronqué (miroir).
 20. Régénération définitive de la voiture et des sièges, suppression d'une
     porte isolée du Laboratoire, couvert renforcé et télégraphie du sniper à
-    genou pendant 1,25 s (synchronisée en coop). Contexte dans `GPT.md`.
+    genou pendant 0,75 s (synchronisée en coop), tirs ennemis frontaux, murs
+    blancs du Laboratoire et nuages hors niveau lunaire. Contexte dans `GPT.md`.
+21. Milicien accéléré de 50 %, roulades joueur/soldat avec i-frames et synchro
+    coop, Lune texturée avec cristaux aliens de couverture, portail flottant
+    et menu principal cinématique lunaire. Contexte complet dans `GPT.md`.
 
 ## Dette / manques à connaître
 

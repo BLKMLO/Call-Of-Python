@@ -3,7 +3,73 @@
 Dernière mise à jour : 20 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche distante de travail `claude/call_of_python_LLM`.
 
-## Corrections de cette passe
+## Passe roulades, Lune et menu
+
+- Le milicien `Grunt`, seul ennemi du premier niveau, passe de `SPEED = 1.7`
+  à `2.55` (+50 %). Sa cadence reste strictement `FIRE_DELAY = 1.3` : ne pas
+  confondre mobilité et fréquence de tir lors d'un futur équilibrage.
+- Le militaire `Soldier` possède `CAN_ROLL = True`. En combat et avec un côté
+  praticable, l'IA effectue une roulade latérale de `1.0 s`, à `2.8` cases/s,
+  avec invincibilité pendant toute l'animation et cooldown de `5.0 s` entre
+  deux déclenchements. Il ne navigue, ne vise et ne tire pas pendant l'action.
+  Les trois frames sont `assets/enemy_soldier_roll_0..2.png` (`64x96`).
+- Le sprint a été supprimé. La touche configurable `roulade` (Maj par défaut)
+  déclenche une roulade joueur de `0.5 s`, vitesse `5.0`, i-frames `0.5 s` et
+  cooldown `3.0 s`. La direction suit ZQSD, ou avance par défaut. Les longues
+  impulsions sont sous-échantillonnées : un pic de `dt` ne traverse pas un
+  mur. Tir, ADS et rotation de vue sont suspendus ; la caméra bascule et
+  l'arme s'abaisse. Le HUD expose le cooldown. Les anciens `settings.json`
+  contenant `sprint` sont migrés automatiquement vers `roulade`.
+- La coop ajoute roulade/temps restant après les anciens champs des joueurs
+  et des ennemis. Les formats historiques 7 champs (joueurs), 8 champs
+  (ennemis) et 9 champs (ennemis avec `aiming`) restent acceptés. L'hôte
+  applique les i-frames des clients distants : la protection n'est pas
+  seulement cosmétique côté client.
+- Dans `MAP_MOON`, toutes les crevasses `V` sont remplacées par des cristaux
+  `k` / `prop_alien_crystal` (`96x112`, largeur monde `0.88`) montrant un alien
+  emprisonné. Chaque cristal bloque déplacement/pathfinding par sa case et
+  balles/perception par un cercle de rayon `0.46`; le rendu reste un billboard
+  irrégulier qui masque naturellement ce qui est derrière par ordre de
+  profondeur. Le régolithe utilise `moon_ground`: grain et cratères gris sont
+  précalculés au changement de résolution, sans primitives ajoutées par frame.
+- Le portail lunaire n'a plus de pied ni de support : anneau ovale complet,
+  vortex animé conservé, `v_offset` oscillant autour de `0.11` pour la
+  lévitation. Les quatre frames restent en `79x117` et partagent une boîte
+  opaque `71x108` en `(4, 2)`.
+- Le menu principal utilise un nouveau fond `1280x720`: soldat seul sur la
+  Lune, arme abaissée, face à un portail gigantesque. Le panneau et les
+  boutons occupent le tiers gauche laissé sombre par la composition ; police,
+  libellés, records et pied de page ont été recalibrés à `1280x720` et
+  `800x600`. Les autres menus restent centrés et leur mode compact a été
+  resserré pour ne pas déborder après le changement de police.
+
+## Corrections de la passe combat et environnements
+
+- Le sniper conserve sa pose de mise en joue à genou mais son anticipation
+  passe de `1.25` à `0.75` seconde (`Sniper.AIM_DELAY`). Le cooldown de
+  `2.3` secondes commence toujours après le tir : seule la télégraphie avant
+  le coup est raccourcie.
+- Les frames de tir de `grunt`, `soldier`, `heavy`, `boss` et du coéquipier
+  `ally` ont été régénérées en vue strictement frontale. Arme et flash sont
+  orientés vers le joueur ; chaque silhouette reste alignée au sol et garde
+  une hauteur proche de sa frame `idle`, pour éviter tout pivot ou saut
+  d'échelle au tir. Le kamikaze n'est pas concerné car il ne tire jamais.
+- Le Laboratoire emploie trois textures dédiées claires :
+  `wall_lab_tech.png`, `wall_lab_metal.png` et
+  `wall_lab_reinforced.png`. Elles ne remplacent pas les murs historiques
+  partagés avec les autres niveaux. `wall_sealed_portal.png` est lui aussi
+  intégré à cette enceinte blanche, tout en gardant sa brèche verte enchaînée.
+- Les niveaux terrestres ont désormais un panorama de nuages teinté par leur
+  horizon. Il est généré une seule fois par niveau/résolution, boucle avec la
+  rotation de la caméra et ne demande que deux blits par frame. Tout niveau
+  dont la configuration contient `stars` — actuellement la Lune — le
+  désactive automatiquement. La clé optionnelle `clouds: false` permet aussi
+  de le couper explicitement dans un futur niveau.
+- Vérification visuelle effectuée à `960x540` sur les cinq tirs, le
+  Laboratoire et la Lune. La mesure SDL factice sur 120 frames n'a montré
+  aucun coût marginal mesurable du panorama nuageux.
+
+## Corrections de la passe précédente
 
 - `assets/prop_car.png` a été régénéré : berline complète, avant droit non
   tronqué, contenu opaque `176x67` dans une toile transparente `192x80` avec
@@ -17,9 +83,9 @@ branche distante de travail `claude/call_of_python_LLM`.
 - `ai.cover_adjusted_chance()` conserve la précision normale à exposition
   complète, mais renforce légèrement le couvert : facteur
   `0.28 + 0.72 * exposure` au lieu de `0.35 + 0.65 * exposure`.
-- Le sniper possède `AIM_DELAY = 1.25`. Lorsque son arme est prête, il passe
+- Le sniper possède `AIM_DELAY = 0.75`. Lorsque son arme est prête, il passe
   en `aiming`, s'immobilise et utilise `assets/enemy_sniper_aim.png` (un genou
-  au sol). Le tir part à la première frame après 1,25 s. Perdre la ligne de
+  au sol). Le tir part à la première frame après 0,75 s. Perdre la ligne de
   vue, se replier au corps à corps, changer d'état, mourir ou perdre la cible
   annule la visée ; aucun tir ne reste stocké derrière un mur.
 - La pose à genou a été régénérée pour corriger l'anatomie puis replacée en
@@ -43,19 +109,30 @@ branche distante de travail `claude/call_of_python_LLM`.
   une silhouette opaque plus basse (`44x74`, alignée au sol). Le moteur garde
   donc les pieds au sol et le personnage paraît réellement agenouillé sans
   modifier le raycaster.
-- Le délai de 1,25 s s'ajoute au temps entre deux tirs (`FIRE_DELAY = 2.3`) :
+- Le délai de 0,75 s s'ajoute au temps entre deux tirs (`FIRE_DELAY = 2.3`) :
   le cooldown commence après le tir, pas au début de la mise en joue.
 - Une exposition de `1.0` ne doit jamais être pénalisée par le bonus de
   couvert. L'exposition est bornée entre `0.0` et `1.0`.
-- Toute évolution de l'état réseau ennemi doit rester tolérante aux
-  instantanés plus courts afin qu'un client mis à jour ne plante pas avec un
-  hôte plus ancien.
+- Les cooldowns de roulade se mesurent de déclenchement à déclenchement : les
+  `3.0 s` / `5.0 s` incluent donc la durée de la roulade. Ne jamais remplacer
+  le déplacement sous-échantillonné par un unique grand pas collisionné.
+- `MAP_MOON`, `PROP_CHARS`, `cover_circles`, le test de ligne de vue et le
+  hitscan doivent rester cohérents : retirer seulement l'un d'eux rendrait un
+  cristal traversable, invisible à l'IA ou perméable aux balles.
+- Toute évolution de l'état réseau joueur/ennemi doit ajouter ses champs en
+  fin de ligne et rester tolérante aux instantanés plus courts afin qu'un
+  client mis à jour ne plante pas avec un hôte plus ancien.
 
 ## Validation disponible
 
-`tests/test_requested_changes.py` couvre : marges de la voiture, conception et
-échelle du siège, topologie des portes du laboratoire, courbe de couvert,
-délai/annulation/pose du sniper et compatibilité coop 8/9 champs.
+`tests/test_requested_changes.py` contient 20 tests et couvre : marges de la
+voiture, conception et échelle du siège, topologie des portes et blancheur des
+murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
+compatibilité coop 8/9 champs, stabilité d'échelle des cinq tirs frontaux et
+présence/absence correcte des nuages sur Terre/la Lune, vitesse du milicien,
+roulades joueur/soldat (direction, i-frames, cooldowns, collision, frames et
+IA), compatibilité réseau de la roulade, cristaux de couverture et nouveau
+fond de menu.
 
 Commande utilisée :
 
@@ -65,8 +142,9 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 python -m unittest discover -s tests -v
 ```
 
-Un smoke test supplémentaire instancie et rend le niveau Laboratoire complet
-en vidéo SDL factice (800×600), avec un sniper forcé en pose `aiming`.
+Des rendus supplémentaires en vidéo SDL factice valident le menu aux deux
+résolutions, le sol/portail/cristaux lunaires, les trois frames de roulade à
+leur taille projetée et les boucles complètes `Game` / `SurvivalGame`.
 
 ## Portails (20 juillet 2026)
 
@@ -74,9 +152,10 @@ en vidéo SDL factice (800×600), avec un sniper forcé en pose `aiming`.
   classe `Prop` sélectionne une frame toutes les `110 ms` avec
   `pygame.time.get_ticks()`. Les surfaces et leurs mises à l'échelle sont
   mises en cache : aucune rotation/composition n'est faite pendant le rendu.
-- Les quatre frames font `79x117`, partagent la même boîte opaque
-  (`78x115`) et gardent l'anneau immobile ; seul le vortex vert tourne et
-  pulse. Le portail ne doit pas être retourné selon la parité de sa case.
+- Les quatre frames font `79x117`, partagent la même boîte opaque (`71x108`,
+  en `(4, 2)`) et gardent l'anneau immobile ; seul le vortex vert tourne et
+  pulse. L'anneau est fermé, sans support, et lévite. Le portail ne doit pas
+  être retourné selon la parité de sa case.
 - Dans `MAP_LAB`, le mur `(28, 18)`, derrière l'épaule du Colosse placé en
   `(25, 19)`, devient le caractère `4` / `wall_sealed_portal`. La texture
   montre un petit trou vert barré de chaînes : le Colosse est visuellement le
