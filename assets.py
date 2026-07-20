@@ -850,6 +850,25 @@ def _prop_rock():
     return _upscale(s, 4)
 
 
+def _prop_alien_crystal():
+    """Fallback : monolithe vert avec silhouette extraterrestre captive."""
+    s = pygame.Surface((24, 28), pygame.SRCALPHA)
+    pygame.draw.polygon(s, (28, 108, 54),
+                        ((3, 25), (5, 8), (12, 0), (19, 8), (21, 25)))
+    pygame.draw.polygon(s, (66, 220, 102),
+                        ((6, 23), (8, 9), (12, 3), (16, 10), (18, 23)))
+    pygame.draw.polygon(s, (146, 255, 164),
+                        ((8, 9), (12, 3), (11, 21)))
+    pygame.draw.ellipse(s, (16, 46, 28), (10, 9, 5, 6))   # tête alien
+    _rect(s, 11, 15, 3, 7, (16, 46, 28))                 # torse captif
+    _rect(s, 14, 16, 4, 1, (16, 46, 28))                 # bras / main
+    for x in (1, 5, 17, 21):
+        pygame.draw.polygon(s, (24, 132, 62),
+                            ((x, 26), (x + 1, 16), (x + 4, 26)))
+    _rect(s, 1, 24, 22, 4, (54, 56, 54))
+    return _upscale(s, 4)
+
+
 def _prop_fissure():
     """Crevasse lunaire : lèvres de régolithe déchirées sur une lueur
     verte surnaturelle qui monte des profondeurs."""
@@ -951,6 +970,7 @@ _BUILDERS = {
     "prop_tribune": _prop_tribune,
     "prop_labtable": _prop_labtable,
     "prop_rock": _prop_rock,
+    "prop_alien_crystal": _prop_alien_crystal,
     "prop_fissure": _prop_fissure,
     "prop_portal": _prop_portal,
     "fp_pistol": _fp_pistol,
@@ -976,6 +996,10 @@ for _kind in ENEMY_PALETTES:
             lambda k=_kind, p=_pose: _enemy_sprite(k, p)
         )
 _BUILDERS["enemy_sniper_aim"] = lambda: _enemy_sprite("sniper", "aim")
+for _frame, _pose in enumerate(("walk_side", "walk2_side", "walk_side")):
+    _BUILDERS[f"enemy_soldier_roll_{_frame}"] = (
+        lambda p=_pose: _enemy_sprite("soldier", p)
+    )
 
 
 def generate_all(force=False):

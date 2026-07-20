@@ -3,6 +3,46 @@
 Dernière mise à jour : 20 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche distante de travail `claude/call_of_python_LLM`.
 
+## Passe roulades, Lune et menu
+
+- Le milicien `Grunt`, seul ennemi du premier niveau, passe de `SPEED = 1.7`
+  à `2.55` (+50 %). Sa cadence reste strictement `FIRE_DELAY = 1.3` : ne pas
+  confondre mobilité et fréquence de tir lors d'un futur équilibrage.
+- Le militaire `Soldier` possède `CAN_ROLL = True`. En combat et avec un côté
+  praticable, l'IA effectue une roulade latérale de `1.0 s`, à `2.8` cases/s,
+  avec invincibilité pendant toute l'animation et cooldown de `5.0 s` entre
+  deux déclenchements. Il ne navigue, ne vise et ne tire pas pendant l'action.
+  Les trois frames sont `assets/enemy_soldier_roll_0..2.png` (`64x96`).
+- Le sprint a été supprimé. La touche configurable `roulade` (Maj par défaut)
+  déclenche une roulade joueur de `0.5 s`, vitesse `5.0`, i-frames `0.5 s` et
+  cooldown `3.0 s`. La direction suit ZQSD, ou avance par défaut. Les longues
+  impulsions sont sous-échantillonnées : un pic de `dt` ne traverse pas un
+  mur. Tir, ADS et rotation de vue sont suspendus ; la caméra bascule et
+  l'arme s'abaisse. Le HUD expose le cooldown. Les anciens `settings.json`
+  contenant `sprint` sont migrés automatiquement vers `roulade`.
+- La coop ajoute roulade/temps restant après les anciens champs des joueurs
+  et des ennemis. Les formats historiques 7 champs (joueurs), 8 champs
+  (ennemis) et 9 champs (ennemis avec `aiming`) restent acceptés. L'hôte
+  applique les i-frames des clients distants : la protection n'est pas
+  seulement cosmétique côté client.
+- Dans `MAP_MOON`, toutes les crevasses `V` sont remplacées par des cristaux
+  `k` / `prop_alien_crystal` (`96x112`, largeur monde `0.88`) montrant un alien
+  emprisonné. Chaque cristal bloque déplacement/pathfinding par sa case et
+  balles/perception par un cercle de rayon `0.46`; le rendu reste un billboard
+  irrégulier qui masque naturellement ce qui est derrière par ordre de
+  profondeur. Le régolithe utilise `moon_ground`: grain et cratères gris sont
+  précalculés au changement de résolution, sans primitives ajoutées par frame.
+- Le portail lunaire n'a plus de pied ni de support : anneau ovale complet,
+  vortex animé conservé, `v_offset` oscillant autour de `0.11` pour la
+  lévitation. Les quatre frames restent en `79x117` et partagent une boîte
+  opaque `71x108` en `(4, 2)`.
+- Le menu principal utilise un nouveau fond `1280x720`: soldat seul sur la
+  Lune, arme abaissée, face à un portail gigantesque. Le panneau et les
+  boutons occupent le tiers gauche laissé sombre par la composition ; police,
+  libellés, records et pied de page ont été recalibrés à `1280x720` et
+  `800x600`. Les autres menus restent centrés et leur mode compact a été
+  resserré pour ne pas déborder après le changement de police.
+
 ## Corrections de la passe combat et environnements
 
 - Le sniper conserve sa pose de mise en joue à genou mais son anticipation
@@ -73,17 +113,26 @@ branche distante de travail `claude/call_of_python_LLM`.
   le cooldown commence après le tir, pas au début de la mise en joue.
 - Une exposition de `1.0` ne doit jamais être pénalisée par le bonus de
   couvert. L'exposition est bornée entre `0.0` et `1.0`.
-- Toute évolution de l'état réseau ennemi doit rester tolérante aux
-  instantanés plus courts afin qu'un client mis à jour ne plante pas avec un
-  hôte plus ancien.
+- Les cooldowns de roulade se mesurent de déclenchement à déclenchement : les
+  `3.0 s` / `5.0 s` incluent donc la durée de la roulade. Ne jamais remplacer
+  le déplacement sous-échantillonné par un unique grand pas collisionné.
+- `MAP_MOON`, `PROP_CHARS`, `cover_circles`, le test de ligne de vue et le
+  hitscan doivent rester cohérents : retirer seulement l'un d'eux rendrait un
+  cristal traversable, invisible à l'IA ou perméable aux balles.
+- Toute évolution de l'état réseau joueur/ennemi doit ajouter ses champs en
+  fin de ligne et rester tolérante aux instantanés plus courts afin qu'un
+  client mis à jour ne plante pas avec un hôte plus ancien.
 
 ## Validation disponible
 
-`tests/test_requested_changes.py` contient 13 tests et couvre : marges de la
+`tests/test_requested_changes.py` contient 20 tests et couvre : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
 compatibilité coop 8/9 champs, stabilité d'échelle des cinq tirs frontaux et
-présence/absence correcte des nuages sur Terre/la Lune.
+présence/absence correcte des nuages sur Terre/la Lune, vitesse du milicien,
+roulades joueur/soldat (direction, i-frames, cooldowns, collision, frames et
+IA), compatibilité réseau de la roulade, cristaux de couverture et nouveau
+fond de menu.
 
 Commande utilisée :
 
@@ -93,8 +142,9 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 python -m unittest discover -s tests -v
 ```
 
-Des rendus supplémentaires en vidéo SDL factice valident le Laboratoire, le
-ciel lunaire et chaque nouvelle frame de tir à sa taille projetée en jeu.
+Des rendus supplémentaires en vidéo SDL factice valident le menu aux deux
+résolutions, le sol/portail/cristaux lunaires, les trois frames de roulade à
+leur taille projetée et les boucles complètes `Game` / `SurvivalGame`.
 
 ## Portails (20 juillet 2026)
 
@@ -102,9 +152,10 @@ ciel lunaire et chaque nouvelle frame de tir à sa taille projetée en jeu.
   classe `Prop` sélectionne une frame toutes les `110 ms` avec
   `pygame.time.get_ticks()`. Les surfaces et leurs mises à l'échelle sont
   mises en cache : aucune rotation/composition n'est faite pendant le rendu.
-- Les quatre frames font `79x117`, partagent la même boîte opaque
-  (`78x115`) et gardent l'anneau immobile ; seul le vortex vert tourne et
-  pulse. Le portail ne doit pas être retourné selon la parité de sa case.
+- Les quatre frames font `79x117`, partagent la même boîte opaque (`71x108`,
+  en `(4, 2)`) et gardent l'anneau immobile ; seul le vortex vert tourne et
+  pulse. L'anneau est fermé, sans support, et lévite. Le portail ne doit pas
+  être retourné selon la parité de sa case.
 - Dans `MAP_LAB`, le mur `(28, 18)`, derrière l'épaule du Colosse placé en
   `(25, 19)`, devient le caractère `4` / `wall_sealed_portal`. La texture
   montre un petit trou vert barré de chaînes : le Colosse est visuellement le

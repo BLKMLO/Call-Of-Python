@@ -13,9 +13,8 @@ Une carte est une grille de caractères :
     'H'           : trousse de soins
     '+'           : pack de vie caché (rare, soin complet, hors minimap)
     décors        : 'c' voiture, 'n' pupitres, 't' tribune, 'm' paillasse,
-                    'r' rocher, 'V' crevasse luisante, 'o' portail —
-                    billboards qui bloquent le passage (mais pas les balles
-                    ni les regards)
+                    'r' rocher, 'k' cristal alien, 'o' portail. Tous bloquent
+                    le passage ; le cristal bloque aussi balles et regards.
     'G'           : mur d'énergie (limite du monde lunaire) — bloque tout,
                     mais n'est rendu que lorsqu'on s'en approche
 
@@ -25,9 +24,13 @@ ensuite sur la Lune. Chaque niveau définit sa carte, son thème visuel,
 sa composition d'ennemis, ses armes au sol et sa difficulté.
 """
 
+import math
+
+
 # Décor associé à chaque caractère de carte.
 PROP_CHARS = {"c": "car", "n": "bench", "t": "tribune",
-              "m": "labtable", "r": "rock", "V": "fissure", "o": "portal"}
+              "m": "labtable", "r": "rock", "k": "alien_crystal",
+              "o": "portal"}
 
 MAP_WAREHOUSE = [
     "111111111111111111111111111111",
@@ -165,29 +168,29 @@ MAP_LAB = [
 ]
 
 # Arène du Déferlement, sur la Lune : régolithe et cratères, sas
-# d'invasion aux coins, rochers épars, ciel noir étoilé.
+# d'invasion aux coins, cristaux aliens servant de couvert, ciel étoilé.
 MAP_MOON = [
     "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
     "G............................G",
     "G.+..........................G",
-    "G.................VV.........G",
-    "G..............H......V......G",
-    "G....VV................V.....G",
-    "G......V.....................G",
+    "G.................kk.........G",
+    "G..............H......k......G",
+    "G....kk................k.....G",
+    "G......k.....................G",
     "G............................G",
     "G............................G",
-    "G........V....SS.............G",
-    "G.......V............V.......G",
-    "G...........S....S....V......G",
+    "G........k....SS.............G",
+    "G.......k............k.......G",
+    "G...........S....S....k......G",
     "G..W........S..o.S........W..G",
     "G............................G",
     "G.............SS.............G",
     "G............................G",
-    "G...V........................G",
-    "G....V..................VV...G",
-    "G....V....................V..G",
+    "G...k........................G",
+    "G....k..................kk...G",
+    "G....k....................k..G",
     "G............................G",
-    "G..........VV..H.............G",
+    "G..........kk..H.............G",
     "G..............P.............G",
     "G............................G",
     "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
@@ -203,7 +206,8 @@ SURVIVAL_LEVEL = {
     "portal": (15.5, 12.5),                      # cœur du Déferlement
     "sky": ((3, 3, 8), (12, 12, 20)),           # nuit lunaire...
     "stars": True,                               # ... constellée d'étoiles
-    "floor": ((96, 96, 102), (48, 48, 54)),      # régolithe gris
+    "moon_ground": True,                         # grain, cailloux et cratères
+    "floor": ((118, 118, 122), (44, 44, 49)),    # régolithe gris réaliste
     "enemies": [],                               # gérés par les vagues
     "weapons": ["rifle", "minigun"],
     "enemy_health_mult": 1.0,                    # écrasés par la vague
@@ -309,6 +313,7 @@ class Level:
         self.horde_spawns = []     # [(x, y)] points d'invasion (survie)
         self.prop_spawns = []      # [(x, y, type_de_décor)]
         self.prop_tiles = set()    # cases occupées par un décor (bloquantes)
+        self.cover_circles = []    # cristaux : (x, y, rayon), bloquent les tirs
         self.doors = {}            # {(x, y): {"open": 0..1, "opening": bool}}
         enemy_kinds = self.config["enemies"]
         weapon_ids = self.config["weapons"]
@@ -335,8 +340,11 @@ class Level:
                 elif char == "+":
                     self.pickup_spawns.append((cx, cy, "lifepack"))
                 elif char in PROP_CHARS:
-                    self.prop_spawns.append((cx, cy, PROP_CHARS[char]))
+                    prop_kind = PROP_CHARS[char]
+                    self.prop_spawns.append((cx, cy, prop_kind))
                     self.prop_tiles.add((x, y))
+                    if prop_kind == "alien_crystal":
+                        self.cover_circles.append((cx, cy, 0.46))
                 elif char == "D":
                     self.doors[(x, y)] = {"open": 0.0, "opening": False}
                 if char in "PEBSWH+" or char in PROP_CHARS:
@@ -384,7 +392,8 @@ class Level:
     def is_wall(self, x, y):
         """Bloque les déplacements : une porte compte tant qu'elle n'est pas
         presque entièrement ouverte ; les décors (voitures, pupitres...)
-        bloquent aussi, mais pas les balles (cast_ray lit la grille)."""
+        bloquent aussi. Les cristaux ont en plus un cercle de couverture
+        consulté par les tirs et les lignes de vue."""
         t = self.tile(x, y)
         if t == ".":
             return (int(x), int(y)) in self.prop_tiles
@@ -418,3 +427,25 @@ class Level:
         if self.can_stand(x, y + dy, radius):
             y += dy
         return x, y
+
+    def first_cover_hit(self, ox, oy, angle, max_dist):
+        """Distance du premier cristal croisé par un rayon, ou `max_dist`.
+
+        Le rendu reste un billboard irrégulier, mais ce cercle donne au
+        cristal une vraie fonction de couverture pour balles et perception.
+        """
+        ray_x, ray_y = math.cos(angle), math.sin(angle)
+        nearest = max_dist
+        for cx, cy, radius in self.cover_circles:
+            rel_x, rel_y = cx - ox, cy - oy
+            projection = rel_x * ray_x + rel_y * ray_y
+            if projection <= 0.0 or projection >= nearest:
+                continue
+            perpendicular_sq = rel_x * rel_x + rel_y * rel_y - projection ** 2
+            radius_sq = radius * radius
+            if perpendicular_sq >= radius_sq:
+                continue
+            hit = projection - math.sqrt(radius_sq - perpendicular_sq)
+            if 0.0 < hit < nearest:
+                nearest = hit
+        return nearest

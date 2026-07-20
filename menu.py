@@ -53,14 +53,17 @@ class MenuBase:
         items = self.items()
         compact = len(items) > 8
         font = self._font(h, small=compact)
-        line_h = int(font.get_height() * (1.5 if compact else 1.7))
+        line_h = (font.get_height() + 6 if compact
+                  else int(font.get_height() * 1.7))
         start_y = (h // 2 - (len(items) * line_h) // 2 + h // 12
                    + int(h * self.menu_vertical_offset))
         button_w = min(int(w * 0.36), 560)
-        button_h = max(font.get_height() + 12, line_h - 7)
+        button_h = (font.get_height() + 4 if compact
+                    else max(font.get_height() + 12, line_h - 7))
         for i, (ident, label) in enumerate(items):
             rect = pygame.Rect(0, 0, button_w, button_h)
-            rect.center = (w // 2, start_y + i * line_h)
+            rect.center = (self._content_center_x(screen),
+                           start_y + i * line_h)
             split_x = self._bracket_split(font, label, rect)
             rows.append((ident, label, rect, split_x))
         return rows
@@ -85,10 +88,11 @@ class MenuBase:
 
     @staticmethod
     def _font(screen_h, small=False):
-        size = max(20, screen_h // (34 if small else 22))
+        size = (max(16, screen_h // 38) if small
+                else max(20, screen_h // 22))
         return pygame.font.SysFont(
-            "consolas,dejavusansmono,couriernew", size,
-            bold=not small,
+            "bahnschrift,dejavusans,arial,liberationsans", size,
+            bold=True,
         )
 
     @staticmethod
@@ -124,7 +128,7 @@ class MenuBase:
         y = (scaled.get_height() - h) // 2
         result = scaled.subsurface((x, y, w, h)).copy()
         veil = pygame.Surface(size, pygame.SRCALPHA)
-        veil.fill((3, 8, 13, 68))
+        veil.fill((3, 8, 13, 48))
         result.blit(veil, (0, 0))
         cls._background_cache[size] = result
         return result
@@ -145,13 +149,16 @@ class MenuBase:
         return panel
 
     @staticmethod
-    def _panel_rect(screen):
+    def _content_center_x(screen):
+        return screen.get_width() // 2
+
+    def _panel_rect(self, screen):
         """Cadre central commun, également utilisé par les sous-écrans."""
         w, h = screen.get_size()
         panel_w = min(int(w * 0.42), 650)
         panel_h = int(h * 0.82)
         rect = pygame.Rect(0, 0, panel_w, panel_h)
-        rect.center = (w // 2, h // 2 + h // 40)
+        rect.center = (self._content_center_x(screen), h // 2 + h // 40)
         return rect
 
     @staticmethod
@@ -210,8 +217,9 @@ class MenuBase:
         for index, (lines, color) in enumerate(wrapped):
             for line in lines:
                 surf = font.render(line, True, color)
-                screen.blit(surf, surf.get_rect(center=(w // 2,
-                                                        y + line_h // 2)))
+                screen.blit(surf, surf.get_rect(center=(
+                    self._content_center_x(screen), y + line_h // 2,
+                )))
                 y += line_h
             if index + 1 < len(wrapped):
                 y += gap
@@ -222,24 +230,28 @@ class MenuBase:
         # titres étalés/empâtés, notamment sur le menu principal et l'écran
         # de fin de niveau. Les intitulés longs sont ajustés à la largeur.
         title_text = self.title
-        title_font = self._title_font(h, title_text, w - max(80, w // 10))
+        panel = self._panel_rect(screen)
+        title_font = self._title_font(h, title_text, panel.width - 28)
         shadow = title_font.render(title_text, True, (0, 0, 0))
         title = title_font.render(title_text, True, TITLE_COLOR)
         title_y = h // 8 if len(self.items()) > 8 else h // 5
-        pos = title.get_rect(center=(w // 2, title_y))
+        center_x = self._content_center_x(screen)
+        pos = title.get_rect(center=(center_x, title_y))
         screen.blit(shadow, pos.move(2, 2))
         screen.blit(title, pos)
         line_w = min(title.get_width(), int(w * 0.32))
         line_y = pos.bottom + max(5, h // 120)
         pygame.draw.line(screen, ACCENT_COLOR,
-                         (w // 2 - line_w // 2, line_y),
-                         (w // 2 + line_w // 2, line_y), 2)
+                         (center_x - line_w // 2, line_y),
+                         (center_x + line_w // 2, line_y), 2)
         if self.title == "Call of Python":
-            tag_font = self._font(h, small=True)
-            tag = tag_font.render("TACTICAL RAYCASTING // INCIDENT LUNAIRE",
+            tag_font = pygame.font.SysFont(
+                "bahnschrift,dejavusans,arial", max(13, h // 46), bold=True,
+            )
+            tag = tag_font.render("INCIDENT LUNAIRE",
                                   True, (160, 185, 180))
             screen.blit(tag, tag.get_rect(
-                center=(w // 2, line_y + tag.get_height())))
+                center=(center_x, line_y + tag.get_height())))
 
     # ------------------------------------------------------------------
     def handle_event(self, event, screen):
@@ -298,13 +310,40 @@ class MainMenu(MenuBase):
         super().__init__(sounds)
         self.settings = settings
 
+    @staticmethod
+    def _font(screen_h, small=False):
+        size = max(15, screen_h // (45 if small else 30))
+        return pygame.font.SysFont(
+            "bahnschrift,dejavusans,arial,liberationsans", size, bold=True,
+        )
+
     def items(self):
-        rows = [("play", "Jouer")]
+        rows = [("play", "JOUER LA CAMPAGNE")]
         if self.settings.survival_unlocked:
-            rows.append(("survival", "Le Déferlement (survie)"))
-        rows += [("multiplayer", "Multijoueur LAN (coop)"),
-                 ("settings", "Paramètres"), ("quit", "Quitter")]
+            rows.append(("survival", "LE DÉFERLEMENT"))
+        rows += [("multiplayer", "COOPÉRATION LAN"),
+                 ("settings", "PARAMÈTRES"), ("quit", "QUITTER")]
         return rows
+
+    @staticmethod
+    def _content_center_x(screen):
+        return int(screen.get_width() * 0.235)
+
+    def _panel_rect(self, screen):
+        w, h = screen.get_size()
+        panel_w = min(int(w * 0.39), 520)
+        panel_h = int(h * 0.84)
+        rect = pygame.Rect(0, 0, panel_w, panel_h)
+        rect.center = (self._content_center_x(screen), h // 2)
+        return rect
+
+    def _layout(self, screen):
+        rows = super()._layout(screen)
+        max_w = self._panel_rect(screen).width - 34
+        return [(ident, label,
+                 pygame.Rect(rect.centerx - min(rect.width, max_w) // 2,
+                             rect.y, min(rect.width, max_w), rect.height), split)
+                for ident, label, rect, split in rows]
 
     def draw(self, screen):
         super().draw(screen)
@@ -315,16 +354,24 @@ class MainMenu(MenuBase):
             parts.append(f"Record du Déferlement : vague {self.settings.best_wave}")
         if parts:
             w, h = screen.get_size()
-            font = self._font(h, small=True)
-            text = font.render("   —   ".join(parts), True, DIM_COLOR)
-            screen.blit(text, text.get_rect(center=(w // 2, h - h // 6)))
+            font = pygame.font.SysFont(
+                "bahnschrift,dejavusans,arial", max(13, h // 47), bold=True,
+            )
+            center_x = self._content_center_x(screen)
+            start_y = h - h // 6 - (len(parts) - 1) * font.get_linesize() // 2
+            for index, part in enumerate(parts):
+                text = font.render(part, True, DIM_COLOR)
+                screen.blit(text, text.get_rect(center=(
+                    center_x, start_y + index * font.get_linesize(),
+                )))
 
     def _draw_footer(self, screen):
         w, h = screen.get_size()
-        font = self._font(h, small=True)
+        font = pygame.font.SysFont(
+            "bahnschrift,dejavusans,arial", max(12, h // 48), bold=True,
+        )
         hint = font.render(
-            "ZQSD : déplacement (re-mappable)   Souris : visée   Clic : tir   "
-            "Maj : sprint   1-4 : armes",
+            "ZQSD  DÉPLACEMENT   ·   MAJ  ROULADE   ·   SOURIS  VISÉE / TIR   ·   1–4  ARMES",
             True, DIM_COLOR)
         screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
 
@@ -404,10 +451,11 @@ class SettingsMenu(MenuBase):
 
     def _draw_footer(self, screen):
         w, h = screen.get_size()
-        font = self._font(h, small=True)
+        font = pygame.font.SysFont(
+            "bahnschrift,dejavusans,arial", max(12, h // 48), bold=True,
+        )
         hint = font.render(
-            "Cliquez à gauche/droite d'une valeur pour la modifier — "
-            "cliquez sur une touche pour la re-mapper",
+            "Valeurs : clic gauche / droit   ·   Touches : cliquez puis appuyez",
             True, DIM_COLOR)
         screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
 

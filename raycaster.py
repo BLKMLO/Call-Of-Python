@@ -210,6 +210,8 @@ def has_line_of_sight(level, x0, y0, x1, y1):
     if dist < 1e-6:
         return True
     angle = math.atan2(y1 - y0, x1 - x0)
+    if level.first_cover_hit(x0, y0, angle, dist) < dist - 0.05:
+        return False
     depth, _, _, _ = cast_ray(level, x0, y0, angle)
     return depth > dist - 0.05
 
@@ -432,6 +434,8 @@ class Raycaster:
             t = (y - half) / max(1, total - half)
             color = [int(a + (b - a) * t) for a, b in zip(floor_top, floor_bot)]
             pygame.draw.line(self.background, color, (0, y), (self.width, y))
+        if self.level_config.get("moon_ground"):
+            self._texture_moon_ground(half, total)
         # Lueur de brume sur la ligne d'horizon (fond atmosphérique).
         for i in range(14):
             alpha_color = [min(255, c + (14 - i) * 3)
@@ -454,6 +458,47 @@ class Raycaster:
                         if 0 <= sx + ox < self.width:
                             self.background.set_at((sx + ox, sy + oy), color)
         self._build_clouds(half, sky_bot)
+
+    def _texture_moon_ground(self, horizon, total):
+        """Ajoute au régolithe un grain minéral et des cratères en perspective.
+
+        Cette surface est précalculée avec le fond puis défile avec les étoiles
+        quand la caméra tourne : aucun bruit ni primitive n'est créé par frame.
+        """
+        rng = random.Random(26071969 + self.width * 3 + self.height)
+        floor_h = max(1, total - horizon)
+        count = max(180, self.width * floor_h // 190)
+        for _ in range(count):
+            y = rng.randrange(horizon, total)
+            depth = (y - horizon) / floor_h
+            x = rng.randrange(self.width)
+            size = 1 + int(depth * depth * 3)
+            base = self.background.get_at((x, y))[:3]
+            shift = rng.randint(-20, 18)
+            color = tuple(max(18, min(160, channel + shift))
+                          for channel in base)
+            pygame.draw.rect(self.background, color, (x, y, size, size))
+
+        # Cratères discrets : petits à l'horizon, plus ouverts au premier plan.
+        for _ in range(max(14, self.width // 65)):
+            # Seule la moitié haute du fond de sol est visible sans baisser
+            # la caméra : concentre les reliefs utiles dans cette zone.
+            depth = 0.04 + rng.random() * 0.48
+            y = horizon + int(depth * floor_h)
+            radius_x = max(5, int((7 + rng.random() * 25)
+                                  * (0.38 + depth)))
+            radius_y = max(2, int(radius_x * (0.18 + depth * 0.22)))
+            x = rng.randint(-radius_x, self.width + radius_x)
+            pygame.draw.ellipse(
+                self.background, (31, 31, 36),
+                (x - radius_x, y - radius_y // 2,
+                 radius_x * 2, radius_y * 2),
+            )
+            pygame.draw.arc(
+                self.background, (130, 130, 134),
+                (x - radius_x, y - radius_y,
+                 radius_x * 2, radius_y * 2), math.pi, math.tau, 1,
+            )
 
     def _build_clouds(self, sky_height, sky_horizon):
         """Précalcule un panorama nuageux transparent et horizontalement bouclé.

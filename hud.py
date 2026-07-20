@@ -46,6 +46,10 @@ class HUD:
             "consolas,dejavusansmono,couriernew",
             max(18, self.height // 28), bold=True,
         )
+        self.small_font = pygame.font.SysFont(
+            "consolas,dejavusansmono,couriernew",
+            max(13, self.height // 45), bold=True,
+        )
         self.big_font = pygame.font.SysFont(
             "consolas,dejavusansmono,couriernew",
             max(32, self.height // 13), bold=True,
@@ -131,7 +135,9 @@ class HUD:
             self._flash_veil.set_alpha(int(42 * (self.flash / 0.06)))
             screen.blit(self._flash_veil, (0, 0))
         self._draw_weapon(screen, player)
-        if player.ads > 0.55:
+        if player.rolling:
+            pass                        # pas de réticule pendant l'esquive
+        elif player.ads > 0.55:
             self._draw_scope(screen, player)     # lunette de visée
         else:
             self._draw_crosshair(screen)
@@ -185,6 +191,8 @@ class HUD:
         # descend hors champ quand on met en joue (remplacée par la lunette).
         target_lower = self.height * 0.16 if player.weapon.reloading > 0.0 else 0.0
         target_lower += player.ads * self.height * 0.5
+        if player.rolling:
+            target_lower += self.height * 0.48
         self.lower += (target_lower - self.lower) * 0.16
         x = self.width // 2 - target_w // 2 + int(self.width * 0.07 + sway_x)
         y = (self.height - int(target_h * 0.86)
@@ -278,7 +286,8 @@ class HUD:
         screen.blit(self._shield_veil, (0, 0))
         text = self.font.render(f"BOUCLIER  {remaining:.1f} s",
                                 True, (150, 210, 255))
-        screen.blit(text, (14, self.height - 92 - text.get_height() - 4))
+        screen.blit(text, (14, self.height - 92 - text.get_height()
+                           - self.small_font.get_height() - 10))
 
     def _draw_damage_dirs(self, screen):
         """Flèches rouges autour du centre indiquant d'où viennent les tirs.
@@ -323,6 +332,13 @@ class HUD:
         screen.blit(label, (left_rect.x + 14, left_rect.y + 10))
         screen.blit(hp_text, (left_rect.right - hp_text.get_width() - 12,
                               left_rect.y + 10))
+        roll_ready = player.roll_cooldown <= 0.0
+        roll_label = ("ROULADE PRÊTE" if roll_ready else
+                      f"ROULADE  {player.roll_cooldown:.1f} s")
+        roll_color = HUD_GREEN if roll_ready else HUD_DIM
+        roll_text = self.small_font.render(roll_label, True, roll_color)
+        screen.blit(roll_text, (left_rect.x + 14,
+                                left_rect.y - roll_text.get_height() - 4))
         segments = 10
         gap = 3
         bar_x = left_rect.x + 14
