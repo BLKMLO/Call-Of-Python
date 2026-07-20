@@ -67,3 +67,23 @@ python -m unittest discover -s tests -v
 
 Un smoke test supplémentaire instancie et rend le niveau Laboratoire complet
 en vidéo SDL factice (800×600), avec un sniper forcé en pose `aiming`.
+
+## Portails (20 juillet 2026)
+
+- Le portail lunaire utilise quatre PNG `assets/prop_portal_0..3.png`. La
+  classe `Prop` sélectionne une frame toutes les `110 ms` avec
+  `pygame.time.get_ticks()`. Les surfaces et leurs mises à l'échelle sont
+  mises en cache : aucune rotation/composition n'est faite pendant le rendu.
+- Les quatre frames font `79x117`, partagent la même boîte opaque
+  (`78x115`) et gardent l'anneau immobile ; seul le vortex vert tourne et
+  pulse. Le portail ne doit pas être retourné selon la parité de sa case.
+- Dans `MAP_LAB`, le mur `(28, 18)`, derrière l'épaule du Colosse placé en
+  `(25, 19)`, devient le caractère `4` / `wall_sealed_portal`. La texture
+  montre un petit trou vert barré de chaînes : le Colosse est visuellement le
+  Sceau qui retient le futur Déferlement. Ne pas le remettre en `(28, 19)` :
+  dans l'axe central, le billboard du boss le masque entièrement.
+- Ce mur spécial reste solide pour déplacements, tirs et pathfinding. Sa
+  hauteur volontairement standard (`1.0`) en fait un panneau en retrait devant
+  le mur technique extérieur et évite de répéter verticalement le petit sceau.
+- Les animations de props sont locales et purement visuelles ; elles ne sont
+  pas ajoutées aux instantanés coop.

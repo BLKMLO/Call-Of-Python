@@ -13,8 +13,8 @@ import pygame
 import assets
 from ai import EnemyAI, cover_adjusted_chance
 from coop import CoopClientGame
-from entities import PROP_SPECS, Sniper
-from level import MAP_LAB
+from entities import PORTAL_FRAME_MS, PORTAL_FRAMES, PROP_SPECS, Prop, Sniper
+from level import LEVELS, MAP_LAB
 
 
 class RequestedChangesTests(unittest.TestCase):
@@ -48,6 +48,27 @@ class RequestedChangesTests(unittest.TestCase):
                 horizontal = MAP_LAB[y][x - 1] != "." and MAP_LAB[y][x + 1] != "."
                 vertical = MAP_LAB[y - 1][x] != "." and MAP_LAB[y + 1][x] != "."
                 self.assertTrue(horizontal or vertical, (x, y))
+
+    def test_colossus_seal_is_visible_on_the_wall_behind_the_boss(self):
+        self.assertEqual(MAP_LAB[19][25], "B")
+        # Une case au-dessus de l'axe exact : derrière son épaule, donc visible
+        # au lieu d'être entièrement occulté par le billboard du Colosse.
+        self.assertEqual(MAP_LAB[18][28], "4")
+        self.assertEqual(MAP_LAB[19][28], "3")
+        self.assertEqual(LEVELS[4]["theme"]["4"], "wall_sealed_portal")
+        self.assertEqual(assets.get("wall_sealed_portal").get_size(), (64, 64))
+
+    def test_lunar_portal_cycles_prebuilt_equal_sized_frames(self):
+        portal = Prop(15.5, 12.5, "portal")
+        frames = [assets.get(name) for name in PORTAL_FRAMES]
+        self.assertTrue(all(frame.get_size() == frames[0].get_size()
+                            for frame in frames))
+        pixels = {pygame.image.tostring(frame, "RGBA") for frame in frames}
+        self.assertEqual(len(pixels), len(frames))
+        with patch("entities.pygame.time.get_ticks", return_value=0):
+            self.assertIs(portal.current_sprite(), frames[0])
+        with patch("entities.pygame.time.get_ticks", return_value=PORTAL_FRAME_MS):
+            self.assertIs(portal.current_sprite(), frames[1])
 
     def test_cover_reduces_only_partial_exposure(self):
         self.assertAlmostEqual(cover_adjusted_chance(0.8, 1.0), 0.8)

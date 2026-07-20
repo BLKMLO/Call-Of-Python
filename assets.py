@@ -888,6 +888,26 @@ def _prop_portal():
     return _upscale(s, 4)
 
 
+def _tex_sealed_portal():
+    """Mur de secours : minuscule brèche verte verrouillée par des chaînes."""
+    s = _tex_stone()
+    # Brèche sombre et halo contenu au centre de la maçonnerie.
+    pygame.draw.circle(s, (20, 72, 42), (32, 33), 9)
+    pygame.draw.circle(s, (18, 142, 68), (32, 33), 6)
+    pygame.draw.circle(s, (5, 28, 16), (32, 33), 4)
+    s.set_at((32, 34), (96, 255, 142))
+    # Chaînes en X et quatre platines d'ancrage.
+    for offset in (-1, 1):
+        pygame.draw.line(s, (34, 36, 38), (23, 24 + offset),
+                         (41, 42 + offset), 2)
+        pygame.draw.line(s, (34, 36, 38), (41, 24 + offset),
+                         (23, 42 + offset), 2)
+    for x, y in ((21, 22), (39, 22), (21, 40), (39, 40)):
+        _rect(s, x, y, 4, 4, (74, 76, 78))
+        s.set_at((x + 1, y + 1), (160, 164, 166))
+    return s
+
+
 # ----------------------------------------------------------------------
 _BUILDERS = {
     "wall_brick": _tex_brick,
@@ -903,6 +923,7 @@ _BUILDERS = {
     "wall_moon": _tex_moon,
     "wall_shelf": _tex_shelf,
     "wall_energy": _tex_energy,
+    "wall_sealed_portal": _tex_sealed_portal,
     "prop_car": _prop_car,
     "prop_bench": _prop_bench,
     "prop_tribune": _prop_tribune,
@@ -921,6 +942,10 @@ _BUILDERS = {
     "pickup_medkit": _pickup_medkit,
     "pickup_lifepack": _pickup_lifepack,
 }
+for _frame in range(4):
+    # Fallback cohérent si une frame détaillée manque ; le pack livré contient
+    # les quatre véritables phases du vortex.
+    _BUILDERS[f"prop_portal_{_frame}"] = _prop_portal
 for _kind in ENEMY_PALETTES:
     for _pose in ("idle", "walk", "walk2", "fire", "dead",
                   "idle_back", "walk_back", "walk2_back",
