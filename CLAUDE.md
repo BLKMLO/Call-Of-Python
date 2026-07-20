@@ -1,5 +1,8 @@
 # Call of Python — contexte projet
 
+> Pour les corrections les plus récentes et leurs invariants, lire d'abord
+> `GPT.md`.
+
 FPS rétro en Python 3.12 / pygame (raycasting pseudo-3D façon Wolfenstein
 3D), développé de bout en bout par itérations avec Claude Code. Ce fichier
 résume l'état du projet pour reprendre le travail sans tout redécouvrir.
@@ -146,10 +149,9 @@ d'implémentation et les décisions techniques non triviales.
   sprites aux mauvais décalages → certains décors contenaient des
   fragments d'objets voisins et/ou étaient tronqués. Nettoyés en ne
   gardant que la plus grande composante connexe puis en recadrant dessus.
-  Le banc du Gouvernement (`prop_bench`), tronqué à droite, a été
-  reconstruit en miroitant sa moitié gauche (objet symétrique). Si de
-  nouveaux décors détaillés arrivent, vérifier composantes/marges avant
-  de committer. `PROP_SPECS` (hauteurs monde) est resté inchangé.
+  La voiture a depuis été régénérée avec un avant complet et des marges ; le
+  banc du Gouvernement a été remplacé par un siège individuel plus compact.
+  Vérifier composantes et marges avant de committer tout nouveau décor.
 
 ## Historique des sessions (dans l'ordre)
 
@@ -190,15 +192,16 @@ d'implémentation et les décisions techniques non triviales.
     écran F11. Fusionnée dans `main`.
 19. Correction du cadrage des décors régénérés : suppression des fragments
     parasites et des marges (plus grande composante connexe + recadrage),
-    reconstruction du banc du Gouvernement tronqué (miroir). La voiture,
-    au nez volontairement court, n'était pas réellement tronquée.
+    reconstruction temporaire du banc du Gouvernement tronqué (miroir).
+20. Régénération définitive de la voiture et des sièges, suppression d'une
+    porte isolée du Laboratoire, couvert renforcé et télégraphie du sniper à
+    genou pendant 1,25 s (synchronisée en coop). Contexte dans `GPT.md`.
 
 ## Dette / manques à connaître
 
-- **Aucun test committé dans le repo.** Tout le testing "de fumée"
-  (`smoke_test2..11.py`) vit dans un scratchpad éphémère hors dépôt —
-  perdu entre les sessions. À rapatrier dans un dossier `tests/` si on
-  veut arrêter de perdre cette couverture à chaque nouvelle session.
+- **Couverture de tests encore partielle.** Les régressions de la passe GPT
+  sont committées dans `tests/test_requested_changes.py`; les anciens tests
+  de fumée généraux (`smoke_test2..11.py`) restent absents du dépôt.
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
   jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
   observés).

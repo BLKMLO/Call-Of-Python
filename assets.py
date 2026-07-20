@@ -504,6 +504,12 @@ def _enemy_sprite(kind, pose):
         _rect(s, 5, 8, 1, 4, (255, 226, 110))
         _rect(s, 10, 8, 1, 4, (255, 226, 110))
         _rect(s, 7, 9, 2, 2, (255, 255, 220))                # cœur du flash
+    elif pose == "aim":
+        # Pose de secours du sniper : fusil épaulé, sans éclair de tir.
+        _rect(s, 3, 7, 3, 4, p["dark"])
+        _rect(s, 9, 7, 3, 4, p["dark"])
+        _rect(s, 5, 8, 10, 2, (34, 34, 38))
+        s.set_at((8, 7), p["accent"] or (180, 220, 220))
     else:
         swing = {"walk": 1, "walk2": -1}.get(pose, 0)
         _rect(s, 2, 6 + swing, 2, 6, p["dark"])              # bras gauche
@@ -511,7 +517,13 @@ def _enemy_sprite(kind, pose):
         _rect(s, 2, 11 + swing, 2, 1, p["skin"])             # mains
         _rect(s, 12, 10 - swing, 2, 1, p["skin"])
 
-    if pose == "walk":                    # jambe gauche levée, droite au sol
+    if pose == "aim":                     # un genou au sol, l'autre jambe plantée
+        _rect(s, 4, 14, 3, 7, p["legs"])
+        _rect(s, 4, 21, 3, 3, p["boots"])
+        _rect(s, 8, 15, 5, 3, p["legs"])
+        _rect(s, 11, 17, 3, 4, p["legs"])
+        _rect(s, 10, 21, 4, 2, p["boots"])
+    elif pose == "walk":                  # jambe gauche levée, droite au sol
         _rect(s, 4, 15, 3, 6, p["legs"])
         _rect(s, 4, 20, 3, 3, p["boots"])
         _rect(s, 9, 14, 3, 7, p["legs"])
@@ -916,6 +928,7 @@ for _kind in ENEMY_PALETTES:
         _BUILDERS[f"enemy_{_kind}_{_pose}"] = (
             lambda k=_kind, p=_pose: _enemy_sprite(k, p)
         )
+_BUILDERS["enemy_sniper_aim"] = lambda: _enemy_sprite("sniper", "aim")
 
 
 def generate_all(force=False):

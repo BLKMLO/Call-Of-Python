@@ -34,6 +34,17 @@ from collections import deque
 from raycaster import exposure_fraction, has_line_of_sight
 
 
+def cover_adjusted_chance(base_chance, exposure):
+    """Applique le bonus défensif d'une silhouette partiellement masquée.
+
+    Une cible entièrement visible conserve la précision normale. Le facteur
+    plancher évite qu'un échantillonnage presque nul transforme un tir pourtant
+    autorisé par la ligne de vue centrale en impossibilité absolue.
+    """
+    exposure = max(0.0, min(1.0, exposure))
+    return base_chance * (0.28 + 0.72 * exposure)
+
+
 def find_path(level, sx, sy, tx, ty):
     """Plus court chemin (BFS) entre deux cases ; liste de centres de cases.
 
@@ -115,6 +126,7 @@ class EnemyAI:
         events = []
         if not enemy.alive or not player.alive:
             enemy.moving = False
+            enemy.cancel_aim()
             return events
 
         enemy.moving = False  # remis à True par les déplacements (pose "marche")
@@ -178,6 +190,7 @@ class EnemyAI:
             grace = self.LOSE_SIGHT_TIME if enemy.USES_COVER else 0.0
             if self.lost_timer > grace or dist > enemy.ATTACK_RANGE * 1.2:
                 enemy.ai_state = "chase"
+                enemy.cancel_aim()
 
         # --- comportements -------------------------------------------------
         state = enemy.ai_state
@@ -201,6 +214,7 @@ class EnemyAI:
         elif state == "attack":
             enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
             if enemy.KEEP_DISTANCE and dist < enemy.MIN_RANGE:
+                enemy.cancel_aim()
                 self._back_away(dt, player, level)   # le sniper se replie
             elif enemy.USES_COVER:
                 events += self._peek_and_shoot(dt, player, level, dist)
@@ -347,10 +361,23 @@ class EnemyAI:
     # Combat
     # ------------------------------------------------------------------
     def _try_shoot(self, player, level, dist):
-        """Tire sur le joueur si le temps de recharge est écoulé."""
+        """Prépare puis tire si le temps de recharge est écoulé.
+
+        Les ennemis dotés d'un AIM_DELAY télégraphient leur tir. L'appelant
+        doit rappeler cette méthode tant que la cible reste valide ; une perte
+        de ligne de vue annule l'anticipation au lieu de stocker un tir.
+        """
         enemy = self.enemy
         if enemy.fire_cooldown > 0.0 or enemy.MELEE:
             return []
+        if enemy.AIM_DELAY > 0.0:
+            if not enemy.aiming:
+                enemy.aiming = True
+                enemy.aim_timer = enemy.AIM_DELAY
+                return []
+            if enemy.aim_timer > 0.0:
+                return []
+            enemy.cancel_aim()
         enemy.fire_cooldown = enemy.FIRE_DELAY * random.uniform(0.85, 1.3)
         enemy.flash_timer = 0.12
         events = [("enemy_shot", enemy)]
@@ -360,7 +387,9 @@ class EnemyAI:
         # dur à toucher quand seul un bout de sa silhouette dépasse.
         exposure = exposure_fraction(level, enemy.x, enemy.y,
                                      player.x, player.y, player.RADIUS)
-        chance = enemy.hit_chance(dist) * (0.35 + 0.65 * exposure)
+        # Pleine exposition inchangée ; dès qu'une couverture masque une
+        # partie du joueur, le bénéfice est légèrement renforcé.
+        chance = cover_adjusted_chance(enemy.hit_chance(dist), exposure)
         if random.random() < chance:
             damage = enemy.roll_damage(random)  # tient compte du niveau
             player.take_damage(damage)
@@ -400,6 +429,18 @@ class EnemyAI:
         (hors de vue, replié) et une brève phase exposée (sort tirer),
         bien plus dur à toucher qu'un ennemi qui reste en terrain découvert."""
         enemy = self.enemy
+
+        # Une fois à genou, le sniper reste immobile jusqu'au tir. La ligne
+        # de vue est toutefois revérifiée à chaque frame : retourner derrière
+        # un mur pendant la télégraphie annule réellement le tir.
+        if enemy.aiming:
+            enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
+            if not has_line_of_sight(level, enemy.x, enemy.y,
+                                     player.x, player.y):
+                enemy.cancel_aim()
+                return []
+            return self._try_shoot(player, level, dist)
+
         self.peek_timer -= dt
         if self.peek_timer <= 0.0:
             if self.peek_phase == "exposed":
@@ -418,9 +459,11 @@ class EnemyAI:
                 self._navigate_towards(dt, self.peek_point, level, speed_mult=0.9)
 
         if self.peek_phase != "exposed":
+            enemy.cancel_aim()
             return []
         enemy.angle = math.atan2(player.y - enemy.y, player.x - enemy.x)
         if not has_line_of_sight(level, enemy.x, enemy.y, player.x, player.y):
+            enemy.cancel_aim()
             return []
         return self._try_shoot(player, level, dist)
 
