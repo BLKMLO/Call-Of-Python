@@ -209,6 +209,7 @@ class Enemy(Entity):
     EXPLOSION_DAMAGE = 34
     KEEP_DISTANCE = False  # recule si le joueur approche (sniper)
     MIN_RANGE = 0.0
+    AIM_DELAY = 0.0        # anticipation avant le tir (sniper uniquement)
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
@@ -234,6 +235,8 @@ class Enemy(Entity):
         self.ai_state = "idle"
         self.ai_timer = 0.0
         self.fire_cooldown = 0.0
+        self.aiming = False       # pose/télégraphie d'un tir en préparation
+        self.aim_timer = 0.0      # temps restant avant que le tir parte
         self.last_seen = None    # dernière position connue du joueur
         self.cover_target = None # point de couverture visé
 
@@ -247,6 +250,9 @@ class Enemy(Entity):
         if self.flash_timer > 0.0:
             # Quand il tire, il fait face au joueur : pose de face armée.
             return assets.get(f"enemy_{self.KIND}_fire")
+        if self.aiming and self.KIND == "sniper":
+            # Le sniper avertit clairement son tir en posant un genou à terre.
+            return assets.get("enemy_sniper_aim")
 
         if self.moving:
             pose = "walk" if int(self.anim_time * 6) % 2 == 0 else "walk2"
@@ -273,6 +279,7 @@ class Enemy(Entity):
             # Le billboard devient un cadavre bas posé au sol.
             self.SPRITE_HEIGHT = self._dead_sprite_height
             self.moving = False
+            self.cancel_aim()
         else:
             self.hurt_timer = 0.09   # flash blanc bref
         return died
@@ -291,9 +298,16 @@ class Enemy(Entity):
         self.flash_timer = max(0.0, self.flash_timer - dt)
         self.hurt_timer = max(0.0, self.hurt_timer - dt)
         self.fire_cooldown = max(0.0, self.fire_cooldown - dt)
+        if self.aiming:
+            self.aim_timer = max(0.0, self.aim_timer - dt)
         self.ai_timer += dt
         if self.moving:
             self.anim_time += dt
+
+    def cancel_aim(self):
+        """Abandonne une anticipation de tir devenue invalide."""
+        self.aiming = False
+        self.aim_timer = 0.0
 
 
 class Grunt(Enemy):
@@ -354,6 +368,7 @@ class Sniper(Enemy):
     KEEP_DISTANCE = True
     MIN_RANGE = 5.0        # ... mais fébrile au corps à corps
     USES_COVER = True
+    AIM_DELAY = 1.25       # se met à genou et stabilise sa visée avant le tir
 
 
 class Boss(Enemy):
@@ -417,7 +432,7 @@ def _height_for_visible_height(sprite_name, target_height):
 # Tous bloquent leur case mais laissent passer balles et regards.
 PROP_SPECS = {
     "car":      {"sprite": "prop_car",      "width": 1.10},
-    "bench":    {"sprite": "prop_bench",    "width": 0.97},
+    "bench":    {"sprite": "prop_bench",    "width": 0.46},
     "tribune":  {"sprite": "prop_tribune",  "width": 0.57},
     "labtable": {"sprite": "prop_labtable", "width": 1.00},
     "rock":     {"sprite": "prop_rock",      "width": 0.47},

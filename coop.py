@@ -219,7 +219,7 @@ class CoopHostGame(SurvivalGame):
                             int(remote.moving), int(remote.flash_timer > 0)])
         enemies = [[e.net_id, e.KIND, round(e.x, 2), round(e.y, 2),
                     round(e.angle, 3), e.health, int(e.moving),
-                    int(e.flash_timer > 0)]
+                    int(e.flash_timer > 0), int(e.aiming)]
                    for e in self.enemies if e.net_id is not None]
         snapshot = {
             "t": "snap",
@@ -522,7 +522,11 @@ class CoopClientGame:
 
     def _apply_enemies(self, enemies):
         seen = set()
-        for net_id, kind, x, y, angle, health, moving, flash in enemies:
+        for data in enemies:
+            # Le dernier champ (visée) a été ajouté sans casser les hôtes
+            # plus anciens : un instantané à 8 champs reste accepté.
+            net_id, kind, x, y, angle, health, moving, flash = data[:8]
+            aiming = bool(data[8]) if len(data) > 8 else False
             seen.add(net_id)
             ghost = self.ghosts.get(net_id)
             if ghost is None:
@@ -536,6 +540,9 @@ class CoopClientGame:
             ghost.net_x, ghost.net_y = x, y
             ghost.angle = angle
             ghost.moving = bool(moving)
+            ghost.aiming = aiming
+            if not aiming:
+                ghost.aim_timer = 0.0
             if flash and ghost.flash_timer <= 0.0:
                 ghost.flash_timer = 0.12
                 self.sounds.play("enemy_shot", volume_scale=0.9,
