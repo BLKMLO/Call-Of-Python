@@ -440,6 +440,9 @@ PROP_SPECS = {
     "portal":   {"sprite": "prop_portal",   "width": 0.67},
 }
 
+PORTAL_FRAMES = tuple(f"prop_portal_{i}" for i in range(4))
+PORTAL_FRAME_MS = 110       # ~9 i/s : vif, sans scintillement agressif
+
 # Largeur visible historique des objets ramassables. Les armes longues
 # restent comparables entre elles, sans que le pistolet ou les soins occupent
 # soudain toute une case à cause d'un cadrage PNG différent.
@@ -469,6 +472,12 @@ class Prop:
         self.flipped = (int(x) + int(y)) % 2 == 1
 
     def current_sprite(self, player=None):
+        if self.kind == "portal":
+            # Les quatre PNG sont précalculés et mis en cache par assets.get :
+            # l'animation ne fait donc aucune transformation coûteuse en jeu.
+            frame = ((pygame.time.get_ticks() // PORTAL_FRAME_MS)
+                     % len(PORTAL_FRAMES))
+            return assets.get(PORTAL_FRAMES[frame])
         return assets.get(self.sprite_name, self.flipped)
 
 

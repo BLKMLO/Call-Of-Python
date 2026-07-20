@@ -2,6 +2,7 @@
 
 Une carte est une grille de caractères :
     '1', '2', '3' : murs — leur texture dépend du thème du niveau
+    '4'           : mur spécial (entrepôt haut ou portail scellé du labo)
     'D'           : porte coulissante automatique (s'ouvre à l'approche)
     '.'           : sol praticable
     'P'           : apparition du joueur
@@ -155,7 +156,7 @@ MAP_LAB = [
     "1.........2........2.........1",
     "1.....E...2........2.333333331",
     "1..22.....2.m...m..2.3.E...H31",
-    "1.........2........2.D......31",
+    "1.........2........2.D......41",
     "1.W....2..2....E...2.3...B..31",
     "1.........2.H......2.D......31",
     "1..2....2.2......+.2.3....E.31",
@@ -267,9 +268,12 @@ LEVELS = [
     {
         "name": "Laboratoire — Assaut final",
         "grid": MAP_LAB,
-        "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone"},
+        "theme": {"1": "wall_tech", "2": "wall_metal", "3": "wall_stone",
+                  "4": "wall_sealed_portal"},
         # Enceinte technique légèrement surélevée et murs de confinement
         # renforcés autour des salles sensibles et de la chambre du Colosse.
+        # Le mur 4 reste à hauteur 1 : c'est un panneau scellé en retrait,
+        # devant le mur technique extérieur, et sa texture ne se répète pas.
         "heights": {"1": 1.25, "3": 1.55},
         "sky": ((44, 22, 18), (150, 70, 44)),   # crépuscule rougeoyant (19h)
         "floor": ((58, 40, 36), (26, 20, 20)),
