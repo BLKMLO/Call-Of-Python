@@ -495,6 +495,11 @@ class Game:
         self.particles.spawn_blood(best.x, best.y)
         self.sounds.play("enemy_hit", volume_scale=0.6,
                          pos=(best.x, best.y), listener=self.player)
+        if best.CAN_ROLL and best.roll_cooldown <= 0.0:
+            # L'IA consomme cette demande après la résolution du coup complet :
+            # une cartouche de fusil à pompe reste un événement simultané. Le
+            # point de tir réel convient aussi aux coéquipiers LAN.
+            best.hit_roll_request = (ox, oy)
         if best.ai_state == "idle":
             # Se faire tirer dessus réveille l'ennemi même sans le voir.
             best.ai_state = "chase"

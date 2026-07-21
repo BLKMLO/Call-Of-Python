@@ -125,13 +125,41 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(remote.rolling)
         host._resolve_remote_fire.assert_not_called()
 
-        remote.update_timers(0.51)
+        remote.update_timers(0.56)
         host.net_time += 0.1
         host._handle_input({
             "id": 1, "x": float("nan"), "y": remote.y,
             "a": 0.0, "rt": 0.5, "fx": [],
         }, ("127.0.0.1", 9000))
-        self.assertFalse(remote.rolling)  # cooldown serveur encore actif
+        # Ancien protocole : le même `rt` répété ou retardé n'est pas un
+        # nouveau déclenchement, même sans cooldown de gameplay.
+        self.assertFalse(remote.rolling)
+
+    def test_host_accepts_chained_roll_sequences_but_rejects_stale_one(self):
+        host, remote = self._host_with_remote()
+        address = ("127.0.0.1", 9000)
+
+        host._handle_input({
+            "id": 1, "x": remote.x, "y": remote.y,
+            "a": 0.0, "rt": Player.ROLL_DURATION, "rs": 1, "fx": [],
+        }, address)
+        self.assertTrue(remote.rolling)
+        remote.update_timers(Player.ROLL_DURATION + 0.01)
+
+        host.net_time += 0.1
+        host._handle_input({
+            "id": 1, "x": remote.x, "y": remote.y,
+            "a": 0.0, "rt": Player.ROLL_DURATION, "rs": 2, "fx": [],
+        }, address)
+        self.assertTrue(remote.rolling)
+        remote.update_timers(Player.ROLL_DURATION + 0.01)
+
+        host.net_time += 0.1
+        host._handle_input({
+            "id": 1, "x": remote.x, "y": remote.y,
+            "a": 0.0, "rt": 0.2, "rs": 1, "fx": [],
+        }, address)
+        self.assertFalse(remote.rolling)
 
     def test_host_caps_remote_fire_budget_and_damage(self):
         host, remote = self._host_with_remote()
@@ -194,6 +222,19 @@ class CleanupTests(unittest.TestCase):
             hud._draw_weapon(screen, player)
             hud._draw_weapon(screen, player)
         self.assertEqual(scale.call_count, 1)
+
+    def test_death_panel_fits_small_screen_and_draws_after_fall(self):
+        hud = HUD((640, 480))
+        screen = pygame.Surface((640, 480))
+        screen.fill((80, 90, 100))
+        hud.draw_death_screen(screen, 2.0)
+
+        self.assertLessEqual(hud._death_panel.get_width(), 640)
+        self.assertLessEqual(hud._death_title.get_width(),
+                             hud._death_panel.get_width() - 40)
+        self.assertLessEqual(hud._death_hint.get_width(),
+                             hud._death_panel.get_width() - 40)
+        self.assertNotEqual(screen.get_at((320, 240))[:3], (80, 90, 100))
 
     def test_survival_spawn_queue_is_constant_time(self):
         game = SurvivalGame.__new__(SurvivalGame)

@@ -190,6 +190,9 @@ class CoopHostGame(SurvivalGame):
             "player": RemotePlayer(pid, x + random.uniform(-0.3, 0.3), y),
             "last_seen": self.net_time,
             "fire_budget": REMOTE_FIRE_CAPACITY,
+            "last_roll_sequence": 0,
+            "pending_roll_sequence": None,
+            "legacy_roll_latched": False,
         }
         self.peer.send({"t": "welcome", "id": pid}, addr)
         self.hud.show_message(f"Joueur {pid + 1} a rejoint la partie")
@@ -224,13 +227,28 @@ class CoopHostGame(SurvivalGame):
         requested_roll = _finite_float(
             message.get("rt", 0.0), 0.0, Player.ROLL_DURATION,
         )
-        if (requested_roll and not remote.rolling
-                and remote.roll_cooldown <= 0.0):
-            # L'hôte déclenche sa propre minuterie : répéter rt=0.5 ne peut
-            # donc pas produire une invincibilité permanente.
-            remote.roll_timer = Player.ROLL_DURATION
-            remote.roll_invuln = Player.ROLL_DURATION
-            remote.roll_cooldown = Player.ROLL_COOLDOWN
+        raw_roll_sequence = message.get("rs")
+        if (isinstance(raw_roll_sequence, int)
+                and not isinstance(raw_roll_sequence, bool)
+                and 0 <= raw_roll_sequence <= 2 ** 31 - 1):
+            last_sequence = client.get("last_roll_sequence", 0)
+            if requested_roll and raw_roll_sequence > last_sequence:
+                client["pending_roll_sequence"] = raw_roll_sequence
+            pending_sequence = client.get("pending_roll_sequence")
+            if pending_sequence is not None and not remote.rolling:
+                self._start_remote_roll(remote)
+                client["last_roll_sequence"] = pending_sequence
+                client["pending_roll_sequence"] = None
+        elif raw_roll_sequence is None:
+            # Anciens clients : un front montant est exigé. Un vieux paquet
+            # UDP `rt>0` arrivé en retard ne relance donc pas la roulade.
+            latched = client.get("legacy_roll_latched", False)
+            if not requested_roll:
+                client["legacy_roll_latched"] = False
+            elif not latched:
+                client["legacy_roll_latched"] = True
+                if not remote.rolling:
+                    self._start_remote_roll(remote)
 
         fire_events = message.get("fx", [])
         if remote.rolling or not isinstance(fire_events, list):
@@ -249,6 +267,14 @@ class CoopHostGame(SurvivalGame):
                 continue
             client["fire_budget"] -= 1.0
             self._resolve_remote_fire(pid, remote, shot_angle, round(damage))
+
+    @staticmethod
+    def _start_remote_roll(remote):
+        """Démarre une roulade distante validée par l'hôte."""
+        if not remote.rolling:
+            remote.roll_timer = Player.ROLL_DURATION
+            remote.roll_invuln = 0.0
+            remote.roll_cooldown = Player.ROLL_COOLDOWN
 
     def _accept_remote_position(self, remote, target_x, target_y, elapsed):
         """Accepte un déplacement client sans téléportation ni mur traversé."""
@@ -603,6 +629,7 @@ class CoopClientGame:
             "x": round(self.player.x, 3), "y": round(self.player.y, 3),
             "a": round(self.player.angle, 3),
             "rt": round(self.player.roll_timer, 3),
+            "rs": self.player.roll_sequence,
             "fx": self.pending_fires,
         }, self.host_addr)
         self.pending_fires = []
@@ -693,7 +720,7 @@ class CoopClientGame:
             ally.angle = angle
             ally.moving = bool(moving)
             ally.roll_timer = roll_timer if rolling else 0.0
-            ally.roll_invuln = ally.roll_timer
+            ally.roll_invuln = 0.0
             if flash and ally.flash_timer <= 0.0:
                 ally.flash_timer = 0.12
                 self.sounds.play("player_shot", volume_scale=0.5,

@@ -54,9 +54,22 @@ class HUD:
             "consolas,dejavusansmono,couriernew",
             max(32, self.height // 13), bold=True,
         )
+        death_size = max(38, self.height // 10)
         self.death_font = pygame.font.SysFont(
-            "impact,arialblack,dejavusanscondensed",
-            max(60, self.height // 6), bold=True,
+            "bahnschrift,dejavusans,arial,liberationsans",
+            death_size, bold=True,
+        )
+        death_max_w = min(self.width - 80, 820)
+        while (self.death_font.size("VOUS ÊTES MORT")[0] > death_max_w
+               and death_size > 28):
+            death_size -= 2
+            self.death_font = pygame.font.SysFont(
+                "bahnschrift,dejavusans,arial,liberationsans",
+                death_size, bold=True,
+            )
+        self.death_small_font = pygame.font.SysFont(
+            "bahnschrift,dejavusans,arial,liberationsans",
+            max(14, self.height // 38), bold=True,
         )
         # Voiles plein écran pré-remplis : blittés avec set_alpha (rapide)
         # au lieu de recréer une surface SRCALPHA à chaque frame.
@@ -66,6 +79,30 @@ class HUD:
         self._dark_veil.fill((10, 0, 0))
         self._flash_veil = pygame.Surface(size)   # voile chaud du tir
         self._flash_veil.fill((255, 226, 150))
+        # Carte de mort tactique précalculée : aucun rendu de glyphes ni
+        # création de grande surface pendant la cinématique.
+        panel_w = min(self.width - 40, 900)
+        panel_h = max(170, min(250, self.height // 3))
+        self._death_panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        pygame.draw.rect(self._death_panel, (4, 7, 10, 226),
+                         self._death_panel.get_rect(), border_radius=5)
+        pygame.draw.rect(self._death_panel, (104, 112, 116, 90),
+                         self._death_panel.get_rect(), 1, border_radius=5)
+        pygame.draw.rect(self._death_panel, (174, 42, 46, 235),
+                         (0, 0, 5, panel_h), border_radius=3)
+        pygame.draw.line(self._death_panel, (174, 42, 46, 180),
+                         (24, 47), (panel_w - 24, 47), 2)
+        self._death_title = self.death_font.render(
+            "VOUS ÊTES MORT", True, (236, 229, 222),
+        )
+        self._death_kicker = self.death_small_font.render(
+            "SIGNAL VITAL PERDU  //  UNITÉ HORS COMBAT",
+            True, (203, 78, 76),
+        )
+        self._death_hint = self.death_small_font.render(
+            "ENTRÉE  ·  ESPACE  ·  CLIC   POUR PASSER",
+            True, (142, 154, 158),
+        )
         # Vignette du bouclier temporaire : bordure bleutée qui s'estompe
         # vers le centre (construite une fois, modulée par set_alpha ensuite).
         w, h = size
@@ -337,10 +374,13 @@ class HUD:
         screen.blit(label, (left_rect.x + 14, left_rect.y + 10))
         screen.blit(hp_text, (left_rect.right - hp_text.get_width() - 12,
                               left_rect.y + 10))
-        roll_ready = player.roll_cooldown <= 0.0
-        roll_label = ("ROULADE PRÊTE" if roll_ready else
-                      f"ROULADE  {player.roll_cooldown:.1f} s")
-        roll_color = HUD_GREEN if roll_ready else HUD_DIM
+        if player.rolling:
+            roll_label, roll_color = "ROULADE EN COURS", HUD_AMBER
+        elif player.roll_cooldown <= 0.0:
+            roll_label, roll_color = "ROULADE PRÊTE", HUD_GREEN
+        else:  # compatibilité avec une éventuelle sauvegarde/ancienne session
+            roll_label = f"ROULADE  {player.roll_cooldown:.1f} s"
+            roll_color = HUD_DIM
         roll_text = self.small_font.render(roll_label, True, roll_color)
         screen.blit(roll_text, (left_rect.x + 14,
                                 left_rect.y - roll_text.get_height() - 4))
@@ -570,47 +610,41 @@ class HUD:
                            self.height // 2 + 10))
 
     def draw_death_screen(self, screen, t):
-        """Écran de mort cinématique façon Dark Souls : la scène (déjà
-        basculée au sol par la caméra de mort) s'assombrit progressivement,
-        puis « VOUS ÊTES MORT » apparaît en lettres rouges espacées.
+        """Écran de mort tactique, lisible et cohérent avec le HUD.
 
         `t` : temps écoulé depuis la mort (s)."""
-        # Assombrissement progressif de toute la scène.
-        darkness = min(0.78, t / 1.6 * 0.78)
+        fall = min(1.0, t / 1.4)
+        darkness = 0.84 * (fall * fall * (3 - 2 * fall))
         self._dark_veil.set_alpha(int(255 * darkness))
         screen.blit(self._dark_veil, (0, 0))
 
-        # « VOUS ÊTES MORT » : fondu lent après une courte pause.
-        if t <= 0.7:
+        if t <= 0.55:
             return
-        alpha = min(1.0, (t - 0.7) / 1.3)
-        cy = self.height // 2
-        # Bandeau sombre horizontal derrière le texte (contraste, façon DS).
-        band_h = self.death_font.get_height() + self.height // 12
-        band = pygame.Surface((self.width, band_h), pygame.SRCALPHA)
-        band.fill((0, 0, 0, int(160 * alpha)))
-        screen.blit(band, (0, cy - band_h // 2))
-        # Filet clair en haut et en bas du bandeau.
-        line_a = int(120 * alpha)
-        line = pygame.Surface((self.width, 2), pygame.SRCALPHA)
-        line.fill((150, 30, 30, line_a))
-        screen.blit(line, (0, cy - band_h // 2))
-        screen.blit(line, (0, cy + band_h // 2 - 2))
-        # Texte espacé (letter-spacing) centré.
-        self._blit_spaced(screen, self.death_font, "VOUS ÊTES MORT",
-                          (150, 22, 26), cy, alpha,
-                          spacing=self.death_font.get_height() // 5)
+        fade = min(1.0, (t - 0.55) / 0.65)
+        alpha = fade * fade * (3 - 2 * fade)
+        panel = self._death_panel
+        panel.set_alpha(int(245 * alpha))
+        rect = panel.get_rect(center=(self.width // 2, self.height // 2))
+        screen.blit(panel, rect)
 
-    def _blit_spaced(self, screen, font, text, color, cy, alpha, spacing):
-        """Rend `text` centré horizontalement avec un espacement ajouté
-        entre les lettres, appliqué avec un fondu (`alpha` 0..1)."""
-        glyphs = [font.render(ch, True, color) for ch in text]
-        total = sum(g.get_width() for g in glyphs) + spacing * (len(glyphs) - 1)
-        x = (self.width - total) // 2
-        for g in glyphs:
-            g.set_alpha(int(255 * alpha))
-            screen.blit(g, (x, cy - g.get_height() // 2))
-            x += g.get_width() + spacing
+        self._death_kicker.set_alpha(int(255 * alpha))
+        self._death_title.set_alpha(int(255 * alpha))
+        screen.blit(self._death_kicker, self._death_kicker.get_rect(
+            center=(self.width // 2, rect.top + 28),
+        ))
+        screen.blit(self._death_title, self._death_title.get_rect(
+            center=(self.width // 2, rect.centery + 4),
+        ))
+
+        if t > 1.35:
+            hint_alpha = min(1.0, (t - 1.35) / 0.45)
+            # `HUD.update` est volontairement figé après la mort : l'horloge
+            # de la cinématique est donc la seule source d'animation fiable.
+            pulse = 0.78 + 0.22 * math.sin(t * 4.0)
+            self._death_hint.set_alpha(int(220 * hint_alpha * pulse))
+            screen.blit(self._death_hint, self._death_hint.get_rect(
+                center=(self.width // 2, rect.bottom - 27),
+            ))
 
     def draw_pause(self, screen):
         """Voile + texte de pause par-dessus la scène figée."""

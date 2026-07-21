@@ -61,9 +61,11 @@ class Player(Entity):
     RADIUS = 0.25        # rayon de collision
     MAX_PITCH = 0.35     # amplitude de la visée verticale (fraction d'écran)
     SHIELD_DURATION = 3.0   # bouclier temporaire à l'arrivée sur un niveau (s)
-    ROLL_DURATION = 0.5     # durée du déplacement et des i-frames (s)
-    ROLL_COOLDOWN = 3.0     # délai minimal entre deux roulades (s)
-    ROLL_SPEED = 5.0        # impulsion, collisionnée et sans traversée de mur
+    ROLL_DURATION = 0.55    # mouvement total : amorce + esquive + récupération
+    ROLL_COOLDOWN = 0.0     # enchaînable dès la fin, jamais pendant l'action
+    ROLL_SPEED = 4.55       # conserve ~2,5 cases malgré la durée ajustée
+    ROLL_IFRAME_START = 0.08
+    ROLL_IFRAME_END = 0.38  # 0,30 s d'i-frames au cœur du mouvement
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
@@ -80,6 +82,7 @@ class Player(Entity):
         self.roll_dx = 0.0
         self.roll_dy = 0.0
         self.roll_strafe = 0.0   # inclinaison de caméra (-gauche, +droite)
+        self.roll_sequence = 0   # identifie chaque déclenchement en coop LAN
 
     @property
     def zoom(self):
@@ -95,6 +98,14 @@ class Player(Entity):
         if not self.rolling:
             return 0.0
         return 1.0 - self.roll_timer / self.ROLL_DURATION
+
+    @property
+    def roll_invulnerable(self):
+        """Fenêtre juste : vulnérable au démarrage et à la récupération."""
+        if not self.rolling:
+            return False
+        elapsed = self.ROLL_DURATION - self.roll_timer
+        return self.ROLL_IFRAME_START <= elapsed < self.ROLL_IFRAME_END
 
     def activate_shield(self):
         """Bouclier temporaire : le joueur est invulnérable à l'arrivée sur
@@ -209,13 +220,14 @@ class Player(Entity):
         self.roll_dy = forward * sin_a + strafe * cos_a
         self.roll_strafe = strafe
         self.roll_timer = self.ROLL_DURATION
-        self.roll_invuln = self.ROLL_DURATION
+        self.roll_invuln = 0.0       # compatibilité d'état ; voir propriété ci-dessus
         self.roll_cooldown = self.ROLL_COOLDOWN
+        self.roll_sequence += 1
         self.aiming = False
         return True
 
     def take_damage(self, amount):
-        if self.shield > 0.0 or self.roll_invuln > 0.0:
+        if self.shield > 0.0 or self.roll_invulnerable:
             return False              # bouclier / roulade : aucun dégât
         self.hurt_flash = 0.35
         return super().take_damage(amount)
@@ -225,7 +237,7 @@ class Player(Entity):
         self.hurt_flash = max(0.0, self.hurt_flash - dt)
         self.shield = max(0.0, self.shield - dt)
         self.roll_timer = max(0.0, self.roll_timer - dt)
-        self.roll_invuln = max(0.0, self.roll_invuln - dt)
+        self.roll_invuln = 0.0
         self.roll_cooldown = max(0.0, self.roll_cooldown - dt)
         # Transition de visée lissée (montée/descente de lunette).
         target = 1.0 if self.aiming else 0.0
@@ -267,7 +279,7 @@ class Enemy(Entity):
     AIM_DELAY = 0.0        # anticipation avant le tir (sniper uniquement)
     CAN_ROLL = False        # le soldat entraîné est le seul à esquiver
     ROLL_DURATION = 1.0
-    ROLL_COOLDOWN = 5.0
+    ROLL_COOLDOWN = 3.0
     ROLL_SPEED = 2.8
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
@@ -303,6 +315,10 @@ class Enemy(Entity):
         self.roll_invuln = 0.0
         self.roll_dx = 0.0
         self.roll_dy = 0.0
+        # Demande consommée par l'IA après la résolution complète du tir.
+        # Cela évite qu'une roulade déclenchée par le premier plomb d'un
+        # fusil à pompe annule artificiellement les plombs simultanés.
+        self.hit_roll_request = None
 
     @property
     def rolling(self):
@@ -508,6 +524,8 @@ class RemotePlayer(Enemy):
     MAX_HEALTH = 100
     ROLL_DURATION = Player.ROLL_DURATION
     ROLL_COOLDOWN = Player.ROLL_COOLDOWN
+    ROLL_IFRAME_START = Player.ROLL_IFRAME_START
+    ROLL_IFRAME_END = Player.ROLL_IFRAME_END
 
     def __init__(self, pid, x, y):
         super().__init__(x, y)
@@ -515,9 +533,19 @@ class RemotePlayer(Enemy):
         self.shield = Player.SHIELD_DURATION
 
     def take_damage(self, amount):
-        if self.shield > 0.0:
+        if self.shield > 0.0 or self.roll_invulnerable:
             return False
+        # L'ennemi générique protège toute sa roulade ; le coéquipier suit
+        # volontairement la fenêtre plus courte du joueur.
+        self.roll_invuln = 0.0
         return super().take_damage(amount)
+
+    @property
+    def roll_invulnerable(self):
+        if not self.rolling:
+            return False
+        elapsed = self.ROLL_DURATION - self.roll_timer
+        return self.ROLL_IFRAME_START <= elapsed < self.ROLL_IFRAME_END
 
     def update_timers(self, dt):
         super().update_timers(dt)

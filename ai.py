@@ -118,10 +118,11 @@ class EnemyAI:
         self.peek_phase = "exposed"
         self.peek_timer = random.uniform(0.0, 0.6)   # déphasé entre ennemis
         self.peek_point = None
+        self.proactive_roll_delay = 0.0
         if enemy.CAN_ROLL:
             # Évite que tous les soldats roulent dès la première frame où
-            # ils aperçoivent le joueur.
-            enemy.roll_cooldown = random.uniform(1.5, 3.5)
+            # ils aperçoivent le joueur, sans bloquer leur réaction à un tir.
+            self.proactive_roll_delay = random.uniform(0.6, 1.8)
 
     # ------------------------------------------------------------------
     def update(self, dt, player, level):
@@ -137,7 +138,17 @@ class EnemyAI:
         enemy.update_timers(dt)
         self.path_timer += dt
         self.flank_timer -= dt
+        self.proactive_roll_delay = max(0.0,
+                                        self.proactive_roll_delay - dt)
         dist = enemy.distance_to(player)
+
+        # La demande est posée par le hitscan, puis consommée ici : tous les
+        # projectiles d'un même coup sont donc résolus avant l'esquive. Une
+        # demande périmée (cooldown, mort, roulade déjà active) est jetée.
+        hit_roll_request = enemy.hit_roll_request
+        enemy.hit_roll_request = None
+        if hit_roll_request is not None:
+            self.react_to_hit(*hit_roll_request, level)
 
         # Ligne de vue rafraîchie ~8 fois/s seulement : avec une horde
         # entière, les lancers de rayons de l'IA seraient sinon le poste
@@ -205,7 +216,9 @@ class EnemyAI:
         # --- comportements -------------------------------------------------
         state = enemy.ai_state
         if (state == "attack" and sees_player and enemy.CAN_ROLL
-                and enemy.roll_cooldown <= 0.0 and enemy.flash_timer <= 0.0):
+                and enemy.roll_cooldown <= 0.0
+                and self.proactive_roll_delay <= 0.0
+                and enemy.flash_timer <= 0.0):
             if self._start_side_roll(player, level):
                 return events
         if state == "idle":
@@ -257,8 +270,12 @@ class EnemyAI:
 
     def _start_side_roll(self, player, level):
         """Choisit un côté praticable et lance l'esquive du soldat."""
+        return self._start_side_roll_from(player.x, player.y, level)
+
+    def _start_side_roll_from(self, source_x, source_y, level):
+        """Roule perpendiculairement à une menace placée en ``source``."""
         enemy = self.enemy
-        facing = math.atan2(player.y - enemy.y, player.x - enemy.x)
+        facing = math.atan2(source_y - enemy.y, source_x - enemy.x)
         for direction in (self.strafe_dir, -self.strafe_dir):
             angle = facing + direction * math.pi / 2
             dx, dy = math.cos(angle), math.sin(angle)
@@ -268,9 +285,21 @@ class EnemyAI:
             self.strafe_dir = direction
             enemy.angle = facing
             return enemy.start_roll(dx, dy)
-        # Espace trop étroit : retente bientôt, sans brûler les 5 secondes.
+        # Espace trop étroit : retente bientôt, sans brûler les 3 secondes.
         enemy.roll_cooldown = 0.35
         return False
+
+    def react_to_hit(self, source_x, source_y, level):
+        """Esquive au pas d'IA suivant un impact si le cooldown l'autorise."""
+        enemy = self.enemy
+        if (not enemy.alive or not enemy.CAN_ROLL or enemy.rolling
+                or enemy.roll_cooldown > 0.0):
+            return False
+        enemy.ai_state = "chase"
+        enemy.last_seen = (source_x, source_y)
+        self.path = None
+        self.lost_timer = 0.0
+        return self._start_side_roll_from(source_x, source_y, level)
 
     def alert(self, position):
         """Alerte extérieure (coup de feu, cri d'un allié) : part enquêter."""

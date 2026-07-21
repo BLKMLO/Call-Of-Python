@@ -16,6 +16,7 @@ from ai import EnemyAI, cover_adjusted_chance
 from coop import CoopClientGame
 from entities import (PORTAL_FRAME_MS, PORTAL_FRAMES, PROP_SPECS, Grunt,
                       Player, Prop, Sniper, Soldier)
+from game import Game
 from level import LEVELS, MAP_LAB, MAP_MOON, SURVIVAL_LEVEL, Level
 from raycaster import Raycaster, has_line_of_sight
 from settings import DEFAULT_KEYS
@@ -170,25 +171,35 @@ class RequestedChangesTests(unittest.TestCase):
         self.assertAlmostEqual(Grunt.SPEED, 1.7 * 1.5)
         self.assertAlmostEqual(Grunt.FIRE_DELAY, 1.3)
 
-    def test_player_roll_defaults_forward_has_iframes_and_three_second_cooldown(self):
+    def test_player_roll_has_fair_iframe_window_without_cooldown(self):
         level = Level(0)
         player = Player(*level.player_spawn)
         keys = defaultdict(bool)
         self.assertIn("roulade", DEFAULT_KEYS)
         self.assertNotIn("sprint", DEFAULT_KEYS)
         self.assertTrue(player.start_roll(keys, DEFAULT_KEYS))
+        self.assertEqual(player.roll_sequence, 1)
         self.assertAlmostEqual(player.roll_dx, 1.0)
-        self.assertAlmostEqual(player.roll_invuln, 0.5)
         health = player.health
-        player.take_damage(20)
-        self.assertEqual(player.health, health)
-        self.assertFalse(player.start_roll(keys, DEFAULT_KEYS))
-
-        player.update(0.51)
+        # L'amorce est lisible et vulnérable : la touche n'est pas un bouton
+        # de parade instantanée lorsque la balle a déjà atteint le joueur.
         player.take_damage(20)
         self.assertEqual(player.health, health - 20)
-        player.update(2.50)
+        self.assertFalse(player.start_roll(keys, DEFAULT_KEYS))
+
+        # Le cœur du mouvement protège pendant 0,30 s, puis la récupération
+        # redevient vulnérable avant que le déplacement soit tout à fait fini.
+        player.update(0.09)
+        player.take_damage(20)
+        self.assertEqual(player.health, health - 20)
+        player.update(0.30)
+        player.take_damage(20)
+        self.assertEqual(player.health, health - 40)
+        self.assertFalse(player.start_roll(keys, DEFAULT_KEYS))
+        player.update(0.17)
         self.assertTrue(player.start_roll(keys, DEFAULT_KEYS))
+        self.assertEqual(player.roll_sequence, 2)
+        self.assertEqual(player.roll_cooldown, 0.0)
 
     def test_fast_roll_is_substepped_and_cannot_cross_a_wall(self):
         level = Level(0)
@@ -217,7 +228,7 @@ class RequestedChangesTests(unittest.TestCase):
         soldier.take_damage(30)
         self.assertEqual(soldier.health, health - 30)
         self.assertFalse(soldier.start_roll(1.0, 0.0))
-        soldier.update_timers(4.0)
+        soldier.update_timers(2.0)
         self.assertTrue(soldier.start_roll(1.0, 0.0))
 
     def test_soldier_ai_chooses_a_lateral_roll_and_suspends_fire(self):
@@ -237,6 +248,56 @@ class RequestedChangesTests(unittest.TestCase):
         self.assertEqual(events, [])
         self.assertNotEqual((soldier.x, soldier.y), old_position)
         self.assertAlmostEqual(soldier.x, old_position[0], places=5)
+
+    def test_soldier_reacts_to_a_hit_on_next_ai_step_when_ready(self):
+        level = Level(0)
+        level.grid = [["1" if x in (0, 9) or y in (0, 7) else "."
+                       for x in range(10)] for y in range(8)]
+        level.width, level.height = 10, 8
+        level.prop_tiles = set()
+        level.cover_circles = []
+        soldier = Soldier(4.5, 4.5)
+        ai = EnemyAI(soldier)
+        # Le délai aléatoire de roulade proactive ne doit pas empêcher la
+        # toute première réaction défensive à une balle.
+        self.assertEqual(soldier.roll_cooldown, 0.0)
+        self.assertGreater(ai.proactive_roll_delay, 0.0)
+        soldier.hit_roll_request = (7.5, 4.5)
+        player = Player(7.5, 4.5)
+
+        ai.update(0.01, player, level)
+
+        self.assertIsNone(soldier.hit_roll_request)
+        self.assertTrue(soldier.rolling)
+        self.assertEqual(soldier.ai_state, "chase")
+        self.assertAlmostEqual(soldier.roll_dx, 0.0, places=5)
+        self.assertAlmostEqual(abs(soldier.roll_dy), 1.0, places=5)
+
+    def test_hit_reaction_waits_until_all_pellets_are_resolved(self):
+        soldier = Soldier(4.5, 4.5)
+        soldier.roll_cooldown = 0.0
+        game = Game.__new__(Game)
+        game.level = SimpleNamespace(
+            first_cover_hit=lambda *_args: 20.0,
+            config={"theme": {"1": "wall_stone"}},
+        )
+        game.enemies = [soldier]
+        game.particles = SimpleNamespace(
+            spawn_wall_dust=lambda *_args: None,
+            spawn_death=lambda *_args: None,
+            spawn_blood=lambda *_args: None,
+        )
+        game.sounds = SimpleNamespace(play=lambda *_args, **_kwargs: None)
+        game.player = Player(2.5, 4.5)
+
+        # Deux projectiles du même coup touchent avant le prochain pas d'IA.
+        with patch("game.cast_ray", return_value=(20.0, "1", 0, 0)):
+            self.assertEqual(game._hitscan(2.5, 4.5, 0.0, 10), "hit")
+            self.assertEqual(game._hitscan(2.5, 4.5, 0.0, 10), "hit")
+
+        self.assertEqual(soldier.health, soldier.max_health - 20)
+        self.assertEqual(soldier.hit_roll_request, (2.5, 4.5))
+        self.assertFalse(soldier.rolling)
 
     def test_lunar_crystals_replace_fissures_and_block_sight(self):
         self.assertNotIn("V", "".join(MAP_MOON))

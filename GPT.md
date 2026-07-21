@@ -3,6 +3,44 @@
 Dernière mise à jour : 21 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche distante de travail `claude/call_of_python_LLM`.
 
+## Équilibrage des roulades et écran de mort
+
+- La roulade du joueur dure désormais `0.55 s` à `4.55` cases/s : sa portée
+  reste donc pratiquement inchangée (~`2.5` cases) et elle n'a plus aucun
+  cooldown. Une nouvelle roulade reste refusée tant que les `0.55 s` de la
+  précédente ne sont pas terminées. Elle n'est pas une parade instantanée
+  pendant toute l'animation : `0.08 s` d'amorce vulnérable,
+  `0.30 s` d'i-frames (`0.08 <= elapsed < 0.38`), puis `0.17 s` de
+  récupération vulnérable. Même en les enchaînant, ces deux fenêtres exposées
+  empêchent donc une invincibilité continue. `Player.roll_invulnerable` est
+  l'autorité ; `roll_invuln` reste à zéro pour préserver la forme de l'ancien
+  état.
+- `RemotePlayer` applique exactement la même fenêtre côté hôte et côté client.
+  Une évolution future de la roulade joueur doit donc maintenir ensemble les
+  constantes de `Player`, leur reprise dans `RemotePlayer`, le clamp réseau
+  de `rt` et l'allocation anti-téléportation basée sur `ROLL_SPEED`. Chaque
+  déclenchement client incrémente aussi `Player.roll_sequence`, envoyé sous
+  `rs` : l'hôte accepte une séquence strictement plus récente et rejette les
+  vieux datagrammes UDP. Pour un ancien client sans `rs`, un front `rt=0` puis
+  `rt>0` est exigé. Sans cela, retirer le cooldown permettrait à un paquet
+  retardé de relancer une roulade fantôme.
+- Le cooldown du soldat passe de `5.0` à `3.0 s`. Avec un cooldown prêt, un
+  projectile réellement encaissé pose `Enemy.hit_roll_request` et l'IA roule
+  latéralement par rapport à la source au pas d'IA suivant. La demande est
+  volontairement consommée après résolution du coup complet : tous les plombs
+  simultanés d'un fusil à pompe infligent leurs dégâts avant l'esquive. Un
+  espace trop étroit conserve la courte nouvelle tentative de `0.35 s`.
+  `EnemyAI.proactive_roll_delay` décale seulement les roulades spontanées au
+  premier contact (`0.6..1.8 s`) ; il ne pollue pas `roll_cooldown` et ne peut
+  donc pas empêcher la première réaction à une balle.
+- L'écran de mort n'emploie plus les grandes lettres rouges espacées ni une
+  surface/glyphe recréé chaque frame. `HUD.resize()` prépare un panneau sombre
+  tactique, un titre sans espacement forcé, un état vital et une indication
+  Entrée/Espace/clic. Les tailles se recalibrent à la résolution ; le fondu et
+  l'indication animée utilisent `death_time`, puisque `HUD.update()` est figé
+  pendant la cinématique. Les raccourcis historiques, dont Échap, continuent
+  tous à avancer immédiatement vers l'écran de fin.
+
 ## Passe de nettoyage, robustesse et sécurité LAN
 
 - `settings.py` ne fait plus confiance au JSON local : lecture limitée à
@@ -25,7 +63,9 @@ branche distante de travail `claude/call_of_python_LLM`.
   clientes : quatre joueurs maximum (hôte + 3), adresse source exacte,
   identifiants typés, coordonnées/angles finis, déplacement plafonné puis
   sous-échantillonné contre les collisions, et roulade/i-frames démarrées par
-  l'horloge de l'hôte. Répéter `rt=0.5` ne contourne donc pas le cooldown.
+  l'horloge de l'hôte. Le numéro monotone `rs`, ou un front montant pour les
+  anciens clients, empêche donc `rt=0.5` répété ou retardé de redéclencher une
+  action sans nouvelle commande.
 - Les tirs distants sont bornés à `32` événements par paquet, à `20` crédits
   par seconde avec capacité `14`, aux dégâts maximaux légitimes d'une arme
   Mk. IV et à `0.18 rad` autour de l'orientation annoncée. Les rafales locales
@@ -51,16 +91,17 @@ branche distante de travail `claude/call_of_python_LLM`.
   confondre mobilité et fréquence de tir lors d'un futur équilibrage.
 - Le militaire `Soldier` possède `CAN_ROLL = True`. En combat et avec un côté
   praticable, l'IA effectue une roulade latérale de `1.0 s`, à `2.8` cases/s,
-  avec invincibilité pendant toute l'animation et cooldown de `5.0 s` entre
+  avec invincibilité pendant toute l'animation et cooldown de `3.0 s` entre
   deux déclenchements. Il ne navigue, ne vise et ne tire pas pendant l'action.
   Les trois frames sont `assets/enemy_soldier_roll_0..2.png` (`64x96`).
 - Le sprint a été supprimé. La touche configurable `roulade` (Maj par défaut)
-  déclenche une roulade joueur de `0.5 s`, vitesse `5.0`, i-frames `0.5 s` et
-  cooldown `3.0 s`. La direction suit ZQSD, ou avance par défaut. Les longues
-  impulsions sont sous-échantillonnées : un pic de `dt` ne traverse pas un
-  mur. Tir, ADS et rotation de vue sont suspendus ; la caméra bascule et
-  l'arme s'abaisse. Le HUD expose le cooldown. Les anciens `settings.json`
-  contenant `sprint` sont migrés automatiquement vers `roulade`.
+  déclenche une roulade joueur de `0.55 s`, vitesse `4.55`, i-frames centrales
+  de `0.30 s` et aucun cooldown après l'animation. La direction suit ZQSD, ou
+  avance par défaut. Les longues impulsions sont sous-échantillonnées : un pic
+  de `dt` ne traverse pas un mur. Tir, ADS et rotation de vue sont suspendus ;
+  la caméra bascule et l'arme s'abaisse. Le HUD indique « en cours » ou
+  « prête ». Les anciens `settings.json` contenant `sprint` sont migrés
+  automatiquement vers `roulade`.
 - La coop ajoute roulade/temps restant après les anciens champs des joueurs
   et des ennemis. Les formats historiques 7 champs (joueurs), 8 champs
   (ennemis) et 9 champs (ennemis avec `aiming`) restent acceptés. L'hôte
@@ -154,9 +195,11 @@ branche distante de travail `claude/call_of_python_LLM`.
   le cooldown commence après le tir, pas au début de la mise en joue.
 - Une exposition de `1.0` ne doit jamais être pénalisée par le bonus de
   couvert. L'exposition est bornée entre `0.0` et `1.0`.
-- Les cooldowns de roulade se mesurent de déclenchement à déclenchement : les
-  `3.0 s` / `5.0 s` incluent donc la durée de la roulade. Ne jamais remplacer
-  le déplacement sous-échantillonné par un unique grand pas collisionné.
+- Le joueur n'a aucun cooldown mais `Player.start_roll()` doit toujours refuser
+  un redéclenchement pendant `rolling`. Le cooldown soldat de `3.0 s` se mesure
+  de déclenchement à déclenchement et inclut sa seconde de roulade. Ne jamais
+  remplacer le déplacement sous-échantillonné par un unique grand pas
+  collisionné.
 - `MAP_MOON`, `PROP_CHARS`, `cover_circles`, le test de ligne de vue et le
   hitscan doivent rester cohérents : retirer seulement l'un d'eux rendrait un
   cristal traversable, invisible à l'IA ou perméable aux balles.
@@ -177,21 +220,22 @@ branche distante de travail `claude/call_of_python_LLM`.
 
 ## Validation disponible
 
-La suite contient 30 tests. `tests/test_requested_changes.py` conserve les
-20 non-régressions graphiques et de gameplay : marges de la
+La suite contient 34 tests. `tests/test_requested_changes.py` conserve les
+22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
 compatibilité coop 8/9 champs, stabilité d'échelle des cinq tirs frontaux et
 présence/absence correcte des nuages sur Terre/la Lune, vitesse du milicien,
-roulades joueur/soldat (direction, i-frames, cooldowns, collision, frames et
-IA), compatibilité réseau de la roulade, cristaux de couverture et nouveau
-fond de menu.
+roulades joueur/soldat (direction, i-frames, enchaînement/cooldown, collision,
+frames et IA), compatibilité réseau de la roulade, cristaux de couverture et
+nouveau fond de menu.
 
-`tests/test_cleanup.py` ajoute 10 contrôles : paquets UDP bornés et non-objets,
+`tests/test_cleanup.py` ajoute 12 contrôles : paquets UDP bornés et non-objets,
 réglages malformés/sauvegarde atomique, IPv4, conflits et touches réservées,
-téléportation/`NaN`/spam de roulade, budget de tir/dégâts, bouclier et mort
-autoritaires en coop, commandes ignorées en pause, cache du sprite d'arme et
-file d'apparitions en temps constant.
+téléportation/`NaN`/spam de roulade, séquences de roulades enchaînées et
+paquets retardés, budget de tir/dégâts, bouclier et mort autoritaires en coop,
+commandes ignorées en pause, cache du sprite d'arme, mise en page de mort à
+basse résolution et file d'apparitions en temps constant.
 
 Commande utilisée :
 

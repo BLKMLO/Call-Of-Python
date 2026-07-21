@@ -205,12 +205,18 @@ d'implémentation et les décisions techniques non triviales.
     neutralisées, protocole UDP défensif, validation hôte des positions/
     roulades/tirs, boucliers de réapparition coop et caches légers. Dix tests
     dédiés dans `tests/test_cleanup.py`, invariants complets dans `GPT.md`.
+23. Équilibrage des roulades : fenêtre centrale de 0,30 s d'i-frames et aucun
+    cooldown pour le joueur/les coéquipiers (séquences LAN anti-paquets
+    retardés), soldat à 3 s de cooldown avec esquive réflexe après un impact
+    sans annuler les plombs simultanés. Écran de mort refait en panneau
+    tactique lisible et adaptatif. Contexte complet dans `GPT.md`.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle.** Trente tests ciblés sont committés
-  dans `tests/test_requested_changes.py` et `tests/test_cleanup.py`; les anciens
-  tests de fumée généraux (`smoke_test2..11.py`) restent absents du dépôt.
+- **Couverture de tests encore partielle.** Trente-quatre tests ciblés sont
+  présents dans `tests/test_requested_changes.py` et `tests/test_cleanup.py` ;
+  les anciens tests de fumée généraux (`smoke_test2..11.py`) restent absents
+  du dépôt.
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
   jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
   observés).
