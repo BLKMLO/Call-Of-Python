@@ -506,10 +506,22 @@ class RemotePlayer(Enemy):
     (uniforme bleu), piloté par le réseau — aucune IA attachée."""
     KIND = "ally"
     MAX_HEALTH = 100
+    ROLL_DURATION = Player.ROLL_DURATION
+    ROLL_COOLDOWN = Player.ROLL_COOLDOWN
 
     def __init__(self, pid, x, y):
         super().__init__(x, y)
         self.pid = pid
+        self.shield = Player.SHIELD_DURATION
+
+    def take_damage(self, amount):
+        if self.shield > 0.0:
+            return False
+        return super().take_damage(amount)
+
+    def update_timers(self, dt):
+        super().update_timers(dt)
+        self.shield = max(0.0, self.shield - dt)
 
 
 ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
@@ -590,11 +602,11 @@ class Prop:
         if self.kind == "portal":
             # Les quatre PNG sont précalculés et mis en cache par assets.get :
             # l'animation ne fait donc aucune transformation coûteuse en jeu.
-            frame = ((pygame.time.get_ticks() // PORTAL_FRAME_MS)
-                     % len(PORTAL_FRAMES))
+            ticks = pygame.time.get_ticks()
+            frame = (ticks // PORTAL_FRAME_MS) % len(PORTAL_FRAMES)
             # Anneau sans support : lévitation lente au-dessus du régolithe.
             self.v_offset = 0.11 + 0.018 * math.sin(
-                pygame.time.get_ticks() * 0.003,
+                ticks * 0.003,
             )
             return assets.get(PORTAL_FRAMES[frame])
         return assets.get(self.sprite_name, self.flipped)

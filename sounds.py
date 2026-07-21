@@ -316,6 +316,7 @@ class SoundBank:
         self.music_cache = {}
         self.music_key = None
         self.music_channel = None
+        self._last_music_volume = None
         self.enabled = pygame.mixer.get_init() is not None
         if not self.enabled:
             return
@@ -409,7 +410,9 @@ class SoundBank:
         """Applique le volume courant à la musique (appelé quand il change)."""
         if self.enabled and self.music_channel is not None:
             v = self.settings.volume * MUSIC_VOLUME
-            self.music_channel.set_volume(v, v)
+            if v != self._last_music_volume:
+                self.music_channel.set_volume(v, v)
+                self._last_music_volume = v
 
     def stop_music(self):
         if self.enabled and self.music_channel is not None:

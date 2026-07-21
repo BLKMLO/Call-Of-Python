@@ -88,6 +88,12 @@ class Game:
     # ------------------------------------------------------------------
     def handle_event(self, event):
         """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
+        if event.type == pygame.WINDOWFOCUSLOST:
+            self.player.aiming = False
+            if self.outcome is None:
+                self.paused = True
+            pygame.mouse.get_rel()
+            return None
         # La mort doit toujours aboutir au menu de fin. Échap ne doit surtout
         # pas activer la pause ici, car cela gelait le chronomètre de la caméra
         # et laissait « VOUS ÊTES MORT » affiché indéfiniment.
@@ -101,6 +107,7 @@ class Game:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.paused = not self.paused
+                self.player.aiming = False
                 pygame.mouse.get_rel()  # évite un saut de caméra à la reprise
             elif self.paused and event.key == pygame.K_m:
                 return "menu"
@@ -115,14 +122,19 @@ class Game:
                 self.player.start_roll(
                     pygame.key.get_pressed(), self.settings.keys,
                 )
-            elif event.key == self.settings.keys["recharger"]:
+            elif (not self.paused and self.outcome is None
+                  and self.player.alive
+                  and event.key == self.settings.keys["recharger"]):
                 self.player.weapon.start_reload()
                 if self.player.weapon.reloading > 0.0:
                     self.sounds.play("reload")
-            elif event.scancode in SLOT_SCANCODES:   # touches 1..4
+            elif (not self.paused and self.outcome is None
+                  and self.player.alive
+                  and event.scancode in SLOT_SCANCODES):   # touches 1..4
                 if self.player.select_weapon(SLOT_SCANCODES[event.scancode]):
                     self.sounds.play("click", volume_scale=0.4)
-        elif event.type == pygame.MOUSEWHEEL and not self.paused:
+        elif (event.type == pygame.MOUSEWHEEL and not self.paused
+              and self.outcome is None and self.player.alive):
             # `flipped` = défilement "naturel" (pavés tactiles) : SDL
             # inverse alors le signe de y — on le rétablit pour que
             # molette vers le haut = arme précédente sur tous les OS.
@@ -130,8 +142,8 @@ class Game:
             if wheel_y:
                 self.player.cycle_weapon(-1 if wheel_y > 0 else 1)
                 self.sounds.play("click", volume_scale=0.4)
-        elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
-                and self.player.alive:
+        elif (event.type == pygame.MOUSEBUTTONDOWN and not self.paused
+              and self.outcome is None and self.player.alive):
             if event.button == 1:
                 # Premier coup au clic : indispensable pour le semi-auto.
                 self._player_fire()

@@ -9,7 +9,7 @@ aux changements de résolution). Chaque menu retourne une chaîne d'action
 import pygame
 
 import assets
-from settings import KEY_ACTIONS, RESOLUTIONS
+from settings import KEY_ACTIONS, RESOLUTIONS, valid_ipv4
 
 TITLE_COLOR = (238, 242, 240)
 TEXT_COLOR = (205, 214, 216)
@@ -414,7 +414,7 @@ class SettingsMenu(MenuBase):
         # Mode capture d'une nouvelle touche.
         if self.waiting_action is not None and event.type == pygame.KEYDOWN:
             if event.key != pygame.K_ESCAPE:  # Échap annule le re-mappage
-                self.settings.keys[self.waiting_action] = event.key
+                self.settings.bind_key(self.waiting_action, event.key)
                 self.settings.save()
             self.waiting_action = None
             self.sounds.play("click", volume_scale=0.5)
@@ -455,7 +455,7 @@ class SettingsMenu(MenuBase):
             "bahnschrift,dejavusans,arial", max(12, h // 48), bold=True,
         )
         hint = font.render(
-            "Valeurs : clic gauche / droit   ·   Touches : cliquez puis appuyez",
+            "Touches : Échap annule · F11 est réservé · les doublons sont échangés",
             True, DIM_COLOR)
         screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
 
@@ -526,9 +526,17 @@ class MultiplayerMenu(MenuBase):
 
     def handle_event(self, event, screen):
         if self.editing and event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER,
-                             pygame.K_ESCAPE):
+            if event.key == pygame.K_ESCAPE:
                 self.editing = False
+                self.error = ""
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                address = valid_ipv4(self.settings.last_ip)
+                if address is None:
+                    self.error = "Adresse IPv4 invalide (ex. 192.168.1.20)."
+                    return None
+                self.settings.last_ip = address
+                self.editing = False
+                self.error = ""
                 self.settings.save()
             elif event.key == pygame.K_BACKSPACE:
                 self.settings.last_ip = self.settings.last_ip[:-1]
@@ -546,6 +554,12 @@ class MultiplayerMenu(MenuBase):
             self.editing = True
             self.error = ""
             return None
+        if ident == "join":
+            address = valid_ipv4(self.settings.last_ip)
+            if address is None:
+                self.error = "Adresse IPv4 invalide (ex. 192.168.1.20)."
+                return None
+            self.settings.last_ip = address
         self.editing = False
         return ident
 

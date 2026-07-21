@@ -11,7 +11,8 @@ import json
 import socket
 
 DEFAULT_PORT = 5577
-BUFFER_SIZE = 65536
+BUFFER_SIZE = 65507          # taille utile maximale d'un datagramme IPv4/UDP
+MAX_MESSAGES_PER_TICK = 128 # un flot LAN ne doit pas affamer le rendu
 
 
 class UdpPeer:
@@ -32,10 +33,10 @@ class UdpPeer:
         except OSError:
             pass  # câble débranché, hôte injoignable... le jeu continue
 
-    def receive(self):
+    def receive(self, limit=MAX_MESSAGES_PER_TICK):
         """Draine la socket ; retourne [(message, addr), ...]."""
         messages = []
-        while True:
+        for _ in range(max(0, min(int(limit), MAX_MESSAGES_PER_TICK))):
             try:
                 data, addr = self.sock.recvfrom(BUFFER_SIZE)
             except BlockingIOError:
@@ -43,8 +44,10 @@ class UdpPeer:
             except OSError:
                 break
             try:
-                messages.append((json.loads(data.decode()), addr))
-            except (ValueError, UnicodeDecodeError):
+                message = json.loads(data.decode())
+                if isinstance(message, dict):
+                    messages.append((message, addr))
+            except (ValueError, UnicodeDecodeError, RecursionError):
                 pass  # datagramme corrompu : ignoré
         return messages
 

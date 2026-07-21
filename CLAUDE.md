@@ -201,18 +201,21 @@ d'implémentation et les décisions techniques non triviales.
 21. Milicien accéléré de 50 %, roulades joueur/soldat avec i-frames et synchro
     coop, Lune texturée avec cristaux aliens de couverture, portail flottant
     et menu principal cinématique lunaire. Contexte complet dans `GPT.md`.
+22. Nettoyage de robustesse : réglages bornés et atomiques, entrées maladroites
+    neutralisées, protocole UDP défensif, validation hôte des positions/
+    roulades/tirs, boucliers de réapparition coop et caches légers. Dix tests
+    dédiés dans `tests/test_cleanup.py`, invariants complets dans `GPT.md`.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle.** Les régressions de la passe GPT
-  sont committées dans `tests/test_requested_changes.py`; les anciens tests
-  de fumée généraux (`smoke_test2..11.py`) restent absents du dépôt.
+- **Couverture de tests encore partielle.** Trente tests ciblés sont committés
+  dans `tests/test_requested_changes.py` et `tests/test_cleanup.py`; les anciens
+  tests de fumée généraux (`smoke_test2..11.py`) restent absents du dépôt.
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
   jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
   observés).
-- **Multijoueur** : testé uniquement en local (deux instances sur la
-  même machine) via les scripts de fumée — pas de test réseau réel
-  multi-machines.
+- **Multijoueur** : handshake et instantanés testés avec une vraie socket UDP
+  locale entre deux instances — toujours pas de test réseau multi-machines.
 - `settings.json` est gitignoré (contient les préférences locales/l'IP
   du dernier hôte rejoint) — normal que `git status` le montre modifié
   après une partie.

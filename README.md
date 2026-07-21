@@ -68,9 +68,9 @@ rejoint la horde toutes les dix vagues, tandis que soins et améliorations
 d'armes sont distribués à intervalles réguliers.
 
 Le mode est jouable seul ou en coopération LAN. Un joueur héberge la
-partie sur le port UDP `5577`, les autres rejoignent son adresse IP locale.
-L'hôte reste autoritaire sur le monde et la partie ne se termine que si
-tous les joueurs sont à terre simultanément.
+partie sur le port UDP `5577`, jusqu'à trois autres joueurs rejoignent son
+adresse IPv4 locale. L'hôte valide déplacements, roulades et tirs ; la partie
+ne se termine que si tous les joueurs sont à terre simultanément.
 
 ## Fonctionnalités principales
 

@@ -28,6 +28,7 @@ from network import DEFAULT_PORT, UdpPeer
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
 from survival import SurvivalGame
+from weapons import LEVEL_DAMAGE_BONUS, WEAPON_SPECS
 
 RESPAWN_DELAY = 6.0        # secondes avant la réapparition d'un joueur
 CLIENT_TIMEOUT = 6.0       # silence au-delà duquel l'hôte oublie un client
@@ -35,6 +36,31 @@ SNAP_INTERVAL = 1 / 15     # fréquence des instantanés de l'hôte
 SEND_INTERVAL = 1 / 30     # fréquence d'envoi des entrées du client
 JOIN_TIMEOUT = 5.0         # délai de connexion avant abandon
 LOST_TIMEOUT = 5.0         # silence de l'hôte = connexion perdue
+MAX_CLIENTS = 3            # quatre joueurs au total, hôte compris
+MAX_REMOTE_FIRE_EVENTS = 32
+REMOTE_FIRE_RATE = 20.0    # crédits de balles/plombs par seconde
+REMOTE_FIRE_CAPACITY = 14.0
+MAX_REMOTE_DAMAGE = max(
+    round(spec.damage * (1 + LEVEL_DAMAGE_BONUS * 3))
+    for spec in WEAPON_SPECS.values()
+)
+
+
+def _finite_float(value, low=None, high=None):
+    """Convertit une valeur réseau en flottant fini et éventuellement borné."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if low is not None and number < low:
+        return None
+    if high is not None and number > high:
+        return None
+    return number
 
 
 def _revive(entity, health):
@@ -44,6 +70,9 @@ def _revive(entity, health):
     entity.exploded = False
     entity.roll_timer = 0.0
     entity.roll_invuln = 0.0
+    entity.roll_cooldown = 0.0
+    if hasattr(entity, "shield"):
+        entity.shield = Player.SHIELD_DURATION
 
 
 # ----------------------------------------------------------------------
@@ -150,6 +179,9 @@ class CoopHostGame(SurvivalGame):
             if client["addr"] == addr:      # re-join du même client
                 self.peer.send({"t": "welcome", "id": pid}, addr)
                 return
+        if len(self.clients) >= MAX_CLIENTS:
+            self.peer.send({"t": "full"}, addr)
+            return
         pid = self.next_pid
         self.next_pid += 1
         x, y = self.level.player_spawn
@@ -157,29 +189,93 @@ class CoopHostGame(SurvivalGame):
             "addr": addr,
             "player": RemotePlayer(pid, x + random.uniform(-0.3, 0.3), y),
             "last_seen": self.net_time,
+            "fire_budget": REMOTE_FIRE_CAPACITY,
         }
         self.peer.send({"t": "welcome", "id": pid}, addr)
         self.hud.show_message(f"Joueur {pid + 1} a rejoint la partie")
 
     def _handle_input(self, message, addr):
-        client = self.clients.get(message.get("id"))
+        pid = message.get("id")
+        if isinstance(pid, bool) or not isinstance(pid, int):
+            return
+        client = self.clients.get(pid)
         if client is None or client["addr"] != addr:
             return
+        elapsed = max(SEND_INTERVAL, self.net_time - client["last_seen"])
         client["last_seen"] = self.net_time
+        client["fire_budget"] = min(
+            REMOTE_FIRE_CAPACITY,
+            client["fire_budget"] + elapsed * REMOTE_FIRE_RATE,
+        )
         remote = client["player"]
-        if remote.alive:
-            remote.moving = (abs(remote.x - message["x"])
-                             + abs(remote.y - message["y"])) > 0.01
-            remote.x = float(message["x"])
-            remote.y = float(message["y"])
-            remote.angle = float(message["a"])
-            remote.roll_timer = max(0.0, min(
-                Player.ROLL_DURATION, float(message.get("rt", 0.0)),
-            ))
-            remote.roll_invuln = remote.roll_timer
-            for angle, damage in message.get("fx", []):
-                self._resolve_remote_fire(message["id"], remote,
-                                          float(angle), int(damage))
+        if not remote.alive:
+            return
+
+        x = _finite_float(message.get("x"), 0.0, self.level.width)
+        y = _finite_float(message.get("y"), 0.0, self.level.height)
+        angle = _finite_float(message.get("a"))
+        if x is not None and y is not None:
+            remote.moving = self._accept_remote_position(remote, x, y, elapsed)
+        else:
+            remote.moving = False
+        if angle is not None:
+            remote.angle = angle % math.tau
+
+        requested_roll = _finite_float(
+            message.get("rt", 0.0), 0.0, Player.ROLL_DURATION,
+        )
+        if (requested_roll and not remote.rolling
+                and remote.roll_cooldown <= 0.0):
+            # L'hôte déclenche sa propre minuterie : répéter rt=0.5 ne peut
+            # donc pas produire une invincibilité permanente.
+            remote.roll_timer = Player.ROLL_DURATION
+            remote.roll_invuln = Player.ROLL_DURATION
+            remote.roll_cooldown = Player.ROLL_COOLDOWN
+
+        fire_events = message.get("fx", [])
+        if remote.rolling or not isinstance(fire_events, list):
+            return
+        for event in fire_events[:MAX_REMOTE_FIRE_EVENTS]:
+            if client["fire_budget"] < 1.0:
+                break
+            if not isinstance(event, (list, tuple)) or len(event) != 2:
+                continue
+            shot_angle = _finite_float(event[0])
+            damage = _finite_float(event[1], 1.0, MAX_REMOTE_DAMAGE)
+            if shot_angle is None or damage is None:
+                continue
+            delta = (shot_angle - remote.angle + math.pi) % math.tau - math.pi
+            if abs(delta) > 0.18:  # dispersion maximale + marge réseau
+                continue
+            client["fire_budget"] -= 1.0
+            self._resolve_remote_fire(pid, remote, shot_angle, round(damage))
+
+    def _accept_remote_position(self, remote, target_x, target_y, elapsed):
+        """Accepte un déplacement client sans téléportation ni mur traversé."""
+        dx, dy = target_x - remote.x, target_y - remote.y
+        distance = math.hypot(dx, dy)
+        if distance <= 1e-9:
+            return False
+        allowance = min(
+            0.65,
+            Player.ROLL_SPEED * min(max(elapsed, SEND_INTERVAL), 0.12) * 1.5
+            + 0.08,
+        )
+        if distance > allowance:
+            scale = allowance / distance
+            dx, dy = dx * scale, dy * scale
+            distance = allowance
+        steps = max(1, math.ceil(distance / 0.1))
+        step_x, step_y = dx / steps, dy / steps
+        old = (remote.x, remote.y)
+        for _ in range(steps):
+            next_pos = self.level.move_with_collisions(
+                remote.x, remote.y, step_x, step_y, remote.RADIUS,
+            )
+            if next_pos == (remote.x, remote.y):
+                break
+            remote.x, remote.y = next_pos
+        return (remote.x, remote.y) != old
 
     def _resolve_remote_fire(self, pid, remote, angle, damage):
         remote.flash_timer = 0.12   # les autres voient l'éclair de tir
@@ -201,6 +297,10 @@ class CoopHostGame(SurvivalGame):
                 if pid == 0:
                     self.player.health = 60
                     self.player.x, self.player.y = x, y
+                    self.player.roll_timer = 0.0
+                    self.player.roll_invuln = 0.0
+                    self.player.roll_cooldown = 0.0
+                    self.player.activate_shield()
                 else:
                     entity.x, entity.y = x, y
                     _revive(entity, 60)
@@ -303,6 +403,7 @@ class CoopClientGame:
         self.join_resend = 0.0
         self.last_snap = 0.0
         self.disconnected = False
+        self.disconnect_reason = ""
         self.pending_fires = []    # [[angle, dégâts], ...] à envoyer
         self.send_timer = 0.0
 
@@ -332,9 +433,16 @@ class CoopClientGame:
 
     # -- événements -------------------------------------------------------
     def handle_event(self, event):
+        if event.type == pygame.WINDOWFOCUSLOST:
+            self.player.aiming = False
+            if self.outcome is None:
+                self.paused = True
+            pygame.mouse.get_rel()
+            return None
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.paused = not self.paused
+                self.player.aiming = False
                 pygame.mouse.get_rel()
             elif self.paused and event.key == pygame.K_m:
                 return "menu"
@@ -349,22 +457,27 @@ class CoopClientGame:
                 self.player.start_roll(
                     pygame.key.get_pressed(), self.settings.keys,
                 )
-            elif event.key == self.settings.keys["recharger"]:
+            elif (not self.paused and self.outcome is None
+                  and self.player.alive
+                  and event.key == self.settings.keys["recharger"]):
                 self.player.weapon.start_reload()
                 if self.player.weapon.reloading > 0.0:
                     self.sounds.play("reload")
-            elif event.scancode in SLOT_SCANCODES:
+            elif (not self.paused and self.outcome is None
+                  and self.player.alive
+                  and event.scancode in SLOT_SCANCODES):
                 if self.player.select_weapon(SLOT_SCANCODES[event.scancode]):
                     self.sounds.play("click", volume_scale=0.4)
-        elif event.type == pygame.MOUSEWHEEL and not self.paused:
+        elif (event.type == pygame.MOUSEWHEEL and not self.paused
+              and self.outcome is None and self.player.alive):
             # Voir game.py : rétablit le sens de la molette en défilement
             # "naturel" (event.flipped) et ignore les molettes horizontales.
             wheel_y = -event.y if getattr(event, "flipped", False) else event.y
             if wheel_y:
                 self.player.cycle_weapon(-1 if wheel_y > 0 else 1)
                 self.sounds.play("click", volume_scale=0.4)
-        elif event.type == pygame.MOUSEBUTTONDOWN and not self.paused \
-                and self.player.alive:
+        elif (event.type == pygame.MOUSEBUTTONDOWN and not self.paused
+              and self.outcome is None and self.player.alive):
             if event.button == 1:
                 self._fire()
             elif event.button == 3 and not self.player.rolling:
@@ -458,6 +571,10 @@ class CoopClientGame:
             hx = self.player.x + math.cos(angle) * (wall_dist - 0.05)
             hy = self.player.y + math.sin(angle) * (wall_dist - 0.05)
             self.particles.spawn_wall_dust(hx, hy, (110, 110, 110))
+        if len(self.pending_fires) > MAX_REMOTE_FIRE_EVENTS:
+            # Une longue perte réseau ne doit pas rejouer une rafale ancienne
+            # en bloc lorsque la liaison revient.
+            del self.pending_fires[:-MAX_REMOTE_FIRE_EVENTS]
 
     # -- réseau -----------------------------------------------------------
     def _ensure_joined(self, dt):
@@ -469,8 +586,10 @@ class CoopClientGame:
                 self.peer.send({"t": "join"}, self.host_addr)
             if self.join_wait > JOIN_TIMEOUT:
                 self.disconnected = True
+                self.disconnect_reason = "Impossible de joindre l'hôte."
         elif self.time - self.last_snap > LOST_TIMEOUT:
             self.disconnected = True
+            self.disconnect_reason = "Connexion à l'hôte perdue."
 
     def _net_send(self, dt):
         if self.pid is None:
@@ -490,39 +609,73 @@ class CoopClientGame:
 
     def _net_receive(self):
         for message, addr in self.peer.receive():
-            if addr[0] != self.host_addr[0]:
+            if addr != self.host_addr:
                 continue
             kind = message.get("t")
             if kind == "welcome":
-                self.pid = int(message["id"])
+                pid = message.get("id")
+                if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+                    self.pid = pid
+            elif kind == "full":
+                self.disconnected = True
+                self.disconnect_reason = "Partie complète (4 joueurs maximum)."
             elif kind == "snap" and self.pid is not None:
                 self.last_snap = self.time
                 self._apply_snapshot(message)
 
     def _apply_snapshot(self, snap):
-        self._apply_players(snap["pl"])
-        self._apply_enemies(snap["en"])
-        for pickup, taken in zip(self.pickups, snap["pk"]):
-            pickup.taken = bool(taken)
-        self._apply_wave(snap["wv"])
-        for event in snap["ev"]:
-            self._apply_event(event)
-        if snap["ov"] and self.outcome is None:
-            self.outcome = snap["ov"]
+        players = snap.get("pl")
+        enemies = snap.get("en")
+        pickups = snap.get("pk")
+        wave = snap.get("wv")
+        events = snap.get("ev", [])
+        if not isinstance(players, list) or not isinstance(enemies, list):
+            return
+        self._apply_players(players)
+        self._apply_enemies(enemies)
+        if isinstance(pickups, list):
+            for pickup, taken in zip(self.pickups, pickups):
+                pickup.taken = bool(taken)
+        self._apply_wave(wave)
+        if isinstance(events, list):
+            for event in events[:128]:
+                self._apply_event(event)
+        outcome = snap.get("ov")
+        if outcome in ("dead", "victory") and self.outcome is None:
+            self.outcome = outcome
         self.synced = True
 
     def _apply_players(self, players):
         seen = set()
+        level = getattr(self, "level", None)
+        max_x = getattr(level, "width", 100000.0)
+        max_y = getattr(level, "height", 100000.0)
         for data in players:
             # Roulade ajoutée en fin de ligne : accepte les anciens hôtes à
             # sept champs sans casser une session LAN mixte.
-            pid, x, y, angle, health, moving, flash = data[:7]
+            if not isinstance(data, (list, tuple)) or len(data) < 7:
+                continue
+            pid = data[0]
+            if isinstance(pid, bool) or not isinstance(pid, int):
+                continue
+            x = _finite_float(data[1], 0.0, max_x)
+            y = _finite_float(data[2], 0.0, max_y)
+            angle = _finite_float(data[3])
+            health = _finite_float(data[4], 0.0, 100.0)
+            if None in (x, y, angle, health):
+                continue
+            health = round(health)
+            moving, flash = bool(data[5]), bool(data[6])
             rolling = bool(data[7]) if len(data) > 7 else False
-            roll_timer = float(data[8]) if len(data) > 8 else 0.0
+            roll_timer = (_finite_float(data[8], 0.0, Player.ROLL_DURATION)
+                          if len(data) > 8 else 0.0)
+            if roll_timer is None:
+                roll_timer = 0.0
             if pid == self.pid:
                 # Sa propre vie est décidée par l'hôte.
                 if health < self.player.health:
-                    self.player.take_damage(self.player.health - health)
+                    self.player.health = health
+                    self.player.hurt_flash = 0.35
                     self.sounds.play("player_hit")
                     self.shake = min(1.0, self.shake + 0.5)
                 else:
@@ -546,6 +699,8 @@ class CoopClientGame:
                 self.sounds.play("player_shot", volume_scale=0.5,
                                  pos=(ally.x, ally.y), listener=self.player)
             if health <= 0 and ally.alive:
+                ally.shield = 0.0
+                ally.roll_invuln = 0.0
                 ally.take_damage(10 ** 6)
                 self.particles.spawn_death(ally.x, ally.y)
             elif health > 0 and not ally.alive:
@@ -557,13 +712,32 @@ class CoopClientGame:
 
     def _apply_enemies(self, enemies):
         seen = set()
+        level = getattr(self, "level", None)
+        max_x = getattr(level, "width", 100000.0)
+        max_y = getattr(level, "height", 100000.0)
         for data in enemies:
             # Visée puis roulade ont été ajoutées en fin de ligne : les
             # instantanés historiques à huit ou neuf champs restent acceptés.
-            net_id, kind, x, y, angle, health, moving, flash = data[:8]
+            if not isinstance(data, (list, tuple)) or len(data) < 8:
+                continue
+            net_id, kind = data[0], data[1]
+            if (isinstance(net_id, bool) or not isinstance(net_id, int)
+                    or kind not in ENEMY_TYPES):
+                continue
+            x = _finite_float(data[2], 0.0, max_x)
+            y = _finite_float(data[3], 0.0, max_y)
+            angle = _finite_float(data[4])
+            health = _finite_float(data[5], 0.0, 100000.0)
+            if None in (x, y, angle, health):
+                continue
+            health = round(health)
+            moving, flash = bool(data[6]), bool(data[7])
             aiming = bool(data[8]) if len(data) > 8 else False
             rolling = bool(data[9]) if len(data) > 9 else False
-            roll_timer = float(data[10]) if len(data) > 10 else 0.0
+            roll_timer = (_finite_float(data[10], 0.0, 1.0)
+                          if len(data) > 10 else 0.0)
+            if roll_timer is None:
+                roll_timer = 0.0
             seen.add(net_id)
             ghost = self.ghosts.get(net_id)
             if ghost is None:
@@ -587,6 +761,7 @@ class CoopClientGame:
                 self.sounds.play("enemy_shot", volume_scale=0.9,
                                  pos=(ghost.x, ghost.y), listener=self.player)
             if health <= 0 and ghost.alive:
+                ghost.roll_invuln = 0.0
                 ghost.take_damage(10 ** 6)
                 self.particles.spawn_death(ghost.x, ghost.y)
                 self.sounds.play("enemy_die", volume_scale=0.8,
@@ -601,29 +776,60 @@ class CoopClientGame:
             del self.ghosts[net_id]
 
     def _apply_wave(self, wave_info):
-        if wave_info["wave"] > self.wave_info["wave"] and self.synced:
+        if not isinstance(wave_info, dict):
+            return
+        wave = _finite_float(wave_info.get("wave"), 0.0, 999.0)
+        final = _finite_float(wave_info.get("final"), 1.0, 999.0)
+        remaining = _finite_float(wave_info.get("remaining"), 0.0, 100000.0)
+        next_in = _finite_float(wave_info.get("next_in"), 0.0, 3600.0)
+        if None in (wave, final, remaining, next_in):
+            return
+        clean = {"wave": round(wave), "final": round(final),
+                 "remaining": round(remaining), "next_in": next_in,
+                 "intermission": bool(wave_info.get("intermission"))}
+        if clean["wave"] > self.wave_info["wave"] and self.synced:
             self.sounds.play("wave", volume_scale=0.9)
-            self.hud.announce(f"VAGUE {wave_info['wave']}")
-        self.wave_info = wave_info
+            self.hud.announce(f"VAGUE {clean['wave']}")
+        self.wave_info = clean
 
     def _apply_event(self, event):
+        if not isinstance(event, (list, tuple)) or not event:
+            return
         kind = event[0]
-        if kind == "ex":
+        if kind == "ex" and len(event) == 3:
             _, x, y = event
+            x = _finite_float(x, 0.0, self.level.width)
+            y = _finite_float(y, 0.0, self.level.height)
+            if x is None or y is None:
+                return
             self.particles.spawn_explosion(x, y)
             self.sounds.play("explosion", pos=(x, y), listener=self.player)
             if math.hypot(x - self.player.x, y - self.player.y) < 5:
                 self.shake = min(1.0, self.shake + 0.5)
-        elif kind == "hm" and event[1] == self.pid:
+        elif kind == "hm" and len(event) == 3 and event[1] == self.pid:
             self.stats["hits"] += 1
-            self.stats["kills"] += event[2]
-            self.hud.on_enemy_hit(killed=bool(event[2]))
-        elif kind == "rs" and event[1] == self.pid:
-            self.player.x, self.player.y = event[2], event[3]
+            killed = 1 if event[2] else 0
+            self.stats["kills"] += killed
+            self.hud.on_enemy_hit(killed=bool(killed))
+        elif kind == "rs" and len(event) == 4 and event[1] == self.pid:
+            x = _finite_float(event[2], 0.0, self.level.width)
+            y = _finite_float(event[3], 0.0, self.level.height)
+            if x is None or y is None:
+                return
+            self.player.x, self.player.y = x, y
             self.player.health = 60
+            self.player.roll_timer = 0.0
+            self.player.roll_invuln = 0.0
+            self.player.roll_cooldown = 0.0
+            self.player.activate_shield()
             self.hud.show_message("Vous êtes de retour dans la bataille !")
-        elif kind == "wpk" and event[1] == self.pid:
+        elif (kind == "wpk" and len(event) == 4 and event[1] == self.pid
+              and event[2] in WEAPON_SPECS):
             _, _, weapon_id, level = event
+            level = _finite_float(level, 0.0, 3.0)
+            if level is None:
+                return
+            level = round(level)
             self.player.add_weapon(weapon_id, level)
             self.sounds.play("pickup")
             weapon = next(w for w in self.player.weapons

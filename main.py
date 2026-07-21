@@ -240,8 +240,10 @@ def main():
             game.draw(screen)
             if getattr(game, "disconnected", False):
                 # Hôte injoignable ou connexion perdue : retour au menu LAN.
+                reason = getattr(game, "disconnect_reason", "")
                 leave_game()
-                mp_menu.error = "Impossible de joindre l'hôte (ou connexion perdue)."
+                mp_menu.error = (reason or
+                                 "Impossible de joindre l'hôte (ou connexion perdue).")
                 state = "mp_menu"
                 set_mouse_captured(False)
                 sounds.play_music("menu")

@@ -20,6 +20,7 @@ Règles :
 
 import math
 import random
+from collections import deque
 
 from game import Game
 from level import SURVIVAL_LEVEL
@@ -99,7 +100,7 @@ class SurvivalGame(Game):
         self.wave = 0
         self.wave_timer = 0.0          # chrono de submersion de la vague
         self.intermission = INTERMISSION
-        self.spawn_queue = []          # types d'ennemis en attente
+        self.spawn_queue = deque()     # types d'ennemis en attente
         self.spawn_cooldown = 0.0
         self.alert_pulse = 0.0
 
@@ -157,7 +158,7 @@ class SurvivalGame(Game):
         self.wave = number
         self.wave_timer = 0.0
         self.intermission = 0.0
-        self.spawn_queue += wave_composition(number)
+        self.spawn_queue.extend(wave_composition(number))
         self.sounds.play("wave", volume_scale=0.9)
         self.hud.announce(f"VAGUE {number}")
         self._refresh_pickups(number)
@@ -184,7 +185,7 @@ class SurvivalGame(Game):
         if (not self.spawn_queue or self.spawn_cooldown > 0.0
                 or sum(e.alive for e in self.enemies) >= MAX_ALIVE):
             return
-        kind = self.spawn_queue.pop(0)
+        kind = self.spawn_queue.popleft()
         x, y = self._pick_spawn_point()
         hp_mult, dmg_mult = wave_multipliers(self.wave)
         enemy = self.spawn_enemy(kind, x, y, hp_mult, dmg_mult)

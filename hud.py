@@ -78,6 +78,7 @@ class HUD:
         self._minimap_level = None
         self._slot_cache = {}        # fonds d'emplacements d'armes mémoïsés
         self._panel_cache = {}       # plaques translucides du HUD
+        self._weapon_scale_cache = {}
 
     # ------------------------------------------------------------------
     # Notifications venant du jeu
@@ -183,7 +184,11 @@ class HUD:
         sprite = assets.get("fp_" + player.weapon.spec.id)
         target_w = int(self.width * 0.34)
         target_h = int(target_w * sprite.get_height() / sprite.get_width())
-        scaled = pygame.transform.scale(sprite, (target_w, target_h))
+        cache_key = (id(sprite), target_w, target_h)
+        scaled = self._weapon_scale_cache.get(cache_key)
+        if scaled is None:
+            scaled = pygame.transform.scale(sprite, (target_w, target_h))
+            self._weapon_scale_cache[cache_key] = scaled
 
         sway_x = math.sin(self.sway_time * 7) * self.width * 0.008
         sway_y = abs(math.cos(self.sway_time * 7)) * self.height * 0.008
