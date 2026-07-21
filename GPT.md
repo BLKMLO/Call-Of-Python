@@ -1,7 +1,48 @@
 # Call of Python — contexte de reprise GPT
 
-Dernière mise à jour : 20 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
+Dernière mise à jour : 21 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche distante de travail `claude/call_of_python_LLM`.
+
+## Passe de nettoyage, robustesse et sécurité LAN
+
+- `settings.py` ne fait plus confiance au JSON local : lecture limitée à
+  `64 KiB`, racine obligatoirement objet, nombres finis et bornés, booléens
+  stricts, progression plafonnée et IPv4 validée. Les keycodes inconnus,
+  `Échap` et `F11` sont rejetés ; les doublons chargés sont réparés et un
+  remappage en conflit échange les deux touches au lieu de rendre une action
+  inaccessible. La sauvegarde passe par `settings.json.tmp`, `fsync`, puis
+  `os.replace` : une interruption ne tronque plus le dernier fichier valide.
+- Le menu LAN refuse une IPv4 mal formée avant la connexion. Le menu des
+  touches rappelle que `F11` est global et qu'`Échap` annule la capture. En
+  jeu, rechargement, changement d'arme et molette sont ignorés pendant la
+  pause ou après la fin ; perdre le focus met en pause et libère la visée afin
+  d'éviter un clic droit ou un mouvement de souris « coincé » au retour.
+- `network.UdpPeer.receive()` n'accepte que des objets JSON, ignore aussi les
+  imbrications invalides et ne traite jamais plus de `128` datagrammes dans
+  une image. Cela empêche une liste JSON ou un flot UDP de faire planter ou
+  d'affamer la boucle de rendu.
+- La coop reste hôte-autoritaire mais valide désormais réellement les entrées
+  clientes : quatre joueurs maximum (hôte + 3), adresse source exacte,
+  identifiants typés, coordonnées/angles finis, déplacement plafonné puis
+  sous-échantillonné contre les collisions, et roulade/i-frames démarrées par
+  l'horloge de l'hôte. Répéter `rt=0.5` ne contourne donc pas le cooldown.
+- Les tirs distants sont bornés à `32` événements par paquet, à `20` crédits
+  par seconde avec capacité `14`, aux dégâts maximaux légitimes d'une arme
+  Mk. IV et à `0.18 rad` autour de l'orientation annoncée. Les rafales locales
+  en attente sont elles aussi plafonnées : une reconnexion ne rejoue pas cinq
+  secondes de minigun d'un coup. Ce n'est pas un système anti-triche Internet,
+  mais les téléportations, dégâts arbitraires et dénis de service LAN les plus
+  évidents ne sont plus acceptés.
+- Tous les instantanés reçus sont vérifiés avant indexation : lignes trop
+  courtes, types d'ennemis inconnus, `NaN`/infinis, événements incomplets,
+  santé, vague et positions hors bornes sont ignorés. La santé et la mort
+  envoyées par l'hôte restent autoritaires même si le client affiche encore
+  un bouclier ou une roulade. Les coéquipiers reçoivent côté hôte le même
+  bouclier de spawn/réapparition de `3 s` que le joueur local.
+- Optimisations sans changement de gameplay : sprite d'arme HUD redimensionné
+  une fois par résolution/arme, volume du canal musical écrit seulement lors
+  d'un changement, file d'apparitions du Déferlement passée de `list.pop(0)`
+  à `deque.popleft()`, et un seul appel horloge par frame de portail.
 
 ## Passe roulades, Lune et menu
 
@@ -122,10 +163,22 @@ branche distante de travail `claude/call_of_python_LLM`.
 - Toute évolution de l'état réseau joueur/ennemi doit ajouter ses champs en
   fin de ligne et rester tolérante aux instantanés plus courts afin qu'un
   client mis à jour ne plante pas avec un hôte plus ancien.
+- Toute donnée UDP est non fiable, même en LAN : ne jamais indexer un paquet
+  avant validation, accepter `NaN`/`inf`, ou réintroduire une position, une
+  invincibilité, des dégâts ou une cadence décidés sans borne par le client.
+  La compatibilité des anciens instantanés concerne leur lecture, pas le
+  relâchement des contrôles de l'hôte.
+- `RemotePlayer.shield` est simulé par l'hôte. Une réapparition doit remettre
+  santé, roulade, cooldown et bouclier ensemble ; côté client, un instantané
+  de mort doit d'abord annuler bouclier/i-frames avant de poser le cadavre.
+- Le cache `_weapon_scale_cache` appartient à une résolution HUD et doit être
+  vidé dans `HUD.resize()`. La file `spawn_queue` est un `deque` : employer
+  `extend` / `popleft`, jamais réintroduire `pop(0)` dans la boucle de vague.
 
 ## Validation disponible
 
-`tests/test_requested_changes.py` contient 20 tests et couvre : marges de la
+La suite contient 30 tests. `tests/test_requested_changes.py` conserve les
+20 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
 compatibilité coop 8/9 champs, stabilité d'échelle des cinq tirs frontaux et
@@ -134,17 +187,22 @@ roulades joueur/soldat (direction, i-frames, cooldowns, collision, frames et
 IA), compatibilité réseau de la roulade, cristaux de couverture et nouveau
 fond de menu.
 
+`tests/test_cleanup.py` ajoute 10 contrôles : paquets UDP bornés et non-objets,
+réglages malformés/sauvegarde atomique, IPv4, conflits et touches réservées,
+téléportation/`NaN`/spam de roulade, budget de tir/dégâts, bouclier et mort
+autoritaires en coop, commandes ignorées en pause, cache du sprite d'arme et
+file d'apparitions en temps constant.
+
 Commande utilisée :
 
 ```bash
-PYTHONPATH=/tmp/call-of-python-pygame:. \
-SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
-python -m unittest discover -s tests -v
+UV_CACHE_DIR=/tmp/uv-cache uv run --with pygame \
+  python -m unittest discover -s tests -v
 ```
 
-Des rendus supplémentaires en vidéo SDL factice valident le menu aux deux
-résolutions, le sol/portail/cristaux lunaires, les trois frames de roulade à
-leur taille projetée et les boucles complètes `Game` / `SurvivalGame`.
+Un smoke test SDL factice valide `Game`, `SurvivalGame`, le redimensionnement,
+puis une vraie socket UDP locale entre `CoopHostGame` et `CoopClientGame`
+jusqu'au premier instantané synchronisé et au rendu des deux côtés.
 
 ## Portails (20 juillet 2026)
 
