@@ -25,9 +25,9 @@ FPS rétro en Python 3.12 / pygame (raycasting pseudo-3D façon Wolfenstein
 3D), développé de bout en bout par itérations avec Claude Code. Ce fichier
 résume l'état du projet pour reprendre le travail sans tout redécouvrir.
 
-Repo GitHub : `BLKMLO/Call-Of-Python` (renommé depuis `BLKMLO/TempGPT` ;
-l'origin git peut encore pointer sur l'ancienne URL). Branche de travail
-habituelle : `claude/python-fps-pygame-e1fouo`.
+Repo GitHub : `BLKMLO/Call-Of-Python` (renommé depuis `BLKMLO/TempGPT`).
+La branche par défaut est `main` ; les évolutions partent d'une branche
+`agent/<description>` et reviennent par pull request.
 
 ## Lancer / tester
 
@@ -36,25 +36,16 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Pas de framework de test committé dans le repo (voir "Dette / manques"
-ci-dessous) : les sessions précédentes ont utilisé des scripts de fumée
-(`smoke_test2.py` … `smoke_test11.py`) exécutés depuis un répertoire
-scratchpad **temporaire, hors dépôt** (`/tmp/claude-.../scratchpad/`) —
-ils ne sont donc PAS disponibles dans une nouvelle session. Motif type
-d'un script :
+La suite `unittest` est committée dans `tests/` et utilise les pilotes SDL
+factices pour fonctionner sans écran ni carte son :
 
-```python
-import os
-os.environ["SDL_VIDEODRIVER"] = "dummy"
-os.environ["SDL_AUDIODRIVER"] = "dummy"
-# ... imports, pygame.init(), pygame.mixer.init() dans un try/except ...
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
+  python -m unittest discover -s tests -v
 ```
 
-Chaque script instancie `Game`/`SurvivalGame`/`CoopHostGame`/`CoopClientGame`
-avec un driver vidéo/audio factice, simule plusieurs frames (`update`/`draw`),
-et vérifie des invariants avec de simples `assert`. Si on relance une passe
-de tests, il faudrait soit régénérer ces scripts, soit (mieux) les commiter
-dans un dossier `tests/` du repo pour ne pas les reperdre à chaque session.
+Le workflow `.github/workflows/ci.yml` rejoue compilation, contrôles Ruff
+critiques et les 54 tests sous Python 3.12 sur Ubuntu et Windows.
 
 ## Architecture
 
@@ -245,17 +236,26 @@ d'implémentation et les décisions techniques non triviales.
     des ennemis possédés ; Laboratoire, cratères et HUD sont recalibrés ; les
     commandes multi-touch sont activées par détection SDL. Sept tests dédiés
     portent la suite à 50 tests.
+26. Passe post-fusion de fiabilité : packs de phase du Colosse différés au
+    lieu d'être perdus en zone encombrée, cadavres exclus du placement,
+    commandes tactiles maintenues neutralisées à la reprise, roulade coop
+    interdite après l'issue et œil de profil possédé correctement miroir.
+    Pygame est fixé à 2.6.1 et une CI GitHub Actions Linux/Windows automatise
+    compilation, erreurs Python critiques et 54 tests.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Cinquante
+- **Couverture de tests encore partielle mais en progrès.** Cinquante-quatre
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (13 contrôles robustesse) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
   survie, menus, coop loopback UDP, réglages, sons), qui remplacent les
   anciens `smoke_test2..11.py` jamais commités, plus
-  `tests/test_gameplay_extensions.py` (7 tests Colosse, possédés, décors,
+  `tests/test_gameplay_extensions.py` (11 tests Colosse, possédés, décors,
   réseau étendu et tactile).
+- **Ruff complet** : 20 remarques stylistiques préexistantes restent ouvertes.
+  La CI bloque uniquement les erreurs Python critiques (`E9`, `F63`, `F7`,
+  `F82`) afin de ne pas rendre toutes les PR rouges pour cette dette connue.
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
   jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
   observés).
@@ -272,24 +272,25 @@ d'implémentation et les décisions techniques non triviales.
 # Call of Python — contexte de reprise GPT
 
 Dernière mise à jour : 27 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
-branche de travail `agent/history-gameplay-repair`.
+branche de travail `agent/bugfix-ci`.
 
 ## Réparation Git, Colosse, possédés, environnements et tactile
 
 - Le `main` force-poussé pointait sur le commit racine `67949e2`, détaché de
-  l'historique publié jusqu'à `ef9849d`. Son arbre `fd04b4c` a été recréé
-  byte-identique dans `5019052`, avec `ef9849d` comme parent. La branche
-  `backup/force-pushed-main-67949e2` conserve le commit racine ; le travail
-  continue sur `agent/history-gameplay-repair`. Ne jamais reconstruire cette
-  filiation en réappliquant manuellement les fichiers : vérifier les arbres
-  avec `git diff --exit-code 67949e2 5019052`.
+  l'historique publié jusqu'à `ef9849d`. Son arbre a été recréé byte-identique
+  dans le commit-pont distant `5a56c44`, puis fusionné par la PR #22 dans
+  `da017a3`. La branche `backup/force-pushed-main-67949e2` conserve le commit
+  racine. Ne jamais reconstruire cette filiation en réappliquant manuellement
+  les fichiers : `git diff --exit-code 67949e2 5a56c44` doit rester vide.
 - Le Colosse a trois phases déterminées par sa vie : phase 1 au-dessus de
   66 %, phase 2 entre 66 et 33 %, phase 3 sous 33 %. Les couples
   vitesse/cadence sont `(1.15, 0.72)`, `(1.28, 0.58)` et `(1.42, 0.46)`.
-  Chaque seuil réellement franchi alimente une file d'événements consommée
-  une seule fois par `Game`, qui crée un `lifepack` visible sur un flanc du
-  boss. Un impact franchissant deux seuils libère bien deux packs ; un boss
-  tué net n'en libère pas inutilement.
+  Chaque seuil réellement franchi alimente une file d'événements que `Game`
+  matérialise en `lifepack` visible sur un flanc du boss. Si tous les
+  emplacements sont momentanément encombrés, l'événement est remis en tête et
+  retenté après la séparation des ennemis ; les cadavres ne bloquent pas le
+  placement. Un impact franchissant deux seuils libère bien deux packs ; un
+  boss tué net n'en libère pas inutilement.
 - Les packs du Colosse sont des `Pickup.dynamic` avec un `net_id`. En coop,
   les booléens des objets statiques restent au début de `pk` ; les lignes
   `[id, x, y, kind, taken]` sont ajoutées ensuite. Un ancien client les ignore
@@ -313,6 +314,14 @@ branche de travail `agent/history-gameplay-repair`.
   roulade, recharge, arme, pause et menu supportent plusieurs doigts. Les
   événements souris synthétiques portant `touch=True` sont ignorés en jeu
   pour éviter un double tir ; clavier et vraie souris restent parallèles.
+  Toute bascule pause/reprise remet aussi à zéro les doigts et boutons
+  maintenus, afin qu'une action posée pendant la pause ne parte pas à la
+  reprise.
+- `.github/workflows/ci.yml` s'exécute sur les PR vers `main`, les pushes sur
+  `main` et manuellement. Deux jobs Python 3.12 couvrent Ubuntu et Windows :
+  installation de Pygame 2.6.1, compilation, règles Ruff critiques et suite
+  `unittest`. Les actions GitHub sont épinglées par SHA et le jeton est limité
+  à `contents: read`.
 
 ## Équilibrage des roulades et écran de mort
 
@@ -500,6 +509,8 @@ branche de travail `agent/history-gameplay-repair`.
   compatibles. `Boss.take_damage()` produit les événements, mais seul `Game`
   choisit une case praticable et crée les packs. Après réplication directe de
   santé, le client appelle `sync_phase_from_health()` sans créer d'objet local.
+  Un placement impossible doit remettre la phase en attente ; les ennemis
+  morts ne font jamais partie des positions occupées.
 - Les objets dynamiques coop sont ajoutés APRÈS les booléens statiques de
   `pk`. Ne jamais transformer rétroactivement `pk` en dictionnaire ou déplacer
   les lignes dynamiques devant les booléens : les anciens clients dépendent
@@ -511,7 +522,8 @@ branche de travail `agent/history-gameplay-repair`.
 - Le tactile ne doit jamais se fier à l'état global du bouton gauche SDL :
   un doigt peut émuler une souris. Le tir maintenu utilise uniquement
   `_mouse_fire_held` pour une vraie souris et `TouchControls.fire_held` pour
-  les doigts. Une perte de focus libère les deux états et tous les doigts.
+  les doigts. Une perte de focus et chaque bascule pause/reprise libèrent les
+  deux états et tous les doigts.
 - Les dimensions physiques des props reposent sur la boîte opaque, via
   `_height_for_visible_width`; ne pas compenser les marges transparentes en
   augmentant arbitrairement `SPRITE_HEIGHT`.
@@ -548,7 +560,7 @@ branche de travail `agent/history-gameplay-repair`.
 
 ## Validation disponible
 
-La suite contient 50 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 54 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -574,10 +586,12 @@ extrêmes, coop réelle en loopback UDP (join → `synced`, draw des deux côté
 sockets refermées — port de test 15577 ≠ 5577), round-trip des réglages avec
 JSON tronqué, et lecture de tous les effets/musiques.
 
-`tests/test_gameplay_extensions.py` ajoute 7 contrôles : règles et cache des
-possédés, trois phases et deux packs du Colosse, extension coop des ennemis et
-objets dynamiques, sol/hauteurs du Laboratoire, densité des cratères,
-multi-touch et rejet du clic souris synthétique.
+`tests/test_gameplay_extensions.py` ajoute 11 contrôles : règles/cache et
+miroir des possédés, trois phases/deux packs et reprise d'un placement différé
+du Colosse, extension coop des ennemis/objets dynamiques, sol/hauteurs du
+Laboratoire, densité des cratères, multi-touch, rejet du clic souris
+synthétique, reprise de pause sans action maintenue et blocage de la roulade
+coop après l'issue.
 
 Commande utilisée :
 
@@ -658,10 +672,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-50 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+54 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 13 contrôles robustesse/réseau ;
 `test_smoke.py` : 8 tests de fumée généraux ;
-`test_gameplay_extensions.py` : 7 tests du lot actuel) :
+`test_gameplay_extensions.py` : 11 tests du lot actuel) :
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \

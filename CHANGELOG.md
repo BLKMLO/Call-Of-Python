@@ -24,10 +24,26 @@
 - Commandes multi-touch activées après détection SDL ou au premier contact :
   stick, visée par glissement, tir, ADS, roulade, recharge, arme, pause et menu.
 
+### Fiabilité et automatisation
+
+- Un pack de phase du Colosse n'est plus perdu lorsque sa zone d'apparition
+  est momentanément encombrée : les cadavres sont ignorés et l'événement est
+  retenté jusqu'à ce qu'un emplacement praticable soit disponible.
+- Les actions tactiles maintenues pendant une pause sont libérées à la reprise,
+  ce qui empêche un tir ou une visée involontaire.
+- Le client coop refuse maintenant la roulade clavier après la fin de partie,
+  comme le solo et les autres commandes.
+- L'œil fluorescent des profils possédés suit correctement le miroir du
+  sprite.
+- Pygame est borné à la version validée `2.6.1`.
+- `.github/workflows/ci.yml` automatise compilation, erreurs Python critiques
+  et tests sous Python 3.12, sur Linux et Windows, à chaque PR et push sur
+  `main`, avec exécution manuelle possible.
+
 ### Tests
 
-- `tests/test_gameplay_extensions.py` ajoute 7 non-régressions. Suite
-  complète : **50 tests, tous verts**.
+- `tests/test_gameplay_extensions.py` contient désormais 11 non-régressions.
+  Suite complète : **54 tests, tous verts**.
 
 ## [2026-07-25]
 
