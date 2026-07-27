@@ -26,6 +26,9 @@ import pygame
 import assets
 from assets import TEX_SIZE
 
+MOON_CRATER_MIN = 30
+MOON_CRATER_SPACING = 38
+
 FOV = math.radians(70)        # champ de vision horizontal
 HALF_FOV = FOV / 2
 MAX_DEPTH = 30                # portée maximale des rayons (en cases)
@@ -491,13 +494,16 @@ class Raycaster:
                           for channel in base)
             pygame.draw.rect(self.background, color, (x, y, size, size))
 
-        # Cratères discrets : petits à l'horizon, plus ouverts au premier plan.
-        for _ in range(max(14, self.width // 65)):
+        # Cratères plus présents : petits à l'horizon, plus ouverts au premier
+        # plan. Ils restent précalculés, donc leur densité n'affecte pas les FPS.
+        for _ in range(max(MOON_CRATER_MIN,
+                           self.width // MOON_CRATER_SPACING)):
             # Seule la moitié haute du fond de sol est visible sans baisser
-            # la caméra : concentre les reliefs utiles dans cette zone.
-            depth = 0.04 + rng.random() * 0.48
+            # la caméra : concentre l'essentiel des reliefs dans cette zone,
+            # avec quelques grands cratères visibles en baissant le regard.
+            depth = 0.025 + rng.random() * 0.60
             y = horizon + int(depth * floor_h)
-            radius_x = max(5, int((7 + rng.random() * 25)
+            radius_x = max(4, int((6 + rng.random() * 27)
                                   * (0.38 + depth)))
             radius_y = max(2, int(radius_x * (0.18 + depth * 0.22)))
             x = rng.randint(-radius_x, self.width + radius_x)

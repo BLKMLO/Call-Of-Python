@@ -41,6 +41,11 @@ Les touches sont modifiables dans **Paramètres**.
 | Plein écran / fenêtré | `F11` |
 | Pause | `Échap` |
 
+Sur un écran tactile détecté par SDL, le jeu affiche automatiquement un
+stick gauche, une zone de visée par glissement et des boutons pour tirer,
+viser, rouler, recharger, changer d'arme, mettre en pause et revenir au menu.
+Le clavier et la souris restent utilisables en parallèle.
+
 La résolution, le volume, la sensibilité et les touches sont sauvegardés
 dans `settings.json`.
 
@@ -58,14 +63,18 @@ une mort relance la campagne depuis le début. Le meilleur niveau atteint
 reste mémorisé.
 
 Le Colosse du Laboratoire n'était pas le chef de l'invasion, mais le Sceau
-qui retenait un portail lunaire. Sa chute débloque **Le Déferlement**.
+qui retenait un portail lunaire. Son combat comporte trois phases de plus en
+plus agressives ; un pack de vie apparaît à chacun de ses deux seuils. Sa
+chute débloque **Le Déferlement**.
 
 ### Le Déferlement
 
 Mode survie sur une plaine lunaire ouverte : les ennemis apparaissent par
-un portail central pendant 30 vagues de plus en plus rapides. Un Colosse
-rejoint la horde toutes les dix vagues, tandis que soins et améliorations
-d'armes sont distribués à intervalles réguliers.
+un portail central pendant 30 vagues de plus en plus rapides. Les envahisseurs
+y sont possédés, avec aura et yeux verts fluorescents ; le soldat entraîné
+ne peut plus rouler et se déplace moins vite. Un Colosse rejoint la horde
+toutes les dix vagues, tandis que soins et améliorations d'armes sont
+distribués à intervalles réguliers.
 
 Le mode est jouable seul ou en coopération LAN. Un joueur héberge la
 partie sur le port UDP `5577`, jusqu'à trois autres joueurs rejoignent son
@@ -113,6 +122,7 @@ en l'absence de fichiers.
 | `entities.py` / `ai.py` | Joueur, ennemis, objets et comportements |
 | `weapons.py` | Armes et améliorations |
 | `hud.py` | Interface de jeu et minimap |
+| `touch_controls.py` | Détection et commandes multi-touch |
 | `particles.py` / `sounds.py` | Effets visuels et audio |
 | `assets.py` | Chargement des PNG et fallback procédural |
 

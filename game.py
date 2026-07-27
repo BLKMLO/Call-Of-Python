@@ -17,6 +17,7 @@ from hud import HUD
 from level import Level
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
+from touch_controls import FINGER_EVENTS, TouchControls
 
 MEDKIT_HEAL = 35
 PICKUP_RADIUS = 0.55         # distance de ramassage
@@ -70,6 +71,7 @@ class Game:
         self.particles = ParticleSystem()
         self.raycaster = Raycaster(screen.get_size(), self.level)
         self.hud = HUD(screen.get_size())
+        self.touch = TouchControls(screen.get_size())
         self.paused = False
         self.outcome = None      # None (en cours), "dead" ou "victory"
         self.end_delay = 0.0     # petit délai avant l'écran de fin
@@ -81,6 +83,9 @@ class Game:
         self.sparkle_timer = 0.0 # émission des étincelles des packs de vie
         self.step_distance = 0.0 # distance parcourue depuis le dernier pas
         self.step_side = False   # alterne les deux sons de pas
+        self._next_dynamic_pickup_id = 0
+        self._mouse_fire_held = False
+        self._mouse_aim_held = False
         pygame.mouse.get_rel()   # purge le mouvement accumulé dans les menus
 
     # ------------------------------------------------------------------
@@ -90,9 +95,25 @@ class Game:
         """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
         if event.type == pygame.WINDOWFOCUSLOST:
             self.player.aiming = False
+            self._mouse_fire_held = False
+            self._mouse_aim_held = False
+            touch = getattr(self, "touch", None)
+            if touch is not None:
+                touch.reset()
             if self.outcome is None:
                 self.paused = True
             pygame.mouse.get_rel()
+            return None
+        if event.type in FINGER_EVENTS:
+            actions = self.touch.handle_event(event)
+            if self.outcome == "dead":
+                if event.type == pygame.FINGERDOWN:
+                    self.death_time = DEATH_CAM_TIME + 0.01
+                return None
+            for action in actions:
+                result = self._handle_touch_action(action)
+                if result is not None:
+                    return result
             return None
         # La mort doit toujours aboutir au menu de fin. Échap ne doit surtout
         # pas activer la pause ici, car cela gelait le chronomètre de la caméra
@@ -108,6 +129,9 @@ class Game:
             if event.key == pygame.K_ESCAPE:
                 self.paused = not self.paused
                 self.player.aiming = False
+                self._mouse_fire_held = False
+                self._mouse_aim_held = False
+                self.touch.reset()
                 pygame.mouse.get_rel()  # évite un saut de caméra à la reprise
             elif self.paused and event.key == pygame.K_m:
                 return "menu"
@@ -143,15 +167,59 @@ class Game:
             if wheel_y:
                 self.player.cycle_weapon(-1 if wheel_y > 0 else 1)
                 self.sounds.play("click", volume_scale=0.4)
-        elif (event.type == pygame.MOUSEBUTTONDOWN and not self.paused
+        elif (event.type == pygame.MOUSEBUTTONDOWN
+              and not getattr(event, "touch", False) and not self.paused
               and self.outcome is None and self.player.alive):
             if event.button == 1:
                 # Premier coup au clic : indispensable pour le semi-auto.
+                self._mouse_fire_held = True
                 self._player_fire()
             elif event.button == 3 and not self.player.rolling:
+                self._mouse_aim_held = True
                 self.player.aiming = True
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+        elif (event.type == pygame.MOUSEBUTTONUP
+              and not getattr(event, "touch", False)):
+            if event.button == 1:
+                self._mouse_fire_held = False
+            elif event.button == 3:
+                self._mouse_aim_held = False
+                self.player.aiming = self.touch.aim_held
+        return None
+
+    def _handle_touch_action(self, action):
+        """Traduit une action tactile ponctuelle vers le gameplay existant."""
+        if action == "pause":
+            self.paused = not self.paused
             self.player.aiming = False
+            self._mouse_fire_held = False
+            self._mouse_aim_held = False
+            if self.paused:
+                self.touch.reset()
+            pygame.mouse.get_rel()
+            return None
+        if action == "menu":
+            return "menu" if self.paused else None
+        if self.paused or self.outcome is not None or not self.player.alive:
+            return None
+        if action == "fire_down":
+            self._player_fire()
+        elif action in ("aim_down", "aim_up"):
+            self.player.aiming = (
+                not self.player.rolling
+                and (self._mouse_aim_held or self.touch.aim_held)
+            )
+        elif action == "roll":
+            self.player.start_roll(
+                pygame.key.get_pressed(), self.settings.keys,
+                self.touch.movement_axes(),
+            )
+        elif action == "reload":
+            self.player.weapon.start_reload()
+            if self.player.weapon.reloading > 0.0:
+                self.sounds.play("reload")
+        elif action == "weapon":
+            self.player.cycle_weapon(1)
+            self.sounds.play("click", volume_scale=0.4)
         return None
 
     # ------------------------------------------------------------------
@@ -181,15 +249,23 @@ class Game:
 
             # Visée à la souris (mouvement relatif, curseur capturé).
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
+            touch_dx, touch_dy = self.touch.consume_look()
+            mouse_dx += touch_dx
+            mouse_dy += touch_dy
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
             if not player.rolling:
+                player.aiming = self._mouse_aim_held or self.touch.aim_held
                 player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
 
             # Déplacement normal ou impulsion de roulade collisionnée.
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
-            moving = player.move(dt, keys, self.settings.keys, self.level)
+            touch_axes = (self.touch.movement_axes()
+                          if self.touch.enabled else None)
+            moving = player.move(
+                dt, keys, self.settings.keys, self.level, touch_axes,
+            )
             self.player_moving = moving   # relayé aux clients en coop LAN
 
             # Une roulade ne produit pas une rafale artificielle de pas.
@@ -205,7 +281,8 @@ class Game:
                                  volume_scale=0.35)
 
             # Tir maintenu (armes automatiques uniquement).
-            if (not player.rolling and pygame.mouse.get_pressed()[0]
+            if (not player.rolling
+                    and (self._mouse_fire_held or self.touch.fire_held)
                     and player.weapon.spec.automatic):
                 self._player_fire()
 
@@ -256,9 +333,11 @@ class Game:
             self.outcome = "victory"
             self.sounds.play("level_complete")
 
-    def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
+    def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
+                    possessed=False):
         """Ajoute un ennemi en cours de partie (vagues du Déferlement)."""
         enemy = ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
+        enemy.set_possessed(possessed)
         self.enemies.append(enemy)
         self.ais.append(EnemyAI(enemy))
         return enemy
@@ -323,6 +402,7 @@ class Game:
                 if other.EXPLODES:
                     damage *= 2   # les porteurs d'explosifs sont volatils
                 died = other.take_damage(damage)
+                self._handle_boss_phase_events(other)
                 if died:
                     self.particles.spawn_death(other.x, other.y)
                     if other.EXPLODES:
@@ -340,6 +420,66 @@ class Game:
             if pickup.kind == "lifepack" and not pickup.taken:
                 self.particles.spawn_heal_sparkle(pickup.x, pickup.y)
 
+    def _handle_boss_phase_events(self, enemy):
+        """Matérialise les transitions du Colosse dans le monde de jeu.
+
+        Chaque seuil franchi libère un pack de vie visible et accessible.
+        Les événements sont consommés une seule fois, y compris lorsqu'un
+        gros impact franchit plusieurs seuils d'un coup.
+        """
+        consume = getattr(enemy, "consume_phase_events", None)
+        if consume is None:
+            return
+        for phase in consume():
+            position = self._boss_pickup_position(enemy, phase)
+            if position is None:
+                continue
+            pickup = Pickup(position[0], position[1], "lifepack",
+                            self.level_index)
+            pickup.hidden = False
+            pickup.dynamic = True
+            pickup.net_id = self._next_dynamic_pickup_id
+            self._next_dynamic_pickup_id += 1
+            self.pickups.append(pickup)
+            self.particles.spawn_portal(pickup.x, pickup.y)
+            self.sounds.play("spawn", volume_scale=0.75,
+                             pos=(pickup.x, pickup.y), listener=self.player)
+            self.hud.announce(f"COLOSSE — PHASE {phase}")
+            self.hud.show_message("Un pack de vie a été libéré !")
+
+    def _boss_pickup_position(self, boss, phase):
+        """Trouve un point atteignable, plutôt du côté des joueurs vivants."""
+        players = [player for player in self._all_players() if player.alive]
+        if players:
+            nearest = min(players, key=lambda player: boss.distance_to(player))
+            toward_player = math.atan2(nearest.y - boss.y,
+                                       nearest.x - boss.x)
+            # Le pack apparaît sur un flanc, jamais dans la ligne de tir
+            # joueur↔Colosse. Les deux phases alternent les côtés.
+            side = 1 if phase % 2 == 0 else -1
+            base_angle = toward_player + side * math.pi / 2
+        else:
+            base_angle = phase * math.pi * 0.5
+        offsets = (0.0, math.pi / 3, -math.pi / 3, math.pi,
+                   2 * math.pi / 3, -2 * math.pi / 3)
+        occupied = [
+            (obj.x, obj.y)
+            for obj in self.enemies + self.pickups + self.props
+            if obj is not boss and not getattr(obj, "taken", False)
+        ]
+        for radius in (2.2, 1.6, 2.9, 3.5):
+            for offset in offsets:
+                angle = base_angle + offset
+                x = boss.x + math.cos(angle) * radius
+                y = boss.y + math.sin(angle) * radius
+                if not self.level.can_stand(x, y, 0.22):
+                    continue
+                if any(math.hypot(x - ox, y - oy) < 0.7
+                       for ox, oy in occupied):
+                    continue
+                return x, y
+        return None
+
     @property
     def finished(self):
         """Vrai quand l'écran de fin peut être affiché."""
@@ -351,6 +491,7 @@ class Game:
         """Adapte le rendu et le HUD après un changement de mode vidéo."""
         self.raycaster.resize(size)
         self.hud.resize(size)
+        self.touch.resize(size)
 
     def _alert_allies(self, position, radius, exclude=None):
         """Réveille les ennemis inactifs proches d'un bruit (tir, cri)."""
@@ -486,6 +627,7 @@ class Game:
 
         health_before = best.health
         died = best.take_damage(damage)
+        self._handle_boss_phase_events(best)
         if died:
             self.particles.spawn_death(best.x, best.y)
             self.sounds.play("enemy_die", volume_scale=0.8,
@@ -555,6 +697,7 @@ class Game:
                       survival=self.survival_info(), stats=self.stats)
         if self.paused:
             self.hud.draw_pause(screen)
+        self.touch.draw(screen, paused=self.paused)
 
     def _player_roll_camera(self, screen):
         """Donne du poids à la roulade sans transformer le HUD avec le monde."""

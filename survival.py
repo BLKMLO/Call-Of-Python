@@ -104,6 +104,12 @@ class SurvivalGame(Game):
         self.spawn_cooldown = 0.0
         self.alert_pulse = 0.0
 
+    def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
+        """Tous les envahisseurs lunaires sont des variantes possédées."""
+        return super().spawn_enemy(
+            kind, x, y, hp_mult, dmg_mult, possessed=True,
+        )
+
     # ------------------------------------------------------------------
     def update(self, dt):
         super().update(dt)
@@ -166,6 +172,8 @@ class SurvivalGame(Game):
     def _refresh_pickups(self, wave):
         """Ravitaillement périodique : soins et armes réapparaissent."""
         for pickup in self.pickups:
+            if pickup.dynamic:
+                continue  # les cadeaux du Colosse ne se régénèrent pas
             if pickup.kind == "medkit":
                 if wave % 3 == 0:
                     pickup.taken = False

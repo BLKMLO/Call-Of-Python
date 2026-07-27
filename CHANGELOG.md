@@ -1,6 +1,35 @@
 # Changelog
 
-## [Non publié] — 2026-07-25
+## [Non publié] — 2026-07-27
+
+### Gameplay
+
+- **Colosse en trois phases** : sa vitesse et sa cadence progressent aux
+  seuils de 66 % et 33 % de vie. Chaque transition libère un pack de vie
+  visible sur un flanc, sans couper la ligne de tir vers le boss.
+- **Déferlement possédé** : toutes les apparitions lunaires utilisent une
+  aura et des yeux verts mis en cache depuis les sprites existants. Le soldat
+  entraîné perd sa roulade et ralentit ; le milicien est également ralenti.
+- **Coop rétrocompatible** : vie maximale et état possédé sont ajoutés en fin
+  des lignes ennemies. Les packs du Colosse sont ajoutés après les booléens
+  historiques des objets, donc les anciens clients les ignorent sans planter.
+
+### Environnements et interface
+
+- Sol du Laboratoire remplacé par une résine blanche ; tous les murs courants
+  ont la même hauteur et seule l'enceinte du Colosse reste surélevée.
+- Population de cratères lunaires plus que doublée, toujours précalculée.
+- Barre du Colosse découpée aux deux seuils et libellée avec la phase active ;
+  le compteur de vague se décale proprement en présence du boss.
+- Commandes multi-touch activées après détection SDL ou au premier contact :
+  stick, visée par glissement, tir, ADS, roulade, recharge, arme, pause et menu.
+
+### Tests
+
+- `tests/test_gameplay_extensions.py` ajoute 7 non-régressions. Suite
+  complète : **50 tests, tous verts**.
+
+## [2026-07-25]
 
 Passe d'amélioration libre : corrections de bugs, robustesse, performances
 et couverture de tests. Aucun changement de gameplay ni de rendu visuel.

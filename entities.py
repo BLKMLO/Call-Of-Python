@@ -163,7 +163,7 @@ class Player(Entity):
         self.pitch = max(-self.MAX_PITCH, min(
             self.MAX_PITCH, self.pitch - mouse_dy * factor * 0.55))
 
-    def move(self, dt, keys_pressed, bindings, level):
+    def move(self, dt, keys_pressed, bindings, level, extra_axes=None):
         """Déplacement ZQSD/WASD relatif à la direction de vue, avec collisions.
 
         Retourne True si le joueur a effectivement bougé (pour l'animation).
@@ -183,6 +183,10 @@ class Player(Entity):
             return moved
 
         forward, strafe = self._movement_axes(keys_pressed, bindings)
+        if extra_axes is not None:
+            touch_forward, touch_strafe = extra_axes
+            forward = max(-1.0, min(1.0, forward + touch_forward))
+            strafe = max(-1.0, min(1.0, strafe + touch_strafe))
         if forward == 0.0 and strafe == 0.0:
             return False
 
@@ -206,11 +210,15 @@ class Player(Entity):
         strafe -= float(keys_pressed[bindings["gauche"]])
         return forward, strafe
 
-    def start_roll(self, keys_pressed, bindings):
+    def start_roll(self, keys_pressed, bindings, extra_axes=None):
         """Déclenche une roulade dans la direction tenue, en avant par défaut."""
         if not self.alive or self.rolling or self.roll_cooldown > 0.0:
             return False
         forward, strafe = self._movement_axes(keys_pressed, bindings)
+        if extra_axes is not None:
+            touch_forward, touch_strafe = extra_axes
+            forward = max(-1.0, min(1.0, forward + touch_forward))
+            strafe = max(-1.0, min(1.0, strafe + touch_strafe))
         if forward == 0.0 and strafe == 0.0:
             forward = 1.0
         length = math.hypot(forward, strafe)
@@ -315,6 +323,9 @@ class Enemy(Entity):
         self.roll_invuln = 0.0
         self.roll_dx = 0.0
         self.roll_dy = 0.0
+        self.possessed = False
+        self._base_speed = type(self).SPEED
+        self._base_can_roll = type(self).CAN_ROLL
         # Demande consommée par l'IA après la résolution complète du tir.
         # Cela évite qu'une roulade déclenchée par le premier plomb d'un
         # fusil à pompe annule artificiellement les plombs simultanés.
@@ -339,13 +350,13 @@ class Enemy(Entity):
             return assets.get(f"enemy_{self.KIND}_dead")
         if self.rolling and self.KIND == "soldier":
             frame = min(2, int(self.roll_progress * 3))
-            return assets.get(f"enemy_soldier_roll_{frame}")
+            return self._visual_sprite(f"enemy_soldier_roll_{frame}")
         if self.flash_timer > 0.0:
             # Quand il tire, il fait face au joueur : pose de face armée.
-            return assets.get(f"enemy_{self.KIND}_fire")
+            return self._visual_sprite(f"enemy_{self.KIND}_fire")
         if self.aiming and self.KIND == "sniper":
             # Le sniper avertit clairement son tir en posant un genou à terre.
-            return assets.get("enemy_sniper_aim")
+            return self._visual_sprite("enemy_sniper_aim")
 
         if self.moving:
             pose = "walk" if int(self.anim_time * 6) % 2 == 0 else "walk2"
@@ -362,9 +373,38 @@ class Enemy(Entity):
                 suffix = "_side"            # profil (miroir selon le côté)
                 flipped = diff > 0
         name = f"enemy_{self.KIND}_{pose}{suffix}"
-        if self.hurt_timer > 0.0:
+        return self._visual_sprite(name, flipped)
+
+    def _visual_sprite(self, name, flipped=False):
+        """Applique les variantes visuelles sans changer la géométrie."""
+        hurt = self.hurt_timer > 0.0
+        if self.possessed:
+            return assets.get_possessed(name, flipped, hurt=hurt)
+        if hurt:
             return assets.get_tinted(name, flipped)
         return assets.get(name, flipped)
+
+    def set_possessed(self, enabled=True):
+        """Active la variante du Déferlement et ses règles de mobilité.
+
+        Le soldat entraîné y perd sa roulade et ralentit nettement. Le
+        milicien, plus rapide dans la campagne, est lui aussi ralenti mais
+        conserve une mobilité supérieure. Les autres archétypes gardent leurs
+        statistiques afin de ne pas aplatir toute la composition des vagues.
+        """
+        self.possessed = bool(enabled)
+        self.SPEED = self._base_speed
+        self.CAN_ROLL = self._base_can_roll
+        if self.possessed:
+            if self.KIND == "soldier":
+                self.SPEED *= 0.72
+                self.CAN_ROLL = False
+            elif self.KIND == "grunt":
+                self.SPEED *= 0.82
+        if not self.CAN_ROLL:
+            self.roll_timer = 0.0
+            self.roll_invuln = 0.0
+            self.hit_roll_request = None
 
     def take_damage(self, amount):
         if self.roll_invuln > 0.0:
@@ -501,8 +541,7 @@ class Sniper(Enemy):
 
 
 class Boss(Enemy):
-    """Le Colosse : boss du dernier niveau. Énorme, implacable, ne se
-    cache jamais — il avance."""
+    """Le Colosse : boss en trois phases, plus agressif à mesure qu'il cède."""
     KIND = "boss"
     SPEED = 1.15
     RADIUS = 0.38
@@ -515,6 +554,50 @@ class Boss(Enemy):
     DETECT_RANGE = 14.0
     TAKES_COVER = False
     IS_BOSS = True
+
+    PHASE_THRESHOLDS = (2 / 3, 1 / 3)
+    PHASE_SPEEDS = (1.15, 1.28, 1.42)
+    PHASE_FIRE_DELAYS = (0.72, 0.58, 0.46)
+
+    def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
+        super().__init__(x, y, health_mult, damage_mult)
+        self.phase = 1
+        self._pending_phase_events = []
+        self._apply_phase_stats()
+
+    def _phase_from_health(self):
+        ratio = self.health / max(1, self.max_health)
+        if ratio > self.PHASE_THRESHOLDS[0]:
+            return 1
+        if ratio > self.PHASE_THRESHOLDS[1]:
+            return 2
+        return 3
+
+    def _apply_phase_stats(self):
+        index = max(0, min(2, self.phase - 1))
+        self.SPEED = self.PHASE_SPEEDS[index]
+        self.FIRE_DELAY = self.PHASE_FIRE_DELAYS[index]
+
+    def sync_phase_from_health(self, announce=False):
+        """Synchronise la phase ; `announce` réserve les événements à l'hôte."""
+        new_phase = self._phase_from_health()
+        if announce and self.alive and new_phase > self.phase:
+            self._pending_phase_events.extend(
+                range(self.phase + 1, new_phase + 1),
+            )
+        self.phase = new_phase
+        self._apply_phase_stats()
+
+    def consume_phase_events(self):
+        events = self._pending_phase_events
+        self._pending_phase_events = []
+        return events
+
+    def take_damage(self, amount):
+        died = super().take_damage(amount)
+        if not died:
+            self.sync_phase_from_health(announce=True)
+        return died
 
 
 class RemotePlayer(Enemy):
@@ -656,6 +739,8 @@ class Pickup:
         self.kind = kind              # "weapon:<id>", "medkit" ou "lifepack"
         self.level_index = level_index
         self.taken = False
+        self.dynamic = False           # apparu en cours de partie (Colosse)
+        self.net_id = None             # identifiant optionnel en coop LAN
         self.hidden = kind == "lifepack"     # absent de la minimap
         self.bob = (x * 7 + y * 13) % 6.28  # phase d'oscillation propre
         if kind in ("medkit", "lifepack"):

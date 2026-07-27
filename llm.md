@@ -238,15 +238,24 @@ d'implémentation et les décisions techniques non triviales.
     textes statiques, minimap sans copie, tampon de zoom ADS réutilisé,
     fondu des murs d'énergie mémoïsé (alpha quantifié), smoke tests enfin
     commités (`tests/test_smoke.py`). 43 tests verts. CHANGELOG.md créé.
+25. Réparation de l'historique et lot gameplay/accessibilité : l'arbre du
+    commit racine `67949e2` a été recréé à l'identique dans `5019052`, avec
+    `ef9849d` comme parent, sur `agent/history-gameplay-repair`. Le Colosse
+    passe à trois phases et libère deux packs de vie ; le Déferlement utilise
+    des ennemis possédés ; Laboratoire, cratères et HUD sont recalibrés ; les
+    commandes multi-touch sont activées par détection SDL. Sept tests dédiés
+    portent la suite à 50 tests.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Quarante-trois
+- **Couverture de tests encore partielle mais en progrès.** Cinquante
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (13 contrôles robustesse) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
   survie, menus, coop loopback UDP, réglages, sons), qui remplacent les
-  anciens `smoke_test2..11.py` jamais commités.
+  anciens `smoke_test2..11.py` jamais commités, plus
+  `tests/test_gameplay_extensions.py` (7 tests Colosse, possédés, décors,
+  réseau étendu et tactile).
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
   jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
   observés).
@@ -262,8 +271,48 @@ d'implémentation et les décisions techniques non triviales.
 
 # Call of Python — contexte de reprise GPT
 
-Dernière mise à jour : 21 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
-branche distante de travail `claude/call_of_python_LLM`.
+Dernière mise à jour : 27 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
+branche de travail `agent/history-gameplay-repair`.
+
+## Réparation Git, Colosse, possédés, environnements et tactile
+
+- Le `main` force-poussé pointait sur le commit racine `67949e2`, détaché de
+  l'historique publié jusqu'à `ef9849d`. Son arbre `fd04b4c` a été recréé
+  byte-identique dans `5019052`, avec `ef9849d` comme parent. La branche
+  `backup/force-pushed-main-67949e2` conserve le commit racine ; le travail
+  continue sur `agent/history-gameplay-repair`. Ne jamais reconstruire cette
+  filiation en réappliquant manuellement les fichiers : vérifier les arbres
+  avec `git diff --exit-code 67949e2 5019052`.
+- Le Colosse a trois phases déterminées par sa vie : phase 1 au-dessus de
+  66 %, phase 2 entre 66 et 33 %, phase 3 sous 33 %. Les couples
+  vitesse/cadence sont `(1.15, 0.72)`, `(1.28, 0.58)` et `(1.42, 0.46)`.
+  Chaque seuil réellement franchi alimente une file d'événements consommée
+  une seule fois par `Game`, qui crée un `lifepack` visible sur un flanc du
+  boss. Un impact franchissant deux seuils libère bien deux packs ; un boss
+  tué net n'en libère pas inutilement.
+- Les packs du Colosse sont des `Pickup.dynamic` avec un `net_id`. En coop,
+  les booléens des objets statiques restent au début de `pk` ; les lignes
+  `[id, x, y, kind, taken]` sont ajoutées ensuite. Un ancien client les ignore
+  après son `zip`, tandis qu'un nouveau client les valide et les crée. Les
+  lignes ennemies ajoutent aussi `max_health` et `possessed` en fin de tableau,
+  ce qui corrige au passage la barre de vie des Colosses renforcés par les
+  vagues sans casser les formats historiques.
+- Tous les ennemis créés par `SurvivalGame.spawn_enemy()` sont possédés.
+  `assets.get_possessed()` dérive et met en cache aura, teinte et yeux verts
+  depuis chaque pose/orientation existante ; aucun PNG détaillé n'est écrasé.
+  Le `Soldier` possédé a `CAN_ROLL=False` et 72 % de sa vitesse de campagne ;
+  le `Grunt` possédé conserve 82 % de sa vitesse. Les autres archétypes
+  gardent leur mobilité.
+- Le Laboratoire utilise un sol de résine blanche `(232..176)` et laisse les
+  murs `1`, `2` et le panneau `4` à hauteur standard `1.0`. Seule l'enceinte
+  `3` du Colosse reste à `1.55`. Les cratères lunaires sont précalculés avec
+  un minimum de 30 et un espacement cible de 38 px : aucun coût par frame.
+- `touch_controls.py` détecte les périphériques via
+  `pygame._sdl2.touch.get_num_devices()` et s'active aussi au premier
+  `FINGERDOWN` (hot-plug). Stick gauche, glissement de visée, tir/ADS,
+  roulade, recharge, arme, pause et menu supportent plusieurs doigts. Les
+  événements souris synthétiques portant `touch=True` sont ignorés en jeu
+  pour éviter un double tir ; clavier et vraie souris restent parallèles.
 
 ## Équilibrage des roulades et écran de mort
 
@@ -446,6 +495,23 @@ branche distante de travail `claude/call_of_python_LLM`.
 
 ## Invariants à préserver
 
+- Les seuils du Colosse se calculent depuis `health / max_health`, jamais
+  depuis ses PV bruts : les multiplicateurs de niveau/vague doivent rester
+  compatibles. `Boss.take_damage()` produit les événements, mais seul `Game`
+  choisit une case praticable et crée les packs. Après réplication directe de
+  santé, le client appelle `sync_phase_from_health()` sans créer d'objet local.
+- Les objets dynamiques coop sont ajoutés APRÈS les booléens statiques de
+  `pk`. Ne jamais transformer rétroactivement `pk` en dictionnaire ou déplacer
+  les lignes dynamiques devant les booléens : les anciens clients dépendent
+  de cet ordre. Toute valeur réseau reste validée et bornée avant création.
+- `Enemy.set_possessed()` doit précéder la construction de `EnemyAI` sur tout
+  nouveau chemin d'apparition, afin que l'IA ne prépare pas de roulade pour un
+  `Soldier` possédé. Les variantes visuelles restent des surfaces mises en
+  cache et de même taille que la pose source.
+- Le tactile ne doit jamais se fier à l'état global du bouton gauche SDL :
+  un doigt peut émuler une souris. Le tir maintenu utilise uniquement
+  `_mouse_fire_held` pour une vraie souris et `TouchControls.fire_held` pour
+  les doigts. Une perte de focus libère les deux états et tous les doigts.
 - Les dimensions physiques des props reposent sur la boîte opaque, via
   `_height_for_visible_width`; ne pas compenser les marges transparentes en
   augmentant arbitrairement `SPRITE_HEIGHT`.
@@ -482,7 +548,7 @@ branche distante de travail `claude/call_of_python_LLM`.
 
 ## Validation disponible
 
-La suite contient 43 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 50 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -507,6 +573,11 @@ deque, `survival_info`), rendu/clic de tous les menus aux résolutions
 extrêmes, coop réelle en loopback UDP (join → `synced`, draw des deux côtés,
 sockets refermées — port de test 15577 ≠ 5577), round-trip des réglages avec
 JSON tronqué, et lecture de tous les effets/musiques.
+
+`tests/test_gameplay_extensions.py` ajoute 7 contrôles : règles et cache des
+possédés, trois phases et deux packs du Colosse, extension coop des ennemis et
+objets dynamiques, sol/hauteurs du Laboratoire, densité des cratères,
+multi-touch et rejet du clic souris synthétique.
 
 Commande utilisée :
 
@@ -587,9 +658,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-43 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+50 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 13 contrôles robustesse/réseau ;
-`test_smoke.py` : 8 tests de fumée généraux) :
+`test_smoke.py` : 8 tests de fumée généraux ;
+`test_gameplay_extensions.py` : 7 tests du lot actuel) :
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
@@ -638,6 +710,16 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
 - **Textures** : PNG d'`assets/` refaits en art détaillé — ne JAMAIS relancer
   `python assets.py` (écraserait tout par le procédural). Vérifier composantes
   connexes et marges avant de committer un décor.
+- **Colosse** : phases par ratios 66/33 %, pas par PV absolus ; chaque seuil
+  vivant produit exactement un pack dynamique placé hors de la ligne de tir.
+  En coop, `max_health`/`possessed` restent en fin de ligne ennemie et les
+  objets dynamiques restent après les booléens statiques de `pk`.
+- **Possédés** : uniquement les apparitions de `SurvivalGame`; `Soldier`
+  sans roulade à 72 % de vitesse, `Grunt` à 82 %. Aura/yeux dérivés et mis en
+  cache depuis les poses existantes, sans nouveau PNG.
+- **Tactile** : activation SDL ou premier `FINGERDOWN`; l'état souris global
+  n'est jamais utilisé pour le tir maintenu, afin d'éviter le double clic
+  synthétique. Focus perdu = tous les doigts et boutons libérés.
 - **Roulade joueur** : 0,55 s à 4,55 cases/s, sans cooldown, mais fenêtre
   d'i-frames centrale de 0,30 s (0,08 s amorce + 0,17 s récupération vulnérables).
   `Player.roll_invulnerable` est l'autorité ; refus de redéclenchement pendant
