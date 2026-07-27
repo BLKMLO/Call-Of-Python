@@ -276,13 +276,14 @@ LEVELS = [
         "theme": {"1": "wall_lab_tech", "2": "wall_lab_metal",
                   "3": "wall_lab_reinforced",
                   "4": "wall_sealed_portal"},
-        # Enceinte technique légèrement surélevée et murs de confinement
-        # renforcés autour des salles sensibles et de la chambre du Colosse.
-        # Le mur 4 reste à hauteur 1 : c'est un panneau scellé en retrait,
-        # devant le mur technique extérieur, et sa texture ne se répète pas.
-        "heights": {"1": 1.25, "3": 1.55},
+        # Tous les murs courants (1/2/4) gardent la hauteur standard 1.0.
+        # Seule la chambre du Colosse, délimitée par 3, domine le laboratoire.
+        # Le mur 4 reste un panneau scellé non répété devant cette enceinte.
+        "heights": {"3": 1.55},
         "sky": ((44, 22, 18), (150, 70, 44)),   # crépuscule rougeoyant (19h)
-        "floor": ((58, 40, 36), (26, 20, 20)),
+        # Résine blanche légèrement grisée au premier plan pour garder la
+        # profondeur du raycasting sans revenir au sol rouge sombre.
+        "floor": ((232, 234, 236), (176, 181, 186)),
         "sun": {"hour": 19, "az": 0.8, "el": 0.1, "color": (255, 120, 60)},
         "enemies": ["heavy", "sniper", "kamikaze"],
         "weapons": ["minigun", "rifle"],

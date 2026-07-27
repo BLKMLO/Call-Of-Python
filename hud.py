@@ -205,7 +205,8 @@ class HUD:
         self._draw_slots(screen, player)
         self._draw_level_label(screen, level)
         if survival is not None:
-            self._draw_survival(screen, survival)
+            boss_active = any(e.IS_BOSS and e.alive for e in enemies)
+            self._draw_survival(screen, survival, boss_active=boss_active)
         self._draw_boss_bar(screen, enemies)
         self._draw_message(screen)
         self._draw_announce(screen)
@@ -507,7 +508,7 @@ class HUD:
         screen.blit(plate, (x, 8))
         screen.blit(label, (x + 14, 14))
 
-    def _draw_survival(self, screen, info):
+    def _draw_survival(self, screen, info, boss_active=False):
         """Sous le titre : vague courante, et compte à rebours (répit ou
         submersion imminente)."""
         if info["wave"] <= 0:
@@ -523,7 +524,11 @@ class HUD:
             # le compte à rebours vire au rouge quand la submersion menace
             color = (230, 90, 70) if info["next_in"] < 15 else (220, 220, 160)
         label = self.font.render(text, True, color)
-        screen.blit(label, ((self.width - label.get_width()) // 2, 50))
+        if boss_active:
+            y = 160 if self.width < 1000 else 105
+        else:
+            y = 50
+        screen.blit(label, ((self.width - label.get_width()) // 2, y))
 
     def _draw_announce(self, screen):
         """Grande annonce centrale fugace ("VAGUE 12")."""
@@ -543,19 +548,25 @@ class HUD:
         bar_w = int(self.width * 0.44)
         bar_h = 12
         x = (self.width - bar_w) // 2
-        y = 72
+        y = 112 if self.width < 1000 else 72
         frac = boss.health / boss.max_health
         panel = self._panel((bar_w + 28, 52), HUD_AMBER)
         screen.blit(panel, (x - 14, y - 25))
-        name = self._text(self.font, "LE COLOSSE", HUD_AMBER)
+        phase = max(1, min(3, int(getattr(boss, "phase", 1))))
+        name = self._text(self.font, f"LE COLOSSE — PHASE {phase}", HUD_AMBER)
         screen.blit(name, ((self.width - name.get_width()) // 2, y - 21))
         pygame.draw.rect(screen, (40, 18, 17), (x, y, bar_w, bar_h))
-        pygame.draw.rect(screen, (226, 91, 45),
+        phase_colors = ((226, 91, 45), (238, 142, 46), (92, 226, 124))
+        pygame.draw.rect(screen, phase_colors[phase - 1],
                          (x, y, int(bar_w * frac), bar_h))
         for marker in range(1, 10):
             mx = x + marker * bar_w // 10
             pygame.draw.line(screen, (65, 35, 30),
                              (mx, y), (mx, y + bar_h - 1), 1)
+        for marker in (1, 2):
+            mx = x + marker * bar_w // 3
+            pygame.draw.line(screen, (240, 220, 170),
+                             (mx, y - 2), (mx, y + bar_h + 2), 2)
         pygame.draw.rect(screen, (211, 151, 92),
                          (x, y, bar_w, bar_h), 1)
 

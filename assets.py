@@ -64,6 +64,63 @@ def get_tinted(name, flipped=False):
     return _cache[key]
 
 
+def get_possessed(name, flipped=False, hurt=False):
+    """Variante possédée d'un ennemi : aura et yeux verts fluorescents.
+
+    La transformation part du PNG détaillé déjà livré et reste mise en cache.
+    Toutes les poses et orientations conservent ainsi exactement leur taille,
+    leurs marges et leur animation sans nécessiter un second atlas complet.
+    """
+    key = (name, flipped, "possessed", bool(hurt))
+    if key in _cache:
+        return _cache[key]
+
+    base = get(name, flipped)
+    width, height = base.get_size()
+    result = pygame.Surface((width, height), pygame.SRCALPHA)
+    mask = pygame.mask.from_surface(base, 12)
+    aura = mask.to_surface(
+        setcolor=(48, 255, 116, 92),
+        unsetcolor=(0, 0, 0, 0),
+    )
+    # Halo irrégulier mais immobile : lisible en mouvement, sans scintillement
+    # ni composition dans la boucle de rendu.
+    for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2),
+                   (-1, -1), (1, -1), (-1, 1), (1, 1)):
+        result.blit(aura, (dx, dy))
+
+    body = base.copy()
+    body.fill((0, 34, 8), special_flags=pygame.BLEND_RGB_ADD)
+    if hurt:
+        body.fill((78, 92, 78), special_flags=pygame.BLEND_RGB_ADD)
+    result.blit(body, (0, 0))
+
+    bounds = base.get_bounding_rect(min_alpha=12)
+    if bounds.width > 0 and bounds.height > 0 and "dead" not in name:
+        # Le dos ne montre pas d'yeux. Le profil n'en montre qu'un ; les
+        # poses frontales en montrent deux, placés relativement au visage.
+        is_back = name.endswith("_back")
+        is_side = name.endswith("_side")
+        if not is_back:
+            eye_y = bounds.y + max(2, round(bounds.height * 0.18))
+            radius = max(1, min(3, round(bounds.width * 0.035)))
+            if is_side:
+                eye_xs = (bounds.centerx + round(bounds.width * 0.06),)
+            else:
+                gap = max(2, round(bounds.width * 0.075))
+                eye_xs = (bounds.centerx - gap, bounds.centerx + gap)
+            for eye_x in eye_xs:
+                pygame.draw.circle(result, (58, 255, 126),
+                                   (eye_x, eye_y), radius + 1)
+                pygame.draw.circle(result, (214, 255, 224),
+                                   (eye_x, eye_y), radius)
+
+    if pygame.display.get_init() and pygame.display.get_surface():
+        result = result.convert_alpha()
+    _cache[key] = result
+    return result
+
+
 def average_color(name):
     """Couleur moyenne d'un asset (utilisée pour teinter les particules)."""
     if name not in _avg_cache:

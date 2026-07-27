@@ -28,6 +28,7 @@ from network import DEFAULT_PORT, UdpPeer
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
 from survival import SurvivalGame
+from touch_controls import FINGER_EVENTS, TouchControls
 from weapons import LEVEL_DAMAGE_BONUS, WEAPON_SPECS
 
 RESPAWN_DELAY = 6.0        # secondes avant la réapparition d'un joueur
@@ -356,13 +357,20 @@ class CoopHostGame(SurvivalGame):
         enemies = [[e.net_id, e.KIND, round(e.x, 2), round(e.y, 2),
                     round(e.angle, 3), e.health, int(e.moving),
                     int(e.flash_timer > 0), int(e.aiming), int(e.rolling),
-                    round(e.roll_timer, 2)]
+                    round(e.roll_timer, 2), e.max_health, int(e.possessed)]
                    for e in self.enemies if e.net_id is not None]
+        static_pickups = [p for p in self.pickups if not p.dynamic]
+        dynamic_pickups = [
+            [p.net_id, round(p.x, 2), round(p.y, 2), p.kind, int(p.taken)]
+            for p in self.pickups if p.dynamic
+        ]
         snapshot = {
             "t": "snap",
             "pl": players,
             "en": enemies,
-            "pk": [int(p.taken) for p in self.pickups],
+            # Les lignes dynamiques sont ajoutées après les booléens historiques :
+            # un ancien client les ignore naturellement après son zip statique.
+            "pk": [int(p.taken) for p in static_pickups] + dynamic_pickups,
             "wv": self.survival_info(),
             "ov": self.outcome or "",
             "ev": self.net_events,
@@ -403,12 +411,15 @@ class CoopClientGame:
         self.player.activate_shield()  # invulnérabilité le temps de s'orienter
         self.pickups = [Pickup(x, y, kind, 1)
                         for x, y, kind in self.level.pickup_spawns]
+        self.base_pickup_count = len(self.pickups)
+        self.dynamic_pickups = {}
         self.props = [Prop(x, y, kind)
                       for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
         self.raycaster = Raycaster(screen.get_size(), self.level)
         self.hud = HUD(screen.get_size())
+        self.touch = TouchControls(screen.get_size())
         self.stats = new_stats()
         self.paused = False
         self.outcome = None
@@ -420,6 +431,8 @@ class CoopClientGame:
         self.sparkle_timer = 0.0
         self.step_distance = 0.0
         self.step_side = False
+        self._mouse_fire_held = False
+        self._mouse_aim_held = False
 
         # Réseau
         self.peer = UdpPeer()
@@ -453,6 +466,7 @@ class CoopClientGame:
         """Adapte le client répliqué après un changement de mode vidéo."""
         self.raycaster.resize(size)
         self.hud.resize(size)
+        self.touch.resize(size)
 
     def survival_info(self):
         return self.wave_info
@@ -461,14 +475,27 @@ class CoopClientGame:
     def handle_event(self, event):
         if event.type == pygame.WINDOWFOCUSLOST:
             self.player.aiming = False
+            self._mouse_fire_held = False
+            self._mouse_aim_held = False
+            self.touch.reset()
             if self.outcome is None:
                 self.paused = True
             pygame.mouse.get_rel()
+            return None
+        if event.type in FINGER_EVENTS:
+            actions = self.touch.handle_event(event)
+            for action in actions:
+                result = self._handle_touch_action(action)
+                if result is not None:
+                    return result
             return None
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.paused = not self.paused
                 self.player.aiming = False
+                self._mouse_fire_held = False
+                self._mouse_aim_held = False
+                self.touch.reset()
                 pygame.mouse.get_rel()
             elif self.paused and event.key == pygame.K_m:
                 return "menu"
@@ -502,14 +529,57 @@ class CoopClientGame:
             if wheel_y:
                 self.player.cycle_weapon(-1 if wheel_y > 0 else 1)
                 self.sounds.play("click", volume_scale=0.4)
-        elif (event.type == pygame.MOUSEBUTTONDOWN and not self.paused
+        elif (event.type == pygame.MOUSEBUTTONDOWN
+              and not getattr(event, "touch", False) and not self.paused
               and self.outcome is None and self.player.alive):
             if event.button == 1:
+                self._mouse_fire_held = True
                 self._fire()
             elif event.button == 3 and not self.player.rolling:
+                self._mouse_aim_held = True
                 self.player.aiming = True
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 3:
+        elif (event.type == pygame.MOUSEBUTTONUP
+              and not getattr(event, "touch", False)):
+            if event.button == 1:
+                self._mouse_fire_held = False
+            elif event.button == 3:
+                self._mouse_aim_held = False
+                self.player.aiming = self.touch.aim_held
+        return None
+
+    def _handle_touch_action(self, action):
+        if action == "pause":
+            self.paused = not self.paused
             self.player.aiming = False
+            self._mouse_fire_held = False
+            self._mouse_aim_held = False
+            if self.paused:
+                self.touch.reset()
+            pygame.mouse.get_rel()
+            return None
+        if action == "menu":
+            return "menu" if self.paused else None
+        if self.paused or self.outcome is not None or not self.player.alive:
+            return None
+        if action == "fire_down":
+            self._fire()
+        elif action in ("aim_down", "aim_up"):
+            self.player.aiming = (
+                not self.player.rolling
+                and (self._mouse_aim_held or self.touch.aim_held)
+            )
+        elif action == "roll":
+            self.player.start_roll(
+                pygame.key.get_pressed(), self.settings.keys,
+                self.touch.movement_axes(),
+            )
+        elif action == "reload":
+            self.player.weapon.start_reload()
+            if self.player.weapon.reloading > 0.0:
+                self.sounds.play("reload")
+        elif action == "weapon":
+            self.player.cycle_weapon(1)
+            self.sounds.play("click", volume_scale=0.4)
         return None
 
     # -- boucle -------------------------------------------------------------
@@ -529,13 +599,21 @@ class CoopClientGame:
         if player.alive and not self.paused and self.outcome is None:
             self.stats["time"] += dt
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
+            touch_dx, touch_dy = self.touch.consume_look()
+            mouse_dx += touch_dx
+            mouse_dy += touch_dy
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
             if not player.rolling:
+                player.aiming = self._mouse_aim_held or self.touch.aim_held
                 player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
-            moving = player.move(dt, keys, self.settings.keys, self.level)
+            touch_axes = (self.touch.movement_axes()
+                          if self.touch.enabled else None)
+            moving = player.move(
+                dt, keys, self.settings.keys, self.level, touch_axes,
+            )
             if player.rolling:
                 self.step_distance = 0.0
             else:
@@ -546,7 +624,8 @@ class CoopClientGame:
                 self.step_side = not self.step_side
                 self.sounds.play("step" if self.step_side else "step2",
                                  volume_scale=0.35)
-            if (not player.rolling and pygame.mouse.get_pressed()[0]
+            if (not player.rolling
+                    and (self._mouse_fire_held or self.touch.fire_held)
                     and player.weapon.spec.automatic):
                 self._fire()
             player.update(dt)
@@ -665,8 +744,7 @@ class CoopClientGame:
         self._apply_players(players)
         self._apply_enemies(enemies)
         if isinstance(pickups, list):
-            for pickup, taken in zip(self.pickups, pickups):
-                pickup.taken = bool(taken)
+            self._apply_pickups(pickups)
         self._apply_wave(wave)
         if isinstance(events, list):
             for event in events[:128]:
@@ -767,6 +845,9 @@ class CoopClientGame:
             rolling = bool(data[9]) if len(data) > 9 else False
             roll_timer = (_finite_float(data[10], 0.0, 1.0)
                           if len(data) > 10 else 0.0)
+            max_health = (_finite_float(data[11], 1.0, 100000.0)
+                          if len(data) > 11 else None)
+            possessed = bool(data[12]) if len(data) > 12 else False
             if roll_timer is None:
                 roll_timer = 0.0
             seen.add(net_id)
@@ -781,6 +862,9 @@ class CoopClientGame:
                                      pos=(x, y), listener=self.player)
             ghost.net_x, ghost.net_y = x, y
             ghost.angle = angle
+            ghost.set_possessed(possessed)
+            if max_health is not None:
+                ghost.max_health = round(max_health)
             ghost.moving = bool(moving)
             ghost.aiming = aiming
             ghost.roll_timer = roll_timer if rolling else 0.0
@@ -803,8 +887,65 @@ class CoopClientGame:
                 ghost.health = health
             else:
                 ghost.health = max(0, health)
+            sync_phase = getattr(ghost, "sync_phase_from_health", None)
+            if sync_phase is not None:
+                sync_phase()
         for net_id in [n for n in self.ghosts if n not in seen]:
             del self.ghosts[net_id]
+
+    def _apply_pickups(self, rows):
+        """Applique les objets statiques puis les apparitions du Colosse."""
+        static_rows = rows[:self.base_pickup_count]
+        for pickup, taken in zip(self.pickups[:self.base_pickup_count],
+                                 static_rows):
+            # Une ligne dynamique mal placée ne doit pas valoir True par
+            # simple conversion booléenne.
+            if (isinstance(taken, bool)
+                    or (isinstance(taken, int)
+                        and not isinstance(taken, bool)
+                        and taken in (0, 1))):
+                pickup.taken = bool(taken)
+
+        seen = set()
+        for data in rows[self.base_pickup_count:]:
+            if not isinstance(data, (list, tuple)) or len(data) != 5:
+                continue
+            net_id, x, y, kind, taken = data
+            if (isinstance(net_id, bool) or not isinstance(net_id, int)
+                    or not 0 <= net_id <= 1000000
+                    or kind not in ("medkit", "lifepack")):
+                continue
+            if not (isinstance(taken, bool)
+                    or (isinstance(taken, int)
+                        and not isinstance(taken, bool)
+                        and taken in (0, 1))):
+                continue
+            x = _finite_float(x, 0.0, self.level.width)
+            y = _finite_float(y, 0.0, self.level.height)
+            if x is None or y is None:
+                continue
+            seen.add(net_id)
+            pickup = self.dynamic_pickups.get(net_id)
+            if pickup is None:
+                pickup = Pickup(x, y, kind, self.level_index)
+                pickup.dynamic = True
+                pickup.hidden = False
+                pickup.net_id = net_id
+                self.dynamic_pickups[net_id] = pickup
+                self.pickups.append(pickup)
+                if self.synced:
+                    self.particles.spawn_portal(x, y)
+                    self.sounds.play("spawn", volume_scale=0.75,
+                                     pos=(x, y), listener=self.player)
+            pickup.x, pickup.y = x, y
+            pickup.taken = bool(taken)
+        # L'hôte conserve normalement les objets pris. La suppression reste
+        # gérée pour tolérer une future politique de nettoyage.
+        for net_id in [dynamic_id for dynamic_id in self.dynamic_pickups
+                       if dynamic_id not in seen]:
+            pickup = self.dynamic_pickups.pop(net_id)
+            if pickup in self.pickups:
+                self.pickups.remove(pickup)
 
     def _apply_wave(self, wave_info):
         if not isinstance(wave_info, dict):
@@ -905,6 +1046,7 @@ class CoopClientGame:
             self.hud.draw_dead_overlay(screen)
         if self.paused:
             self.hud.draw_pause(screen)
+        self.touch.draw(screen, paused=self.paused)
 
     def close(self):
         self.peer.close()
