@@ -593,6 +593,17 @@ class Boss(Enemy):
         self._pending_phase_events = []
         return events
 
+    @property
+    def has_pending_phase_events(self):
+        """Indique qu'au moins un pack de phase reste à matérialiser."""
+        return bool(self._pending_phase_events)
+
+    def requeue_phase_events(self, phases):
+        """Replace en tête les phases dont le pack n'a pas pu apparaître."""
+        retry = [phase for phase in phases if phase in (2, 3)]
+        if retry:
+            self._pending_phase_events = retry + self._pending_phase_events
+
     def take_damage(self, amount):
         died = super().take_damage(amount)
         if not died:

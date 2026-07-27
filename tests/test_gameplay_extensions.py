@@ -1,9 +1,10 @@
 """Non-régressions du Colosse, du Déferlement, des décors et du tactile."""
 
+import math
 import os
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -90,6 +91,46 @@ class GameplayExtensionsTests(unittest.TestCase):
             game.level.can_stand(pickup.x, pickup.y, 0.22)
             for pickup in dynamic
         ))
+
+    def test_colossus_retries_a_blocked_phase_pack_and_ignores_corpses(self):
+        game = Game(self.screen, self.settings, Mock(), level_index=4)
+        boss = next(enemy for enemy in game.enemies if isinstance(enemy, Boss))
+        boss.take_damage(boss.max_health * 0.34)
+
+        with patch.object(
+            game, "_boss_pickup_position",
+            side_effect=[None, (boss.x + 1.0, boss.y)],
+        ):
+            game._handle_boss_phase_events(boss)
+            self.assertTrue(boss.has_pending_phase_events)
+            self.assertFalse(any(pickup.dynamic for pickup in game.pickups))
+            game._handle_boss_phase_events(boss)
+
+        self.assertFalse(boss.has_pending_phase_events)
+        self.assertEqual(
+            sum(1 for pickup in game.pickups if pickup.dynamic), 1,
+        )
+
+        toward_player = math.atan2(
+            game.player.y - boss.y, game.player.x - boss.x,
+        )
+        base_angle = toward_player + math.pi / 2
+        offsets = (
+            0.0, math.pi / 3, -math.pi / 3, math.pi,
+            2 * math.pi / 3, -2 * math.pi / 3,
+        )
+        corpses = []
+        for radius in (2.2, 1.6, 2.9, 3.5):
+            for offset in offsets:
+                angle = base_angle + offset
+                corpses.append(SimpleNamespace(
+                    x=boss.x + math.cos(angle) * radius,
+                    y=boss.y + math.sin(angle) * radius,
+                    alive=False,
+                ))
+        game.enemies = [boss, *corpses]
+        with patch.object(game.level, "can_stand", return_value=True):
+            self.assertIsNotNone(game._boss_pickup_position(boss, 2))
 
     def test_coop_accepts_possessed_enemy_and_dynamic_pickup_extension(self):
         client = CoopClientGame.__new__(CoopClientGame)
@@ -187,6 +228,15 @@ class GameplayExtensionsTests(unittest.TestCase):
         touch.draw(screen)
         self.assertNotEqual(screen.get_at((704, 462))[:3], (0, 0, 0))
 
+    def test_possessed_side_eye_is_mirrored_with_the_sprite(self):
+        right = assets.get_possessed("enemy_soldier_idle_side")
+        left = assets.get_possessed("enemy_soldier_idle_side", flipped=True)
+        mirrored = pygame.transform.flip(right, True, False)
+        self.assertEqual(
+            pygame.image.tostring(left, "RGBA"),
+            pygame.image.tostring(mirrored, "RGBA"),
+        )
+
     def test_game_maps_touch_buttons_and_ignores_emulated_mouse_click(self):
         game = Game(self.screen, self.settings, Mock(), level_index=0)
         game.touch.enabled = True
@@ -210,6 +260,42 @@ class GameplayExtensionsTests(unittest.TestCase):
             pygame.FINGERDOWN, finger_id=11, x=0.69, y=0.75,
         ))
         self.assertTrue(game.player.rolling)
+
+    def test_touch_pause_does_not_rearm_held_actions_on_resume(self):
+        game = Game(self.screen, self.settings, Mock(), level_index=0)
+        game.paused = True
+
+        game.handle_event(pygame.event.Event(
+            pygame.FINGERDOWN, finger_id=20, x=0.88, y=0.75,
+        ))
+        game.handle_event(pygame.event.Event(
+            pygame.FINGERDOWN, finger_id=21, x=0.76, y=0.61,
+        ))
+        self.assertTrue(game.touch.fire_held)
+        self.assertTrue(game.touch.aim_held)
+
+        game.handle_event(pygame.event.Event(
+            pygame.FINGERDOWN, finger_id=22, x=0.96, y=0.33,
+        ))
+        self.assertFalse(game.paused)
+        self.assertFalse(game.touch.fire_held)
+        self.assertFalse(game.touch.aim_held)
+        self.assertFalse(game.player.aiming)
+
+    def test_coop_roll_is_blocked_after_the_match_outcome(self):
+        client = CoopClientGame(
+            self.screen, self.settings, Mock(), "127.0.0.1", port=15578,
+        )
+        try:
+            client.outcome = "victory"
+            client.handle_event(pygame.event.Event(
+                pygame.KEYDOWN,
+                key=self.settings.keys["roulade"],
+                scancode=225,
+            ))
+            self.assertFalse(client.player.rolling)
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":

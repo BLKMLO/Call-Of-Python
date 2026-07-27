@@ -105,7 +105,16 @@ def get_possessed(name, flipped=False, hurt=False):
             eye_y = bounds.y + max(2, round(bounds.height * 0.18))
             radius = max(1, min(3, round(bounds.width * 0.035)))
             if is_side:
-                eye_xs = (bounds.centerx + round(bounds.width * 0.06),)
+                eye_offset = round(bounds.width * 0.06)
+                if flipped:
+                    source_bounds = get(
+                        name, False,
+                    ).get_bounding_rect(min_alpha=12)
+                    eye_xs = (
+                        width - (source_bounds.centerx + eye_offset),
+                    )
+                else:
+                    eye_xs = (bounds.centerx + eye_offset,)
             else:
                 gap = max(2, round(bounds.width * 0.075))
                 eye_xs = (bounds.centerx - gap, bounds.centerx + gap)

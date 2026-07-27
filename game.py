@@ -193,8 +193,9 @@ class Game:
             self.player.aiming = False
             self._mouse_fire_held = False
             self._mouse_aim_held = False
-            if self.paused:
-                self.touch.reset()
+            # Une commande posée pendant la pause ne doit pas rester armée
+            # au moment de la reprise (tir/ADS maintenu notamment).
+            self.touch.reset()
             pygame.mouse.get_rel()
             return None
         if action == "menu":
@@ -309,6 +310,12 @@ class Game:
                                        exclude=data)
 
         self._separate_enemies()
+        # Un espace encombré peut différer l'apparition d'un pack du Colosse.
+        # Retenter après la séparation empêche de perdre définitivement le
+        # cadeau associé à une phase.
+        for enemy in self.enemies:
+            if getattr(enemy, "has_pending_phase_events", False):
+                self._handle_boss_phase_events(enemy)
         self._emit_lifepack_sparkles(dt)
 
         # Portes automatiques : s'ouvrent pour le joueur ET les ennemis.
@@ -424,15 +431,18 @@ class Game:
         """Matérialise les transitions du Colosse dans le monde de jeu.
 
         Chaque seuil franchi libère un pack de vie visible et accessible.
-        Les événements sont consommés une seule fois, y compris lorsqu'un
-        gros impact franchit plusieurs seuils d'un coup.
+        Un gros impact peut franchir plusieurs seuils d'un coup. Si aucune
+        position n'est momentanément disponible, l'événement est remis en
+        attente plutôt que perdu.
         """
         consume = getattr(enemy, "consume_phase_events", None)
         if consume is None:
             return
+        deferred = []
         for phase in consume():
             position = self._boss_pickup_position(enemy, phase)
             if position is None:
+                deferred.append(phase)
                 continue
             pickup = Pickup(position[0], position[1], "lifepack",
                             self.level_index)
@@ -446,6 +456,10 @@ class Game:
                              pos=(pickup.x, pickup.y), listener=self.player)
             self.hud.announce(f"COLOSSE — PHASE {phase}")
             self.hud.show_message("Un pack de vie a été libéré !")
+        if deferred:
+            requeue = getattr(enemy, "requeue_phase_events", None)
+            if requeue is not None:
+                requeue(deferred)
 
     def _boss_pickup_position(self, boss, phase):
         """Trouve un point atteignable, plutôt du côté des joueurs vivants."""
@@ -465,7 +479,9 @@ class Game:
         occupied = [
             (obj.x, obj.y)
             for obj in self.enemies + self.pickups + self.props
-            if obj is not boss and not getattr(obj, "taken", False)
+            if (obj is not boss
+                and getattr(obj, "alive", True)
+                and not getattr(obj, "taken", False))
         ]
         for radius in (2.2, 1.6, 2.9, 3.5):
             for offset in offsets:

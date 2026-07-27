@@ -502,6 +502,7 @@ class CoopClientGame:
             elif event.key == pygame.K_F3:
                 self.show_fps = not self.show_fps
             elif (not self.paused and self.player.alive
+                  and self.outcome is None
                   and (event.key == self.settings.keys["roulade"]
                        or (self.settings.keys["roulade"] in
                            (pygame.K_LSHIFT, pygame.K_RSHIFT)
@@ -553,8 +554,9 @@ class CoopClientGame:
             self.player.aiming = False
             self._mouse_fire_held = False
             self._mouse_aim_held = False
-            if self.paused:
-                self.touch.reset()
+            # Libère aussi les commandes posées pendant la pause afin qu'un
+            # tir/ADS ne parte pas tout seul à la reprise.
+            self.touch.reset()
             pygame.mouse.get_rel()
             return None
         if action == "menu":
