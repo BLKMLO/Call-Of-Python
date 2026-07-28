@@ -376,6 +376,16 @@ class Game:
                              enemy.x - victim.x) - victim.angle
             self.hud.on_player_hit(rel)
 
+    def _on_enemy_impact(self, enemy, fatal=False):
+        """Retour visuel et audio d'une balle réellement encaissée."""
+        self.particles.spawn_impact(
+            enemy.x, enemy.y, enemy.impact_type, fatal=fatal,
+        )
+        self.sounds.play(
+            f"{enemy.impact_type}_hit", volume_scale=0.68,
+            pos=(enemy.x, enemy.y), listener=self.player,
+        )
+
     def _explode(self, enemy):
         """Fait détoner un kamikaze : dégâts de zone sur les joueurs ET les
         autres ennemis (abattre un kamikaze dans la grappe paie)."""
@@ -411,7 +421,9 @@ class Game:
                 died = other.take_damage(damage)
                 self._handle_boss_phase_events(other)
                 if died:
-                    self.particles.spawn_death(other.x, other.y)
+                    self.particles.spawn_death(
+                        other.x, other.y, other.impact_type,
+                    )
                     if other.EXPLODES:
                         self._explode(other)   # réaction en chaîne
         if math.hypot(self.player.x - ex, self.player.y - ey) < radius * 3:
@@ -644,8 +656,9 @@ class Game:
         health_before = best.health
         died = best.take_damage(damage)
         self._handle_boss_phase_events(best)
+        if best.health < health_before:
+            self._on_enemy_impact(best, fatal=died)
         if died:
-            self.particles.spawn_death(best.x, best.y)
             self.sounds.play("enemy_die", volume_scale=0.8,
                              pos=(best.x, best.y), listener=self.player)
             if best.EXPLODES:
@@ -655,9 +668,6 @@ class Game:
             # Roulade invulnérable : la balle a croisé la silhouette, mais
             # ne compte ni comme touche ni comme dégâts.
             return None
-        self.particles.spawn_blood(best.x, best.y)
-        self.sounds.play("enemy_hit", volume_scale=0.6,
-                         pos=(best.x, best.y), listener=self.player)
         if best.CAN_ROLL and best.roll_cooldown <= 0.0:
             # L'IA consomme cette demande après la résolution du coup complet :
             # une cartouche de fusil à pompe reste un événement simultané. Le

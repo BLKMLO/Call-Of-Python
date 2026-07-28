@@ -286,6 +286,7 @@ class RequestedChangesTests(unittest.TestCase):
             spawn_wall_dust=lambda *_args: None,
             spawn_death=lambda *_args: None,
             spawn_blood=lambda *_args: None,
+            spawn_impact=lambda *_args, **_kwargs: None,
         )
         game.sounds = SimpleNamespace(play=lambda *_args, **_kwargs: None)
         game.player = Player(2.5, 4.5)

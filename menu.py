@@ -391,7 +391,7 @@ class MainMenu(MenuBase):
 
 
 class SettingsMenu(MenuBase):
-    """Paramètres : résolution, volume, sensibilité, touches.
+    """Paramètres : résolution, volumes, sensibilité, touches.
 
     Un clic sur la moitié gauche d'une ligne "< valeur >" décrémente,
     sur la moitié droite incrémente. Un clic sur une ligne de touche
@@ -409,7 +409,10 @@ class SettingsMenu(MenuBase):
         s = self.settings
         rows = [
             ("resolution", f"Résolution :  <  {s.resolution[0]} x {s.resolution[1]}  >"),
-            ("volume", f"Volume :  <  {int(s.volume * 100)} %  >"),
+            ("sound_volume",
+             f"Effets sonores :  <  {int(s.sound_volume * 100)} %  >"),
+            ("music_volume",
+             f"Musique :  <  {int(s.music_volume * 100)} %  >"),
             ("sensitivity", f"Sensibilité souris :  <  {int(s.sensitivity * 100)} %  >"),
             ("invert_mouse", f"Souris inversée :  <  {'Oui' if s.invert_mouse else 'Non'}  >"),
             (None, ""),  # séparateur
@@ -445,8 +448,15 @@ class SettingsMenu(MenuBase):
             s.resolution_index = (s.resolution_index + direction) % len(RESOLUTIONS)
             s.save()
             return "resolution"  # main.py recrée la fenêtre
-        if ident == "volume":
-            s.volume = round(min(1.0, max(0.0, s.volume + 0.1 * direction)), 2)
+        if ident == "sound_volume":
+            s.sound_volume = round(
+                min(1.0, max(0.0, s.sound_volume + 0.1 * direction)), 2,
+            )
+            s.save()
+        elif ident == "music_volume":
+            s.music_volume = round(
+                min(1.0, max(0.0, s.music_volume + 0.1 * direction)), 2,
+            )
             s.save()
         elif ident == "sensitivity":
             s.sensitivity = round(min(1.0, max(0.1, s.sensitivity + 0.1 * direction)), 2)

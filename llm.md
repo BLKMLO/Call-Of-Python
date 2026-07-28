@@ -45,14 +45,14 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 ```
 
 Le workflow `.github/workflows/ci.yml` rejoue compilation, contrôles Ruff
-critiques et les 60 tests sous Python 3.12 sur Ubuntu et Windows.
+critiques et les 67 tests sous Python 3.12 sur Ubuntu et Windows.
 
 ## Architecture
 
 | Fichier        | Rôle |
 |----------------|------|
 | `main.py`      | Point d'entrée, machine à états (menu / jeu / Sceau / Déferlement / fin), musique |
-| `settings.py`  | Paramètres + persistance JSON (résolution, volume, sensibilité, souris inversée, plein écran F11, touches, progression, records) |
+| `settings.py`  | Paramètres + persistance JSON (résolution, volumes effets/musique, sensibilité, souris inversée, plein écran F11, touches, progression, records) |
 | `menu.py`      | Menu principal, paramètres, fin de niveau, écran du Sceau, game over / victoire |
 | `game.py`      | Boucle de gameplay : entrées, tir hitscan, ramassages, alertes, portes, stats, caméra de mort |
 | `survival.py`  | Le Déferlement : vagues, délai de submersion dégressif, apparitions, ravitaillement |
@@ -250,18 +250,25 @@ d'implémentation et les décisions techniques non triviales.
     Cinq thèmes de campagne, le Déferlement et le menu utilisent désormais
     sept profils musicaux procéduraux distincts. Six tests portent la suite à
     60 tests.
+28. Impacts typés et mixage séparé : sang rouge/blessure sourde pour les
+    organiques, éclats/choc métallique pour le lourd et le Colosse, sang vert/
+    extinction pour tout possédé. Chaque impact est répliqué séparément en
+    coop. Les volumes des effets et de la musique deviennent indépendants,
+    avec migration de l'ancien volume global. Sept tests portent la suite à
+    67 tests.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Soixante
+- **Couverture de tests encore partielle mais en progrès.** Soixante-sept
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (13 contrôles robustesse) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
   survie, menus, coop loopback UDP, réglages, sons), qui remplacent les
   anciens `smoke_test2..11.py` jamais commités, plus
   `tests/test_gameplay_extensions.py` (11 tests Colosse, possédés, décors,
-  réseau étendu et tactile) et `tests/test_reload_music.py` (6 tests sur les
-  poses, le HUD, la progression de recharge et les profils musicaux).
+  réseau étendu et tactile), `tests/test_reload_music.py` (6 tests sur les
+  poses, le HUD, la progression de recharge et les profils musicaux) et
+  `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop).
 - **Ruff complet** : 20 remarques stylistiques préexistantes restent ouvertes.
   La CI bloque uniquement les erreurs Python critiques (`E9`, `F63`, `F7`,
   `F82`) afin de ne pas rendre toutes les PR rouges pour cette dette connue.
@@ -282,6 +289,26 @@ d'implémentation et les décisions techniques non triviales.
 
 Dernière mise à jour : 28 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche de travail `agent/reload-animations-level-music`.
+
+## Impacts typés et volumes séparés
+
+- `Enemy.impact_type` vaut `flesh` pour `Grunt`, `Soldier`, `Sniper` et
+  `Kamikaze`, `armor` pour `Heavy` et `Boss`, et toujours `possessed` lorsque
+  `Enemy.possessed` est actif. Cette priorité garantit que les lourds et
+  Colosses du Déferlement gardent l'identité alien verte.
+- `ParticleSystem.spawn_impact()` produit une gerbe rouge, des fragments
+  métalliques ou une gerbe verte. Le paramètre `fatal=True` augmente la gerbe
+  sans mélanger les palettes ; `spawn_death()` accepte le même type.
+- `SoundBank` expose `flesh_hit`, `armor_hit` et `possessed_hit`, synthétisés
+  respectivement comme blessure sourde, résonance métallique et flamme
+  étouffée. Les sons sont positionnels et atténués comme les anciens impacts.
+- L'hôte coop ajoute un événement `["ei", net_id, fatal]` pour chaque balle
+  encaissée. Le client supprime l'effet de repli fondé sur la variation de vie
+  lorsqu'un tel événement existe, puis rejoue chaque événement séparément.
+  Un hôte ancien reste compatible grâce au repli sur l'instantané de santé.
+- `Settings.sound_volume` et `Settings.music_volume` sont indépendants.
+  L'ancienne clé JSON `volume` initialise les deux valeurs ; la propriété
+  `Settings.volume` reste un alias de compatibilité qui écrit les deux.
 
 ## Animations de recharge et musiques contextuelles
 
@@ -596,7 +623,7 @@ branche de travail `agent/reload-animations-level-music`.
 
 ## Validation disponible
 
-La suite contient 60 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 67 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -633,6 +660,11 @@ coop après l'issue.
 la recharge, dimensions/alpha des quatre poses, mouvements distincts, rendu
 HUD réellement différent, couverture des sept profils musicaux et génération
 déterministe/distincte/raccordée.
+
+`tests/test_impact_audio.py` ajoute 7 contrôles : classification et priorité
+des matières, palettes de particules non mélangées, migration/persistance des
+deux volumes, lignes du menu, gains indépendants, réplication exacte des
+impacts coop et rejet des événements réseau malformés.
 
 Commande utilisée :
 
@@ -713,11 +745,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-60 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+67 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 13 contrôles robustesse/réseau ;
 `test_smoke.py` : 8 tests de fumée généraux ;
 `test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
-`test_reload_music.py` : 6 tests recharge/audio) :
+`test_reload_music.py` : 6 tests recharge/audio ;
+`test_impact_audio.py` : 7 tests impacts/volumes/menu/coop) :
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \

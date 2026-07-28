@@ -152,6 +152,58 @@ def _enemy_shot(duration=0.16):
                          noise_gain=0.55, punch=0.9, tail=0.35)
 
 
+def _flesh_hit(duration=0.16):
+    """Impact organique sourd d'une balle dans une cible non blindée."""
+    rng = random.Random(0xF1E5)
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    low = 0.0
+    phase = 0.0
+    for i in range(n):
+        t = i / n
+        low += (rng.uniform(-1.0, 1.0) - low) * 0.09
+        phase += 2 * math.pi * (105 - 45 * t) / SAMPLE_RATE
+        thump = math.sin(phase) * (1 - t) ** 5
+        samples.append(_clip((low * 1.2 + thump * 0.85) * (1 - t) ** 2))
+    return _pack(samples)
+
+
+def _armor_hit(duration=0.22):
+    """Éclat métallique bref, suivi d'une résonance de plaque blindée."""
+    rng = random.Random(0xA8A0)
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    for i in range(n):
+        t = i / n
+        seconds = i / SAMPLE_RATE
+        strike = rng.uniform(-1.0, 1.0) * (1 - t) ** 18
+        ring = (
+            math.sin(2 * math.pi * 1180 * seconds)
+            + 0.55 * math.sin(2 * math.pi * 1730 * seconds)
+            + 0.25 * math.sin(2 * math.pi * 2470 * seconds)
+        ) * (1 - t) ** 5
+        samples.append(_clip(strike * 0.8 + ring * 0.48))
+    return _pack(_with_tail(samples, delay=0.045, gain=0.2))
+
+
+def _possessed_hit(duration=0.30):
+    """Souffle humide et sifflant, comme une flamme alien qu'on étouffe."""
+    rng = random.Random(0xA11E)
+    n = int(SAMPLE_RATE * duration)
+    samples = []
+    hiss = 0.0
+    phase = 0.0
+    for i in range(n):
+        t = i / n
+        noise = rng.uniform(-1.0, 1.0)
+        hiss += (noise - hiss) * (0.48 - 0.30 * t)
+        phase += 2 * math.pi * (310 - 210 * t) / SAMPLE_RATE
+        extinguish = math.sin(phase) * math.sin(math.pi * t)
+        envelope = (1 - t) ** 1.8
+        samples.append(_clip((hiss * 0.75 + extinguish * 0.25) * envelope))
+    return _pack(samples)
+
+
 def _footstep(seed):
     """Pas feutré : bruit passé dans un passe-bas (thud sourd et court)."""
     rng = random.Random(seed)
@@ -300,7 +352,7 @@ MUSIC_PROFILES = {
 }
 # Alias historique : plusieurs appels et tests itèrent déjà sur MUSIC_KEYS.
 MUSIC_KEYS = MUSIC_PROFILES
-MUSIC_VOLUME = 0.35         # part du volume global réservée à la musique
+MUSIC_VOLUME = 0.35         # gain de mixage appliqué au curseur musique
 
 
 def _music_loop(key, duration=12.0):
@@ -420,7 +472,7 @@ def _music_loop(key, duration=12.0):
 
 class SoundBank:
     """Charge tous les sons ; applique volume, distance et panoramique au
-    moment de jouer (le curseur du menu agit donc immédiatement)."""
+    moment de jouer (le curseur des effets agit donc immédiatement)."""
 
     def __init__(self, settings):
         self.settings = settings
@@ -443,7 +495,11 @@ class SoundBank:
             "shotgun_shot": pygame.mixer.Sound(buffer=_shotgun()),
             "enemy_shot": pygame.mixer.Sound(buffer=_enemy_shot()),
             "player_hit": pygame.mixer.Sound(buffer=_tone(140, 0.18, slide=-60)),
-            "enemy_hit": pygame.mixer.Sound(buffer=_tone(520, 0.08, slide=-120)),
+            "flesh_hit": pygame.mixer.Sound(buffer=_flesh_hit()),
+            "armor_hit": pygame.mixer.Sound(buffer=_armor_hit()),
+            "possessed_hit": pygame.mixer.Sound(buffer=_possessed_hit()),
+            # Alias conservé pour d'éventuels appels externes anciens.
+            "enemy_hit": pygame.mixer.Sound(buffer=_flesh_hit()),
             "enemy_die": pygame.mixer.Sound(buffer=_tone(300, 0.35, slide=-220)),
             "reload": self._load_reload_sound(),
             "click": pygame.mixer.Sound(buffer=_tone(900, 0.05)),
@@ -479,7 +535,7 @@ class SoundBank:
         direction par rapport au regard."""
         if not self.enabled or name not in self.sounds:
             return
-        volume = self.settings.volume * volume_scale
+        volume = self.settings.sound_volume * volume_scale
         left = right = volume
         if pos is not None and listener is not None:
             gains = stereo_gains(volume, pos, listener)
@@ -520,7 +576,7 @@ class SoundBank:
     def refresh_music_volume(self):
         """Applique le volume courant à la musique (appelé quand il change)."""
         if self.enabled and self.music_channel is not None:
-            v = self.settings.volume * MUSIC_VOLUME
+            v = self.settings.music_volume * MUSIC_VOLUME
             if v != self._last_music_volume:
                 self.music_channel.set_volume(v, v)
                 self._last_music_volume = v

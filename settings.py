@@ -1,6 +1,6 @@
 """Gestion des paramètres du jeu.
 
-Centralise la résolution, le volume, la sensibilité de la souris et les
+Centralise la résolution, les volumes, la sensibilité de la souris et les
 touches de contrôle. Les paramètres sont sauvegardés dans un fichier JSON
 (`settings.json`) à côté du jeu afin d'être conservés entre deux sessions.
 """
@@ -96,7 +96,8 @@ class Settings:
 
     def __init__(self):
         self.resolution_index = 3        # 1280x720 par défaut
-        self.volume = 0.7                # volume global (0.0 → 1.0)
+        self.sound_volume = 0.7          # effets sonores (0.0 → 1.0)
+        self.music_volume = 0.7          # musique (0.0 → 1.0)
         self.sensitivity = 0.5           # sensibilité souris (0.1 → 1.0)
         self.invert_mouse = False        # inverse les deux axes de la souris
         self.fullscreen = False          # F11 : plein écran / mode fenêtré
@@ -113,6 +114,20 @@ class Settings:
     @property
     def resolution(self):
         return RESOLUTIONS[self.resolution_index]
+
+    @property
+    def volume(self):
+        """Compatibilité avec l'ancien réglage global.
+
+        Lire ``volume`` renvoie le volume des effets. L'écrire conserve le
+        comportement historique et applique la valeur aux deux curseurs.
+        """
+        return self.sound_volume
+
+    @volume.setter
+    def volume(self, value):
+        self.sound_volume = value
+        self.music_volume = value
 
     def key_name(self, action):
         """Nom lisible de la touche associée à une action (ex: 'Z')."""
@@ -139,7 +154,17 @@ class Settings:
                 data.get("resolution_index"), self.resolution_index,
                 0, len(RESOLUTIONS) - 1,
             )
-            self.volume = _safe_float(data.get("volume"), self.volume, 0.0, 1.0)
+            # Migration : les anciens fichiers ne contenaient qu'un volume
+            # global. Il devient la valeur initiale des deux curseurs.
+            legacy_volume = _safe_float(
+                data.get("volume"), self.sound_volume, 0.0, 1.0,
+            )
+            self.sound_volume = _safe_float(
+                data.get("sound_volume"), legacy_volume, 0.0, 1.0,
+            )
+            self.music_volume = _safe_float(
+                data.get("music_volume"), legacy_volume, 0.0, 1.0,
+            )
             self.sensitivity = _safe_float(
                 data.get("sensitivity"), self.sensitivity, 0.1, 1.0,
             )
@@ -184,7 +209,11 @@ class Settings:
         """Écrit les paramètres courants dans le JSON."""
         data = {
             "resolution_index": self.resolution_index,
-            "volume": self.volume,
+            # ``volume`` reste écrit pour qu'une ancienne version du jeu
+            # conserve au moins le niveau des effets.
+            "volume": self.sound_volume,
+            "sound_volume": self.sound_volume,
+            "music_volume": self.music_volume,
             "sensitivity": self.sensitivity,
             "invert_mouse": self.invert_mouse,
             "fullscreen": self.fullscreen,

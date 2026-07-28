@@ -153,6 +153,12 @@ class CoopHostGame(SurvivalGame):
                                     round(enemy.y, 2)])
         super()._explode(enemy)
 
+    def _on_enemy_impact(self, enemy, fatal=False):
+        """Affiche l'impact côté hôte et le réplique à chaque client."""
+        super()._on_enemy_impact(enemy, fatal=fatal)
+        if enemy.net_id is not None:
+            self.net_events.append(["ei", enemy.net_id, int(fatal)])
+
     # -- boucle ----------------------------------------------------------
     def update(self, dt):
         self.net_time += dt
@@ -743,8 +749,19 @@ class CoopClientGame:
         events = snap.get("ev", [])
         if not isinstance(players, list) or not isinstance(enemies, list):
             return
+        impact_ids = set()
+        if isinstance(events, list):
+            for event in events[:128]:
+                if (isinstance(event, (list, tuple)) and len(event) == 3
+                        and event[0] == "ei"
+                        and isinstance(event[1], int)
+                        and not isinstance(event[1], bool)
+                        and (isinstance(event[2], bool)
+                             or (isinstance(event[2], int)
+                                 and event[2] in (0, 1)))):
+                    impact_ids.add(event[1])
         self._apply_players(players)
-        self._apply_enemies(enemies)
+        self._apply_enemies(enemies, impact_ids)
         if isinstance(pickups, list):
             self._apply_pickups(pickups)
         self._apply_wave(wave)
@@ -821,8 +838,9 @@ class CoopClientGame:
         for pid in [p for p in self.allies if p not in seen]:
             del self.allies[pid]
 
-    def _apply_enemies(self, enemies):
+    def _apply_enemies(self, enemies, replicated_impact_ids=None):
         seen = set()
+        replicated_impact_ids = replicated_impact_ids or set()
         level = getattr(self, "level", None)
         max_x = getattr(level, "width", 100000.0)
         max_y = getattr(level, "height", 100000.0)
@@ -880,11 +898,13 @@ class CoopClientGame:
             if health <= 0 and ghost.alive:
                 ghost.roll_invuln = 0.0
                 ghost.take_damage(10 ** 6)
-                self.particles.spawn_death(ghost.x, ghost.y)
+                if net_id not in replicated_impact_ids:
+                    self._emit_enemy_impact(ghost, fatal=True)
                 self.sounds.play("enemy_die", volume_scale=0.8,
                                  pos=(ghost.x, ghost.y), listener=self.player)
             elif 0 < health < ghost.health:
-                self.particles.spawn_blood(ghost.x, ghost.y)
+                if net_id not in replicated_impact_ids:
+                    self._emit_enemy_impact(ghost)
                 ghost.hurt_timer = 0.09   # flash blanc de l'impact
                 ghost.health = health
             else:
@@ -985,6 +1005,16 @@ class CoopClientGame:
             killed = 1 if event[2] else 0
             self.stats["kills"] += killed
             self.hud.on_enemy_hit(killed=bool(killed))
+        elif kind == "ei" and len(event) == 3:
+            net_id, fatal = event[1], event[2]
+            if (isinstance(net_id, bool) or not isinstance(net_id, int)
+                    or not (isinstance(fatal, bool)
+                            or (isinstance(fatal, int)
+                                and fatal in (0, 1)))):
+                return
+            enemy = self.ghosts.get(net_id)
+            if enemy is not None:
+                self._emit_enemy_impact(enemy, fatal=bool(fatal))
         elif kind == "rs" and len(event) == 4 and event[1] == self.pid:
             x = _finite_float(event[2], 0.0, self.level.width)
             y = _finite_float(event[3], 0.0, self.level.height)
@@ -1009,6 +1039,16 @@ class CoopClientGame:
             weapon = next(w for w in self.player.weapons
                           if w.spec.id == weapon_id)
             self.hud.show_message("Arme récupérée : " + weapon.display_name)
+
+    def _emit_enemy_impact(self, enemy, fatal=False):
+        """Retour typé reçu de l'hôte, sans décider localement des dégâts."""
+        self.particles.spawn_impact(
+            enemy.x, enemy.y, enemy.impact_type, fatal=fatal,
+        )
+        self.sounds.play(
+            f"{enemy.impact_type}_hit", volume_scale=0.68,
+            pos=(enemy.x, enemy.y), listener=self.player,
+        )
 
     def _emit_sparkles(self, dt):
         self.sparkle_timer -= dt

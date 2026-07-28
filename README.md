@@ -46,8 +46,8 @@ stick gauche, une zone de visée par glissement et des boutons pour tirer,
 viser, rouler, recharger, changer d'arme, mettre en pause et revenir au menu.
 Le clavier et la souris restent utilisables en parallèle.
 
-La résolution, le volume, la sensibilité et les touches sont sauvegardés
-dans `settings.json`.
+La résolution, les volumes indépendants des effets et de la musique, la
+sensibilité et les touches sont sauvegardés dans `settings.json`.
 
 ## Modes de jeu
 
@@ -88,6 +88,9 @@ ne se termine que si tous les joueurs sont à terre simultanément.
 - **Combat FPS** : pistolet, fusil à pompe, fusil d'assaut et minigun avec
   recul, animation de recharge propre à chaque arme, niveaux d'amélioration
   et mise en joue.
+- **Impacts différenciés** : sang rouge et blessure sourde pour les cibles
+  organiques, éclats et choc métallique pour les blindés, sang vert et
+  extinction alien pour les possédés du Déferlement.
 - **Ennemis variés** : milicien, soldat, lourd, kamikaze, sniper et
   Colosse, avec sprites directionnels et animations.
 - **IA tactique** : détection, patrouille, alerte des alliés, couverture,
@@ -98,7 +101,8 @@ ne se termine que si tous les joueurs sont à terre simultanément.
   indicateurs de dégâts, barre de boss et compteur de FPS optionnel.
 - **Ambiance dynamique** : cycle solaire propre à chaque niveau, audio
   spatial et six thèmes procéduraux distincts — industriel, urbain, solennel,
-  militaire, laboratoire et lunaire — plus le thème du menu.
+  militaire, laboratoire et lunaire — plus le thème du menu — avec volumes
+  séparés pour la musique et les effets.
 - **Progression** : armes à ramasser, trousses de soins, packs de vie
   cachés, statistiques et records sauvegardés.
 - **Optimisations** : caches de mise à l'échelle, éclairage pré-calculé,

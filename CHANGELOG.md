@@ -17,6 +17,13 @@
 - **Coop rétrocompatible** : vie maximale et état possédé sont ajoutés en fin
   des lignes ennemies. Les packs du Colosse sont ajoutés après les booléens
   historiques des objets, donc les anciens clients les ignorent sans planter.
+- **Impacts selon la cible** : miliciens, soldats, snipers et kamikazes
+  projettent du sang rouge ; lourds et Colosse libèrent des éclats d'armure ;
+  tout ennemi possédé projette du sang vert. Les impacts fatals conservent la
+  matière de la cible au lieu de revenir à une gerbe rouge générique.
+- **Impacts coop hôte-autoritaires** : chaque balle encaissée est transmise
+  comme événement distinct, y compris plusieurs impacts sur le même ennemi
+  entre deux instantanés. Les clients plus anciens ignorent l'extension.
 
 ### Environnements et interface
 
@@ -35,6 +42,10 @@
   militaire, expérimental et alien. Le menu conserve un thème cinématique.
 - Les boucles restent déterministes, raccordées sans clic, générées sans
   dépendance externe et remplaçables par les fichiers de `assets/sound/`.
+- Trois sons d'impact synthétisés distinguent blessure organique sourde,
+  plaque métallique touchée et flamme possédée qui s'éteint.
+- Les Paramètres proposent deux volumes indépendants, « Effets sonores » et
+  « Musique ». L'ancien volume global est migré vers les deux valeurs.
 
 ### Fiabilité et automatisation
 
@@ -57,7 +68,9 @@
 - `tests/test_gameplay_extensions.py` contient désormais 11 non-régressions.
 - `tests/test_reload_music.py` ajoute 6 contrôles sur les poses, le rendu HUD,
   la progression de recharge et les identités musicales.
-  Suite complète : **60 tests, tous verts**.
+- `tests/test_impact_audio.py` ajoute 7 contrôles sur les matières, palettes,
+  volumes séparés, menu, migration et événements coop.
+  Suite complète : **67 tests, tous verts**.
 
 ## [2026-07-25]
 

@@ -289,6 +289,7 @@ class Enemy(Entity):
     ROLL_DURATION = 1.0
     ROLL_COOLDOWN = 3.0
     ROLL_SPEED = 2.8
+    IMPACT_TYPE = "flesh"
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
@@ -334,6 +335,13 @@ class Enemy(Entity):
     @property
     def rolling(self):
         return self.roll_timer > 0.0
+
+    @property
+    def impact_type(self):
+        """Matière utilisée par les particules et le son d'un impact."""
+        if self.possessed:
+            return "possessed"
+        return type(self).IMPACT_TYPE
 
     @property
     def roll_progress(self):
@@ -506,6 +514,7 @@ class Heavy(Enemy):
     DAMAGE = (10, 18)
     FIRE_DELAY = 0.9
     ATTACK_RANGE = 6.0
+    IMPACT_TYPE = "armor"
 
 
 class Kamikaze(Enemy):
@@ -554,6 +563,7 @@ class Boss(Enemy):
     DETECT_RANGE = 14.0
     TAKES_COVER = False
     IS_BOSS = True
+    IMPACT_TYPE = "armor"
 
     PHASE_THRESHOLDS = (2 / 3, 1 / 3)
     PHASE_SPEEDS = (1.15, 1.28, 1.42)
