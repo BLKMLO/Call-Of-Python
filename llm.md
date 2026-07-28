@@ -45,7 +45,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 ```
 
 Le workflow `.github/workflows/ci.yml` rejoue compilation, contrôles Ruff
-critiques et les 67 tests sous Python 3.12 sur Ubuntu et Windows.
+critiques et les 77 tests sous Python 3.12 sur Ubuntu et Windows.
 
 ## Architecture
 
@@ -256,10 +256,15 @@ d'implémentation et les décisions techniques non triviales.
     coop. Les volumes des effets et de la musique deviennent indépendants,
     avec migration de l'ancien volume global. Sept tests portent la suite à
     67 tests.
+29. Corrections P0/P1 de l'audit : cache de billboards LRU limité à 64 Mio,
+    protocole coop v2 séquencé et acquitté, compression UDP, inventaire
+    autoritaire, validation complète des armes/cadences/munitions, pause hôte
+    globale, budget de déplacement temporel et collisions joueurs/ennemis.
+    Dix tests adversariaux portent la suite à 77 tests.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Soixante-sept
+- **Couverture de tests encore partielle mais en progrès.** Soixante-dix-sept
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (13 contrôles robustesse) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
@@ -268,8 +273,10 @@ d'implémentation et les décisions techniques non triviales.
   `tests/test_gameplay_extensions.py` (11 tests Colosse, possédés, décors,
   réseau étendu et tactile), `tests/test_reload_music.py` (6 tests sur les
   poses, le HUD, la progression de recharge et les profils musicaux) et
-  `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop).
-- **Ruff complet** : 20 remarques stylistiques préexistantes restent ouvertes.
+  `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop), plus
+  `tests/test_p0_p1.py` (10 tests de mémoire, protocole, sécurité hôte,
+  collisions et pause coop).
+- **Ruff complet** : 19 remarques stylistiques préexistantes restent ouvertes.
   La CI bloque uniquement les erreurs Python critiques (`E9`, `F63`, `F7`,
   `F82`) afin de ne pas rendre toutes les PR rouges pour cette dette connue.
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
@@ -289,6 +296,54 @@ d'implémentation et les décisions techniques non triviales.
 
 Dernière mise à jour : 28 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche de travail `agent/reload-animations-level-music`.
+
+## Corrections P0/P1 de robustesse
+
+- `Raycaster._sprite_cache` est un LRU pondéré par la taille SDL réelle
+  (`pitch × hauteur`), limité à `64 Mio` et `512` surfaces. Une surface plus
+  grosse que le budget est rendue sans être conservée. Ne pas réutiliser la
+  limite historique de `4000` entrées pour les billboards ; elle autorisait
+  près de `940 Mio` de RSS supplémentaire dans le scénario d'audit.
+  `_wall_cache` conserve en revanche son FIFO à éviction unique, car ses
+  colonnes étroites et l'invariant anti-pic sont différents.
+- Le protocole coop courant vaut `PROTOCOL_VERSION = 2`. Le handshake fournit
+  un `session_id`; chaque entrée possède `iq`, chaque instantané `sq`, et le
+  client rejette toute autre session ainsi que les séquences anciennes ou
+  dupliquées. Les événements fiables `rev` portent leur propre numéro, restent
+  dans un journal borné jusqu'à l'acquittement `ea`, et sont appliqués
+  strictement dans l'ordre. `eb` permet une reprise bornée si un client dépasse
+  exceptionnellement la fenêtre de `512` événements.
+- La position de réapparition et la santé sont déjà dans la ligne joueur ;
+  le client restaure donc aussi sa réapparition depuis cet état, sans dépendre
+  du seul événement `rs`. Chaque ligne joueur ajoute en fin de tableau
+  l'inventaire `[weapon_id, level]` et l'arme active : un événement `wpk` perdu
+  ne supprime plus définitivement une arme. Les anciens lecteurs ignorent ces
+  champs ajoutés en fin de ligne.
+- Les instantanés v2 supérieurs à `1100` octets sont compressés par `UdpPeer`
+  avec le préfixe `Z1`. La décompression est bornée à `BUFFER_SIZE`; ne jamais
+  accepter un flux zlib non terminé, des données supplémentaires ou une
+  expansion sans limite.
+- Un tir client v2 est un déclenchement `[weapon_id, [angles...]]`. L'hôte
+  possède ses propres instances `Weapon` et dérive chargeur, cadence, recharge,
+  dégâts, rayon d'impact, dispersion et nombre exact de plombs. Les anciens
+  couples `[angle, dégâts]` sont volontairement refusés : un ancien client
+  peut lire les instantanés compatibles, mais doit être mis à jour pour tirer.
+- Le déplacement distant consomme un crédit alimenté par `net_time`, à
+  `Player.SPEED` hors roulade et `Player.ROLL_SPEED` pendant l'action, avec
+  seulement `0,15 s` de capacité et `0,03` case de marge. Plusieurs paquets
+  dans la même frame ne recréent aucun crédit. ADS applique aussi son
+  multiplicateur de vitesse.
+- `Player.move(..., blockers=...)` sous-échantillonne marche et roulade contre
+  les cercles vivants. Le solo, l'hôte et la prédiction cliente passent leurs
+  ennemis/coéquipiers comme obstacles ; `_separate_enemies()` résout aussi les
+  chevauchements créés par l'IA. Un joueur déjà chevauché reste autorisé à
+  s'éloigner.
+- L'instantané réplique `pa`. `CoopHostGame._handle_input()` conserve
+  séquences/acquittements pendant la pause mais refuse position, angle,
+  roulade, recharge et tir. Le client utilise `controls_paused`, purge les
+  actions maintenues et se recale sur la position hôte.
+- `Player.update()` met à jour toutes les armes possédées : une recharge
+  continue lorsque l'arme est rangée.
 
 ## Impacts typés et volumes séparés
 
@@ -442,20 +497,17 @@ branche de travail `agent/reload-animations-level-music`.
   imbrications invalides et ne traite jamais plus de `128` datagrammes dans
   une image. Cela empêche une liste JSON ou un flot UDP de faire planter ou
   d'affamer la boucle de rendu.
-- La coop reste hôte-autoritaire mais valide désormais réellement les entrées
-  clientes : quatre joueurs maximum (hôte + 3), adresse source exacte,
-  identifiants typés, coordonnées/angles finis, déplacement plafonné puis
-  sous-échantillonné contre les collisions, et roulade/i-frames démarrées par
-  l'horloge de l'hôte. Le numéro monotone `rs`, ou un front montant pour les
-  anciens clients, empêche donc `rt=0.5` répété ou retardé de redéclencher une
-  action sans nouvelle commande.
-- Les tirs distants sont bornés à `32` événements par paquet, à `20` crédits
-  par seconde avec capacité `14`, aux dégâts maximaux légitimes d'une arme
-  Mk. IV et à `0.18 rad` autour de l'orientation annoncée. Les rafales locales
-  en attente sont elles aussi plafonnées : une reconnexion ne rejoue pas cinq
-  secondes de minigun d'un coup. Ce n'est pas un système anti-triche Internet,
-  mais les téléportations, dégâts arbitraires et dénis de service LAN les plus
-  évidents ne sont plus acceptés.
+- La coop reste hôte-autoritaire : quatre joueurs maximum (hôte + 3), adresse
+  source et session exactes, séquence `iq`, coordonnées/angles finis, crédit
+  de déplacement alimenté uniquement par l'horloge hôte, collisions dynamiques
+  sous-échantillonnées et roulade/i-frames démarrées par l'hôte. `rs` identifie
+  toujours chaque roulade, en plus de la séquence générale du paquet.
+- Les tirs distants sont bornés à `32` déclenchements par paquet, mais le vieux
+  seau générique de crédits/dégâts déclarés est remplacé par les instances
+  `Weapon` de l'hôte. Une reconnexion ne rejoue toujours pas cinq secondes de
+  minigun d'un coup. Ce n'est pas un système anti-triche Internet, mais les
+  téléportations, dégâts arbitraires, munitions infinies, cadences falsifiées
+  et dénis de service LAN les plus évidents ne sont plus acceptés.
 - Tous les instantanés reçus sont vérifiés avant indexation : lignes trop
   courtes, types d'ennemis inconnus, `NaN`/infinis, événements incomplets,
   santé, vague et positions hors bornes sont ignorés. La santé et la mort
@@ -614,6 +666,13 @@ branche de travail `agent/reload-animations-level-music`.
   invincibilité, des dégâts ou une cadence décidés sans borne par le client.
   La compatibilité des anciens instantanés concerne leur lecture, pas le
   relâchement des contrôles de l'hôte.
+- Le protocole v2 exige `session_id`, `iq` et `sq`; les événements `rev` ne
+  sont consommés qu'en séquence contiguë puis acquittés par `ea`. Ne jamais
+  vider le journal après un seul envoi ni réaccepter `[angle, dégâts]`.
+- `_sprite_cache_bytes` doit toujours rester inférieur ou égal à
+  `_sprite_cache_budget`. Toute insertion ou nouvelle forme de surface mise
+  en cache doit comptabiliser `get_pitch() * get_height()` et maintenir
+  l'ordre LRU. Cette règle ne modifie pas le FIFO mural.
 - `RemotePlayer.shield` est simulé par l'hôte. Une réapparition doit remettre
   santé, roulade, cooldown et bouclier ensemble ; côté client, un instantané
   de mort doit d'abord annuler bouclier/i-frames avant de poser le cadavre.
@@ -623,7 +682,7 @@ branche de travail `agent/reload-animations-level-music`.
 
 ## Validation disponible
 
-La suite contient 67 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 77 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -636,8 +695,8 @@ nouveau fond de menu.
 `tests/test_cleanup.py` ajoute 13 contrôles : paquets UDP bornés et non-objets,
 réglages malformés/sauvegarde atomique/JSON imbriqué (RecursionError), IPv4,
 conflits et touches réservées, téléportation/`NaN`/spam de roulade, séquences
-de roulades enchaînées et paquets retardés, budget de tir/dégâts, bouclier et
-mort autoritaires en coop, commandes ignorées en pause, cache du sprite
+de roulades enchaînées et paquets retardés, validation autoritaire des armes,
+bouclier et mort en coop, commandes ignorées en pause, cache du sprite
 d'arme, mise en page de mort à basse résolution et file d'apparitions en
 temps constant.
 
@@ -665,6 +724,12 @@ déterministe/distincte/raccordée.
 des matières, palettes de particules non mélangées, migration/persistance des
 deux volumes, lignes du menu, gains indépendants, réplication exacte des
 impacts coop et rejet des événements réseau malformés.
+
+`tests/test_p0_p1.py` ajoute 10 contrôles adversariaux : budget mémoire LRU,
+collision joueur/ennemi avec grand `dt`, débit distant alimenté par l'horloge
+hôte, pause globale, séquence d'entrée, retransmission jusqu'à acquittement,
+session/ordre des instantanés, réparation de l'inventaire, compression UDP et
+recharge d'une arme rangée.
 
 Commande utilisée :
 
@@ -745,12 +810,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
-67 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+77 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 13 contrôles robustesse/réseau ;
 `test_smoke.py` : 8 tests de fumée généraux ;
 `test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
 `test_reload_music.py` : 6 tests recharge/audio ;
-`test_impact_audio.py` : 7 tests impacts/volumes/menu/coop) :
+`test_impact_audio.py` : 7 tests impacts/volumes/menu/coop ;
+`test_p0_p1.py` : 10 tests mémoire/protocole/collisions/sécurité) :
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
@@ -784,8 +850,9 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
 
 - **Monde y-vers-le-bas** : angle 0 = est, angle croissant = tourner à DROITE.
   Toute la chaîne (rendu, soleil, étoiles, stéréo) est cohérente (commit `984b279`).
-- **Cache mural** : FIFO borné, éviction d'UNE entrée par insertion — jamais
-  d'éviction en bloc (pics de lag ~200 ms).
+- **Caches de rendu** : cache mural FIFO, éviction d'UNE entrée par insertion
+  — jamais en bloc (pics de lag ~200 ms). Cache de billboards LRU pondéré par
+  `pitch × hauteur`, strictement limité à 64 Mio et 512 entrées.
 - **ADS** : `zoom_screen()` recadre l'image rendue (post-traitement) — ne pas
   changer le FOV par frame (invalide le cache).
 - **Murs en couches** (`cast_ray_layers`) : traverse plusieurs murs, n'élague que
@@ -839,12 +906,14 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
   `v_offset` ~0,11. Mur `wall_sealed_portal` en `(28,18)` de MAP_LAB (pas (28,19)).
   Animations de props = locales, jamais dans les instantanés coop.
 - **Réseau** : UDP non fiable même en LAN — valider AVANT d'indexer (pas de
-  NaN/inf, positions/dégâts/i-frames/cadence bornés côté hôte). Nouveaux champs
-  ajoutés EN FIN de ligne, tolérance aux instantanés plus courts (7/8/9 champs).
-  Tirs distants : ≤32 événements/paquet, 20 crédits/s (capacité 14), dégâts ≤
-  Mk. IV, 0,18 rad autour de l'orientation. Réapparition = santé + roulade +
-  cooldown + bouclier ensemble ; un instantané de mort annule d'abord bouclier/
-  i-frames. `spawn_queue` = `deque` (`extend`/`popleft`, jamais `pop(0)`).
+  NaN/inf, positions/dégâts/i-frames/cadence décidés par le client). Protocole
+  v2 : session, `iq`/`sq`, événements `rev` contigus acquittés par `ea`,
+  compression `Z1` bornée. Nouveaux champs ajoutés EN FIN de ligne, tolérance
+  aux instantanés plus courts. Tirs : ≤32 déclenchements/paquet, instances
+  `Weapon` hôte, vieux `[angle, dégâts]` refusés. Réapparition = santé +
+  roulade + cooldown + bouclier ensemble ; un instantané de mort annule
+  d'abord bouclier/i-frames. `spawn_queue` = `deque` (`extend`/`popleft`,
+  jamais `pop(0)`).
 - **Settings** : JSON ≤ 64 KiB, types stricts, progression plafonnée, IPv4
   validée ; Échap/F11 non remappables ; conflit de touches = échange.
 - **Divers** : `SLOT_SCANCODES` (AZERTY/QWERTY) ; molette `event.flipped` ;

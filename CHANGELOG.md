@@ -14,9 +14,10 @@
 - **Déferlement possédé** : toutes les apparitions lunaires utilisent une
   aura et des yeux verts mis en cache depuis les sprites existants. Le soldat
   entraîné perd sa roulade et ralentit ; le milicien est également ralenti.
-- **Coop rétrocompatible** : vie maximale et état possédé sont ajoutés en fin
-  des lignes ennemies. Les packs du Colosse sont ajoutés après les booléens
-  historiques des objets, donc les anciens clients les ignorent sans planter.
+- **Instantanés coop rétrocompatibles** : vie maximale et état possédé sont
+  ajoutés en fin des lignes ennemies. Les packs du Colosse sont ajoutés après
+  les booléens historiques des objets, donc les anciens clients les ignorent
+  sans planter.
 - **Impacts selon la cible** : miliciens, soldats, snipers et kamikazes
   projettent du sang rouge ; lourds et Colosse libèrent des éclats d'armure ;
   tout ennemi possédé projette du sang vert. Les impacts fatals conservent la
@@ -49,6 +50,31 @@
 
 ### Fiabilité et automatisation
 
+- Le cache des billboards est maintenant un LRU pondéré limité à `64 Mio`
+  réels (`pitch × hauteur`) et `512` entrées. Le scénario de charge
+  `1600×900`, 24 sprites et 900 images reste à `63,91 Mio` de cache au lieu
+  d'une croissance proche du Gio.
+- Le protocole coop v2 ajoute un identifiant de session et des séquences
+  monotones pour les entrées et instantanés. Les paquets anciens, dupliqués ou
+  issus d'une autre session ne peuvent plus faire régresser l'état.
+- Les événements UDP sont numérotés, rejoués jusqu'à acquittement et bornés.
+  La réapparition est aussi reconstruite depuis l'état joueur, et l'inventaire
+  possédé est inclus dans chaque instantané : perdre un datagramme ne supprime
+  plus définitivement une arme ou une réapparition.
+- Les instantanés v2 de plus de `1100` octets sont compressés avec une taille
+  décompressée strictement bornée, ce qui évite la fragmentation IP des états
+  chargés du Déferlement.
+- L'hôte recalcule les tirs depuis l'arme autorisée : chargeur, cadence,
+  recharge, nombre de plombs, dispersion et dégâts ne sont plus décidés par
+  le client. Par sécurité, les anciens événements `[angle, dégâts]` ne sont
+  plus acceptés ; tous les joueurs actifs doivent utiliser le protocole v2.
+- Le déplacement distant utilise un crédit alimenté par l'horloge de l'hôte,
+  à `3,2 cases/s` hors roulade, au lieu d'une allocation renouvelable par
+  paquet. Les joueurs, ennemis et coéquipiers ont des collisions dynamiques
+  sous-échantillonnées et ne peuvent plus se traverser.
+- La pause de l'hôte est répliquée et bloque déplacement, roulade, recharge et
+  tir de tous les clients, tout en maintenant les acquittements réseau.
+- Une recharge continue lorsque l'arme est rangée.
 - Un pack de phase du Colosse n'est plus perdu lorsque sa zone d'apparition
   est momentanément encombrée : les cadavres sont ignorés et l'événement est
   retenté jusqu'à ce qu'un emplacement praticable soit disponible.
@@ -70,7 +96,10 @@
   la progression de recharge et les identités musicales.
 - `tests/test_impact_audio.py` ajoute 7 contrôles sur les matières, palettes,
   volumes séparés, menu, migration et événements coop.
-  Suite complète : **67 tests, tous verts**.
+- `tests/test_p0_p1.py` ajoute 10 contrôles adversariaux : budget mémoire,
+  collisions, débit réel, pause hôte, séquences entrée/instantané, retransmission
+  acquittée, réparation d'inventaire, compression UDP et recharge rangée.
+  Suite complète : **77 tests, tous verts**.
 
 ## [2026-07-25]
 

@@ -10,10 +10,14 @@ jeu : aucun thread.
 import json
 import socket
 import sys
+import zlib
 
 DEFAULT_PORT = 5577
 BUFFER_SIZE = 65507          # taille utile maximale d'un datagramme IPv4/UDP
 MAX_MESSAGES_PER_TICK = 128 # un flot LAN ne doit pas affamer le rendu
+UDP_COMPRESS_THRESHOLD = 1100
+MAX_DECOMPRESSED_SIZE = BUFFER_SIZE
+COMPRESSED_PREFIX = b"Z1"
 
 
 class UdpPeer:
@@ -34,12 +38,21 @@ class UdpPeer:
                 self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.bind(("", port))
 
-    def send(self, message, addr):
-        """Envoie un dict JSON à `addr` ; silencieux en cas d'échec réseau."""
+    def send(self, message, addr, compress=False):
+        """Envoie un dict JSON, compressé si demandé et utile.
+
+        Le préfixe court garde la lecture rétrocompatible des datagrammes JSON
+        historiques. La compression des gros instantanés réduit fortement la
+        fragmentation IP, donc la probabilité de perdre tout le datagramme.
+        """
         try:
             data = json.dumps(message, separators=(",", ":")).encode()
+            if compress and len(data) >= UDP_COMPRESS_THRESHOLD:
+                compressed = COMPRESSED_PREFIX + zlib.compress(data, level=3)
+                if len(compressed) < len(data):
+                    data = compressed
             self.sock.sendto(data, addr)
-        except OSError:
+        except (OSError, TypeError, ValueError, RecursionError):
             pass  # câble débranché, hôte injoignable... le jeu continue
 
     def receive(self, limit=MAX_MESSAGES_PER_TICK):
@@ -53,10 +66,21 @@ class UdpPeer:
             except OSError:
                 break
             try:
+                if data.startswith(COMPRESSED_PREFIX):
+                    inflater = zlib.decompressobj()
+                    data = inflater.decompress(
+                        data[len(COMPRESSED_PREFIX):],
+                        MAX_DECOMPRESSED_SIZE + 1,
+                    )
+                    if (len(data) > MAX_DECOMPRESSED_SIZE
+                            or not inflater.eof
+                            or inflater.unused_data):
+                        continue
                 message = json.loads(data.decode())
                 if isinstance(message, dict):
                     messages.append((message, addr))
-            except (ValueError, UnicodeDecodeError, RecursionError):
+            except (ValueError, UnicodeDecodeError, RecursionError,
+                    zlib.error):
                 pass  # datagramme corrompu : ignoré
         return messages
 

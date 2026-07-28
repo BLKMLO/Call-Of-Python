@@ -79,7 +79,10 @@ distribués à intervalles réguliers.
 Le mode est jouable seul ou en coopération LAN. Un joueur héberge la
 partie sur le port UDP `5577`, jusqu'à trois autres joueurs rejoignent son
 adresse IPv4 locale. L'hôte valide déplacements, roulades et tirs ; la partie
-ne se termine que si tous les joueurs sont à terre simultanément.
+ne se termine que si tous les joueurs sont à terre simultanément. Tous les
+joueurs actifs doivent utiliser la version actuelle du protocole : un ancien
+client peut encore recevoir les instantanés compatibles, mais ses tirs au
+format non vérifiable sont refusés par l'hôte.
 
 ## Fonctionnalités principales
 
@@ -105,8 +108,9 @@ ne se termine que si tous les joueurs sont à terre simultanément.
   séparés pour la musique et les effets.
 - **Progression** : armes à ramasser, trousses de soins, packs de vie
   cachés, statistiques et records sauvegardés.
-- **Optimisations** : caches de mise à l'échelle, éclairage pré-calculé,
-  raycasting optimisé et calculs d'IA cadencés.
+- **Optimisations** : cache de billboards LRU limité à 64 Mio, éclairage
+  pré-calculé, raycasting optimisé, instantanés LAN compressés et calculs
+  d'IA cadencés.
 
 Des fichiers audio personnalisés peuvent être placés dans `assets/sound/`
 aux formats MP3, OGG, WAV ou FLAC : `menu`, `survival`, `reload` et les

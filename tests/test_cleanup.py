@@ -15,12 +15,16 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 import pygame
 
 import settings as settings_module
-from coop import (MAX_REMOTE_DAMAGE, REMOTE_FIRE_CAPACITY, CoopClientGame,
-                  CoopHostGame)
+from coop import (
+    PROTOCOL_VERSION,
+    CoopClientGame,
+    CoopHostGame,
+    _starting_remote_weapons,
+)
 from entities import Player, RemotePlayer
 from game import Game
 from hud import HUD
-from level import Level, SURVIVAL_LEVEL
+from level import SURVIVAL_LEVEL, Level
 from network import UdpPeer
 from settings import DEFAULT_KEYS, RESERVED_KEYS, Settings, valid_ipv4
 from survival import SurvivalGame
@@ -115,12 +119,24 @@ class CleanupTests(unittest.TestCase):
         host = CoopHostGame.__new__(CoopHostGame)
         host.level = Level(4, config=SURVIVAL_LEVEL)
         host.net_time = 0.1
+        host.paused = False
+        host.outcome = None
+        host.enemies = []
+        host.player = Player(*host.level.player_spawn)
+        host.player.health = 0
+        host.session_id = "cleanup-session"
+        host.event_sequence = 0
         remote = RemotePlayer(1, *host.level.player_spawn)
         host.clients = {1: {
             "addr": ("127.0.0.1", 9000), "player": remote,
-            "last_seen": 0.0, "fire_budget": REMOTE_FIRE_CAPACITY,
+            "last_seen": 0.0, "protocol": PROTOCOL_VERSION,
+            "last_input_sequence": -1, "last_reload_sequence": 0,
+            "event_ack": 0, "last_roll_sequence": 0,
+            "pending_roll_sequence": None, "legacy_roll_latched": False,
+            "weapons": _starting_remote_weapons(),
+            "active_weapon": "rifle",
         }}
-        host._resolve_remote_fire = Mock()
+        host._resolve_remote_shot = Mock()
         return host, remote
 
     def test_host_rejects_teleport_nan_damage_and_roll_spam(self):
@@ -129,18 +145,20 @@ class CleanupTests(unittest.TestCase):
         host._handle_input({
             "id": 1, "x": remote.x + 100, "y": remote.y,
             "a": 0.0, "rt": 0.5,
-            "fx": [[0.0, MAX_REMOTE_DAMAGE + 100]] * 100,
+            "sid": host.session_id, "iq": 1,
+            "fx": [[0.0, 999999]] * 100,
         }, ("127.0.0.1", 9000))
         self.assertLessEqual(math.hypot(remote.x - start[0], remote.y - start[1]),
                              0.65 + 1e-6)
         self.assertTrue(remote.rolling)
-        host._resolve_remote_fire.assert_not_called()
+        host._resolve_remote_shot.assert_not_called()
 
         remote.update_timers(0.56)
         host.net_time += 0.1
         host._handle_input({
             "id": 1, "x": float("nan"), "y": remote.y,
-            "a": 0.0, "rt": 0.5, "fx": [],
+            "a": 0.0, "rt": 0.5, "sid": host.session_id,
+            "iq": 2, "fx": [],
         }, ("127.0.0.1", 9000))
         # Ancien protocole : le même `rt` répété ou retardé n'est pas un
         # nouveau déclenchement, même sans cooldown de gameplay.
@@ -152,7 +170,8 @@ class CleanupTests(unittest.TestCase):
 
         host._handle_input({
             "id": 1, "x": remote.x, "y": remote.y,
-            "a": 0.0, "rt": Player.ROLL_DURATION, "rs": 1, "fx": [],
+            "a": 0.0, "rt": Player.ROLL_DURATION, "rs": 1,
+            "sid": host.session_id, "iq": 1, "fx": [],
         }, address)
         self.assertTrue(remote.rolling)
         remote.update_timers(Player.ROLL_DURATION + 0.01)
@@ -160,7 +179,8 @@ class CleanupTests(unittest.TestCase):
         host.net_time += 0.1
         host._handle_input({
             "id": 1, "x": remote.x, "y": remote.y,
-            "a": 0.0, "rt": Player.ROLL_DURATION, "rs": 2, "fx": [],
+            "a": 0.0, "rt": Player.ROLL_DURATION, "rs": 2,
+            "sid": host.session_id, "iq": 2, "fx": [],
         }, address)
         self.assertTrue(remote.rolling)
         remote.update_timers(Player.ROLL_DURATION + 0.01)
@@ -168,21 +188,39 @@ class CleanupTests(unittest.TestCase):
         host.net_time += 0.1
         host._handle_input({
             "id": 1, "x": remote.x, "y": remote.y,
-            "a": 0.0, "rt": 0.2, "rs": 1, "fx": [],
+            "a": 0.0, "rt": 0.2, "rs": 1,
+            "sid": host.session_id, "iq": 3, "fx": [],
         }, address)
         self.assertFalse(remote.rolling)
 
-    def test_host_caps_remote_fire_budget_and_damage(self):
+    def test_host_derives_remote_fire_from_authoritative_weapon(self):
         host, remote = self._host_with_remote()
         remote.shield = 0.0
-        valid = [[0.0, MAX_REMOTE_DAMAGE]] * 32
-        host._handle_input({"id": 1, "x": remote.x, "y": remote.y,
-                            "a": 0.0, "rt": 0.0, "fx": valid},
-                           ("127.0.0.1", 9000))
-        self.assertLessEqual(host._resolve_remote_fire.call_count,
-                             int(REMOTE_FIRE_CAPACITY))
-        self.assertTrue(all(call.args[3] <= MAX_REMOTE_DAMAGE
-                            for call in host._resolve_remote_fire.call_args_list))
+        address = ("127.0.0.1", 9000)
+        host._handle_input({
+            "id": 1, "sid": host.session_id, "iq": 1,
+            "x": remote.x, "y": remote.y, "a": 0.0, "rt": 0.0,
+            "wid": "pistol", "fx": [["pistol", [0.0]]],
+        }, address)
+        host._resolve_remote_shot.assert_called_once()
+        pistol = host.clients[1]["weapons"]["pistol"]
+        self.assertEqual(pistol.ammo, pistol.spec.magazine_size - 1)
+
+        # Cadence autoritaire : le deuxième paquet immédiat ne tire pas.
+        host._handle_input({
+            "id": 1, "sid": host.session_id, "iq": 2,
+            "x": remote.x, "y": remote.y, "a": 0.0, "rt": 0.0,
+            "wid": "pistol", "fx": [["pistol", [0.0]]],
+        }, address)
+        self.assertEqual(host._resolve_remote_shot.call_count, 1)
+
+        # L'ancien format [angle, dégâts] n'est plus accepté.
+        host._handle_input({
+            "id": 1, "sid": host.session_id, "iq": 3,
+            "x": remote.x, "y": remote.y, "a": 0.0, "rt": 0.0,
+            "wid": "pistol", "fx": [[0.0, 999999]],
+        }, address)
+        self.assertEqual(host._resolve_remote_shot.call_count, 1)
 
     def test_remote_spawn_shield_and_authoritative_snapshot_death(self):
         remote = RemotePlayer(2, 2.0, 2.0)
