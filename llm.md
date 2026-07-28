@@ -45,7 +45,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 ```
 
 Le workflow `.github/workflows/ci.yml` rejoue compilation, contrôles Ruff
-critiques et les 54 tests sous Python 3.12 sur Ubuntu et Windows.
+critiques et les 60 tests sous Python 3.12 sur Ubuntu et Windows.
 
 ## Architecture
 
@@ -65,7 +65,7 @@ critiques et les 54 tests sous Python 3.12 sur Ubuntu et Windows.
 | `weapons.py`   | Specs des armes + niveaux d'amélioration (Mk. II...) |
 | `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss, écran de mort |
 | `particles.py` | Particules 3D (sang, impacts, poussière, surgissements) |
-| `sounds.py`    | Effets + musique synthétisés en pur Python (+ overrides fichiers réels dans `assets/sound/`) |
+| `sounds.py`    | Effets + sept thèmes contextuels synthétisés en pur Python (+ overrides fichiers réels dans `assets/sound/`) |
 | `assets.py`    | Chargement des PNG (`assets/`) ; générateurs procéduraux de secours (`_BUILDERS`) si un PNG manque |
 
 `README.md` documente le gameplay côté joueur en détail — s'y référer pour
@@ -137,7 +137,9 @@ d'implémentation et les décisions techniques non triviales.
   optionnel. `reload.<ext>` remplace le clic synthétisé ; `<n>.<ext>`
   (n = numéro affiché du niveau, 1..5) ou `menu.<ext>`/`survival.<ext>`
   remplacent la nappe procédurale. Extensions essayées dans l'ordre
-  `AUDIO_EXTENSIONS` (ogg, mp3, wav, flac).
+  `AUDIO_EXTENSIONS` (ogg, mp3, wav, flac). Sans fichier, chaque contexte
+  utilise son propre `MusicProfile` (racine, tempo, motif et timbre) et une
+  boucle déterministe de 12 secondes raccordée sans clic.
 - **Coop LAN** : `CoopHostGame` hérite de `SurvivalGame` (hôte
   autoritaire) ; `CoopClientGame` est une classe indépendante qui expose
   la même interface (`handle_event`/`update`/`draw`/`finished`/`outcome`)
@@ -242,17 +244,24 @@ d'implémentation et les décisions techniques non triviales.
     interdite après l'issue et œil de profil possédé correctement miroir.
     Pygame est fixé à 2.6.1 et une CI GitHub Actions Linux/Windows automatise
     compilation, erreurs Python critiques et 54 tests.
+27. Animations de recharge et identité audio : quatre poses détaillées
+    `fp_<id>_reload` générées à partir des armes existantes, interpolation et
+    mouvements propres dans le HUD, progression normalisée dans `Weapon`.
+    Cinq thèmes de campagne, le Déferlement et le menu utilisent désormais
+    sept profils musicaux procéduraux distincts. Six tests portent la suite à
+    60 tests.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Cinquante-quatre
+- **Couverture de tests encore partielle mais en progrès.** Soixante
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (13 contrôles robustesse) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
   survie, menus, coop loopback UDP, réglages, sons), qui remplacent les
   anciens `smoke_test2..11.py` jamais commités, plus
   `tests/test_gameplay_extensions.py` (11 tests Colosse, possédés, décors,
-  réseau étendu et tactile).
+  réseau étendu et tactile) et `tests/test_reload_music.py` (6 tests sur les
+  poses, le HUD, la progression de recharge et les profils musicaux).
 - **Ruff complet** : 20 remarques stylistiques préexistantes restent ouvertes.
   La CI bloque uniquement les erreurs Python critiques (`E9`, `F63`, `F7`,
   `F82`) afin de ne pas rendre toutes les PR rouges pour cette dette connue.
@@ -271,8 +280,35 @@ d'implémentation et les décisions techniques non triviales.
 
 # Call of Python — contexte de reprise GPT
 
-Dernière mise à jour : 27 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
-branche de travail `agent/bugfix-ci`.
+Dernière mise à jour : 28 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
+branche de travail `agent/reload-animations-level-music`.
+
+## Animations de recharge et musiques contextuelles
+
+- Les quatre armes disposent d'une pose dédiée `fp_<id>_reload.png`, dérivée
+  du sprite détaillé existant : chargeur extrait du pistolet, pompe ouverte du
+  fusil à pompe, chargeur inséré du fusil d'assaut et bande alimentée du
+  minigun. Les fichiers restent en `192x144`, avec alpha et coins
+  transparents. Les builders historiques de `assets.py` replient sur la pose
+  normale si un PNG de recharge manque.
+- `Weapon.reload_progress` expose une progression bornée `[0, 1]` uniquement
+  pendant la recharge. `hud.reload_pose()` transforme cette valeur en fondu
+  quantifié et en offsets propres à l'arme. Les sprites normaux, poses de
+  recharge et douze transitions sont mis en cache par résolution ; aucune
+  transformation d'image n'est effectuée à chaque frame.
+- Les temps de recharge, le remplissage du chargeur, le son, les contrôles
+  tactiles et la coop ne changent pas. La pose revient progressivement au
+  repos pendant les 18 % finaux afin que la remise à zéro du compteur ne
+  provoque aucun saut.
+- `sounds.MUSIC_PROFILES` définit sept identités : menu cinématique,
+  Entrepôt industriel, Métropole urbaine, Gouvernement solennel, Base
+  militaire martiale, Laboratoire expérimental et Déferlement alien.
+  `_music_loop()` synthétise chaque thème à la demande, de façon déterministe
+  et bouclable. Les fichiers `menu.*`, `1.*` à `5.*` et `survival.*` gardent
+  la priorité.
+- `tests/test_reload_music.py` contient six non-régressions : progression,
+  intégrité des PNG, mouvement distinct, rendu HUD, couverture des profils et
+  déterminisme/raccord des boucles.
 
 ## Réparation Git, Colosse, possédés, environnements et tactile
 
@@ -560,7 +596,7 @@ branche de travail `agent/bugfix-ci`.
 
 ## Validation disponible
 
-La suite contient 54 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 60 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -592,6 +628,11 @@ du Colosse, extension coop des ennemis/objets dynamiques, sol/hauteurs du
 Laboratoire, densité des cratères, multi-touch, rejet du clic souris
 synthétique, reprise de pause sans action maintenue et blocage de la roulade
 coop après l'issue.
+
+`tests/test_reload_music.py` ajoute 6 contrôles : progression normalisée de
+la recharge, dimensions/alpha des quatre poses, mouvements distincts, rendu
+HUD réellement différent, couverture des sept profils musicaux et génération
+déterministe/distincte/raccordée.
 
 Commande utilisée :
 
@@ -672,10 +713,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
-54 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+60 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 13 contrôles robustesse/réseau ;
 `test_smoke.py` : 8 tests de fumée généraux ;
-`test_gameplay_extensions.py` : 11 tests du lot actuel) :
+`test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
+`test_reload_music.py` : 6 tests recharge/audio) :
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \

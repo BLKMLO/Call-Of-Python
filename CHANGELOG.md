@@ -1,9 +1,13 @@
 # Changelog
 
-## [Non publié] — 2026-07-27
+## [Non publié] — 2026-07-28
 
 ### Gameplay
 
+- **Animations de recharge propres aux quatre armes** : chaque arme dispose
+  d'une pose détaillée dédiée et d'un mouvement adapté — chargeur du pistolet,
+  pompe du fusil, chargeur du fusil d'assaut et bande du minigun. Le HUD
+  interpole les poses et les met en cache par résolution.
 - **Colosse en trois phases** : sa vitesse et sa cadence progressent aux
   seuils de 66 % et 33 % de vie. Chaque transition libère un pack de vie
   visible sur un flanc, sans couper la ligne de tir vers le boss.
@@ -24,6 +28,14 @@
 - Commandes multi-touch activées après détection SDL ou au premier contact :
   stick, visée par glissement, tir, ADS, roulade, recharge, arme, pause et menu.
 
+### Audio
+
+- Les cinq niveaux et le Déferlement possèdent maintenant des compositions
+  procédurales réellement distinctes : industriel, urbain, solennel,
+  militaire, expérimental et alien. Le menu conserve un thème cinématique.
+- Les boucles restent déterministes, raccordées sans clic, générées sans
+  dépendance externe et remplaçables par les fichiers de `assets/sound/`.
+
 ### Fiabilité et automatisation
 
 - Un pack de phase du Colosse n'est plus perdu lorsque sa zone d'apparition
@@ -43,7 +55,9 @@
 ### Tests
 
 - `tests/test_gameplay_extensions.py` contient désormais 11 non-régressions.
-  Suite complète : **54 tests, tous verts**.
+- `tests/test_reload_music.py` ajoute 6 contrôles sur les poses, le rendu HUD,
+  la progression de recharge et les identités musicales.
+  Suite complète : **60 tests, tous verts**.
 
 ## [2026-07-25]
 

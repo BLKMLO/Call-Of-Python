@@ -86,7 +86,8 @@ ne se termine que si tous les joueurs sont à terre simultanément.
 - **Raycasting avancé** : murs texturés à hauteurs variables, portes
   coulissantes, z-buffer, ciel dynamique et visée verticale.
 - **Combat FPS** : pistolet, fusil à pompe, fusil d'assaut et minigun avec
-  recul, rechargement, niveaux d'amélioration et mise en joue.
+  recul, animation de recharge propre à chaque arme, niveaux d'amélioration
+  et mise en joue.
 - **Ennemis variés** : milicien, soldat, lourd, kamikaze, sniper et
   Colosse, avec sprites directionnels et animations.
 - **IA tactique** : détection, patrouille, alerte des alliés, couverture,
@@ -96,7 +97,8 @@ ne se termine que si tous les joueurs sont à terre simultanément.
 - **HUD complet** : vie, munitions, arsenal, minimap, statistiques,
   indicateurs de dégâts, barre de boss et compteur de FPS optionnel.
 - **Ambiance dynamique** : cycle solaire propre à chaque niveau, audio
-  spatial, musiques procédurales et particules d'impact.
+  spatial et six thèmes procéduraux distincts — industriel, urbain, solennel,
+  militaire, laboratoire et lunaire — plus le thème du menu.
 - **Progression** : armes à ramasser, trousses de soins, packs de vie
   cachés, statistiques et records sauvegardés.
 - **Optimisations** : caches de mise à l'échelle, éclairage pré-calculé,
@@ -129,7 +131,7 @@ en l'absence de fichiers.
 ## Étendre le jeu
 
 - **Arme** : ajouter un `WeaponSpec` dans `weapons.py` et les sprites
-  `fp_<id>` / `pickup_<id>`.
+  `fp_<id>` / `fp_<id>_reload` / `pickup_<id>`.
 - **Niveau** : ajouter une grille et sa configuration dans `LEVELS`
   (`level.py`).
 - **Décor** : ajouter un sprite `prop_<id>`, une entrée dans `PROP_SPECS`

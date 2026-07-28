@@ -8,9 +8,9 @@ fichiers réels chargeables depuis `assets/sound/`.
 - Son positionnel : le mixer est en stéréo ; les sons du monde (tirs
   ennemis, impacts) sont atténués avec la distance et panoramiqués
   gauche/droite selon leur direction par rapport au regard du joueur.
-- Musique : une nappe d'ambiance sombre est synthétisée par niveau
-  (accord bourdon + battements lents), bouclée sur un canal réservé —
-  sauf si un fichier personnalisé existe dans `assets/sound/` (voir
+- Musique : chaque niveau possède une composition procédurale propre
+  (motif, tempo et timbre), bouclée sur un canal réservé — sauf si un
+  fichier personnalisé existe dans `assets/sound/` (voir
   `_custom_music_path`), auquel cas il est joué à la place.
 
 Si le mixer n'est pas disponible (pas de carte son), tout est silencieux
@@ -21,6 +21,7 @@ import math
 import os
 import random
 import struct
+from dataclasses import dataclass
 
 import pygame
 
@@ -256,54 +257,165 @@ def _horn():
     return b"".join(parts)
 
 
-def _ambient_loop(base_freq, seed, duration=12.0):
-    """Nappe d'ambiance bouclable : bourdon + quinte + octave détunée.
+@dataclass(frozen=True)
+class MusicProfile:
+    """Identité musicale déterministe d'un écran ou d'un niveau."""
 
-    Les fréquences sont arrondies à un nombre entier de cycles sur la
-    durée pour que la boucle soit parfaitement raccord (pas de clic).
+    root: float
+    tempo: int
+    pattern: tuple
+    style: str
+    seed: int
+    title: str
+
+
+# Chaque contexte possède désormais un rythme, un motif et un timbre propres.
+# Le nombre de temps produit en 12 secondes reste un multiple du motif, ce qui
+# garantit une boucle sans rupture.
+MUSIC_PROFILES = {
+    "menu": MusicProfile(
+        49.0, 60, (0, 7, 3, 10), "cinematic", 1, "Aux portes du Sceau",
+    ),
+    "level0": MusicProfile(
+        55.0, 80, (0, 0, 3, 0, 7, 0, 3, -2),
+        "industrial", 2, "Acier dormant",
+    ),
+    "level1": MusicProfile(
+        58.27, 120, (0, 3, 7, 10, 7, 3, 12, 10),
+        "urban", 7, "Métropole assiégée",
+    ),
+    "level2": MusicProfile(
+        43.65, 60, (0, 7, 3, 10), "solemn", 8, "Pouvoir vacant",
+    ),
+    "level3": MusicProfile(
+        41.2, 100, (0, 0, 7, 3), "military", 4, "Dernière ligne",
+    ),
+    "level4": MusicProfile(
+        34.65, 80, (0, 1, 6, 1, 0, 8, 6, 1),
+        "laboratory", 9, "Le Sceau respire",
+    ),
+    "survival": MusicProfile(
+        32.7, 60, (0, 6, 1, 11), "alien", 6, "Déferlement lunaire",
+    ),
+}
+# Alias historique : plusieurs appels et tests itèrent déjà sur MUSIC_KEYS.
+MUSIC_KEYS = MUSIC_PROFILES
+MUSIC_VOLUME = 0.35         # part du volume global réservée à la musique
+
+
+def _music_loop(key, duration=12.0):
+    """Compose une boucle musicale propre au contexte demandé.
+
+    Toutes les couches sont périodiques : les drones font un nombre entier de
+    cycles sur la boucle et les notes rythmiques démarrent/finissent à volume
+    nul. Aucun fichier temporaire ni dépendance audio externe n'est requis.
     """
-    rng = random.Random(seed)
+    profile = MUSIC_PROFILES[key]
+    if not math.isfinite(duration) or duration <= 0.0:
+        raise ValueError("La durée musicale doit être finie et positive")
 
-    def loopable(f):
-        return round(f * duration) / duration
-
-    f1 = loopable(base_freq)
-    f2 = loopable(base_freq * 1.5)          # quinte
-    f3 = loopable(base_freq * 2.02)         # octave légèrement détunée (battement)
-    f4 = loopable(base_freq * rng.uniform(2.9, 3.1))
-    n = int(SAMPLE_RATE * duration)
+    pattern_len = len(profile.pattern)
+    nominal_beats = max(pattern_len, round(duration * profile.tempo / 60))
+    beats = max(
+        pattern_len,
+        round(nominal_beats / pattern_len) * pattern_len,
+    )
+    beat_duration = duration / beats
+    rng = random.Random(profile.seed)
     two_pi = 2 * math.pi
-    p1 = p2 = p3 = p4 = 0.0
+
+    def loopable(freq):
+        return max(1.0, round(freq * duration) / duration)
+
+    def beat_loopable(freq):
+        return max(1.0, round(freq * beat_duration) / beat_duration)
+
+    root = loopable(profile.root)
+    fifth = loopable(profile.root * 1.5)
+    octave = loopable(profile.root * 2.0)
+    color_ratio = {
+        "cinematic": 1.25,
+        "industrial": 1.414,
+        "urban": 1.875,
+        "solemn": 1.2,
+        "military": 1.5,
+        "laboratory": 1.05946,
+        "alien": 1.414,
+    }[profile.style]
+    color = loopable(profile.root * color_ratio)
+    shimmer = loopable(profile.root * rng.uniform(5.7, 7.3))
+
+    n = int(SAMPLE_RATE * duration)
     samples = []
     for i in range(n):
         t = i / SAMPLE_RATE
-        # LFO qui boucle sur la durée totale : respiration lente de la nappe.
-        lfo = 0.5 + 0.5 * math.sin(two_pi * t / duration)
-        lfo2 = 0.5 + 0.5 * math.sin(two_pi * 2 * t / duration + 1.7)
-        p1 += two_pi * f1 / SAMPLE_RATE
-        p2 += two_pi * f2 / SAMPLE_RATE
-        p3 += two_pi * f3 / SAMPLE_RATE
-        p4 += two_pi * f4 / SAMPLE_RATE
-        s = (0.45 * math.sin(p1)
-             + 0.22 * math.sin(p2) * lfo
-             + 0.18 * math.sin(p3)
-             + 0.08 * math.sin(p4) * lfo2)
-        samples.append(s * 0.55)
+        beat_pos = t / beat_duration
+        beat_index = int(beat_pos)
+        beat_phase = beat_pos - beat_index
+        local = beat_phase * beat_duration
+        interval = profile.pattern[beat_index % pattern_len]
+        note_freq = beat_loopable(
+            profile.root * 2 ** (interval / 12.0),
+        )
+
+        breathe = 0.72 + 0.28 * math.sin(two_pi * t / duration)
+        slow_lfo = math.sin(two_pi * 2 * t / duration + 0.4)
+        drone = (
+            0.34 * math.sin(two_pi * root * t)
+            + 0.16 * math.sin(two_pi * fifth * t) * breathe
+            + 0.10 * math.sin(two_pi * octave * t + 0.25 * slow_lfo)
+        )
+        note_env = math.sin(math.pi * beat_phase) ** 2
+        note = math.sin(two_pi * note_freq * local) * note_env
+        impact = (1.0 - beat_phase) ** 6
+
+        if profile.style == "industrial":
+            metal = (
+                math.sin(two_pi * 420 * local)
+                + 0.55 * math.sin(two_pi * 713 * local)
+            ) * impact
+            sample = drone * 0.74 + note * 0.25 + metal * 0.12
+        elif profile.style == "urban":
+            sub = math.sin(two_pi * root * local) * impact
+            sample = drone * 0.55 + note * 0.36 + sub * 0.18
+        elif profile.style == "solemn":
+            bell = math.sin(two_pi * shimmer * local) * impact
+            sample = drone * 0.88 + note * 0.18 + bell * 0.075
+        elif profile.style == "military":
+            kick = math.sin(
+                two_pi * (62.0 - 24.0 * beat_phase) * local,
+            ) * impact
+            snare = 0.0
+            if beat_index % 2:
+                snare = (
+                    math.sin(two_pi * 937 * local)
+                    + 0.5 * math.sin(two_pi * 1543 * local)
+                ) * impact
+            sample = drone * 0.61 + note * 0.22 + kick * 0.24 + snare * 0.08
+        elif profile.style == "laboratory":
+            glass = (
+                math.sin(two_pi * shimmer * local)
+                + 0.45 * math.sin(two_pi * shimmer * 1.5 * local)
+            ) * impact
+            sample = (
+                drone * 0.63
+                + math.sin(two_pi * color * t) * 0.16
+                + note * 0.18
+                + glass * 0.08
+            )
+        elif profile.style == "alien":
+            warped = math.sin(
+                two_pi * color * t + 0.9 * math.sin(
+                    two_pi * 3 * t / duration,
+                ),
+            )
+            sample = drone * 0.7 + warped * 0.19 + note * 0.13
+        else:  # cinematic — menu
+            pulse = math.sin(two_pi * root * local) * impact
+            sample = drone * 0.82 + note * 0.17 + pulse * 0.13
+
+        samples.append(math.tanh(sample * 1.2) * 0.58)
     return _pack(samples)
-
-
-# Tonique de la nappe par contexte : de plus en plus grave et sombre au
-# fil de la campagne, jusqu'à l'abîme lunaire du Déferlement.
-MUSIC_KEYS = {
-    "menu": (49.0, 1),       # G1
-    "level0": (55.0, 2),     # A1  — Entrepôt
-    "level1": (58.27, 7),    # A#1 — Métropole (rumeur urbaine)
-    "level2": (43.65, 8),    # F1  — Gouvernement (solennel)
-    "level3": (41.2, 4),     # E1  — Base militaire
-    "level4": (34.65, 9),    # C#1 — Laboratoire, l'assaut final
-    "survival": (32.7, 6),   # C1  — la Lune, le Déferlement
-}
-MUSIC_VOLUME = 0.35         # part du volume global réservée à la musique
 
 
 class SoundBank:
@@ -399,8 +511,7 @@ class SoundBank:
                 except pygame.error:
                     sound = None  # fichier illisible : repli sur la synthèse
             if sound is None:
-                freq, seed = MUSIC_KEYS[key]
-                sound = pygame.mixer.Sound(buffer=_ambient_loop(freq, seed))
+                sound = pygame.mixer.Sound(buffer=_music_loop(key))
             self.music_cache[key] = sound
         self.music_channel.play(self.music_cache[key], loops=-1, fade_ms=600)
         self.music_key = key

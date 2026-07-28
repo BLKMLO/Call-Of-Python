@@ -20,6 +20,56 @@ HUD_TEXT = (220, 231, 230)
 HUD_DIM = (115, 139, 143)
 
 
+def reload_pose(weapon_id, progress):
+    """Poids de la pose et déplacement propre à chaque recharge.
+
+    Les offsets sont exprimés en fractions de l'écran afin de conserver le
+    même mouvement à toutes les résolutions. La pose revient progressivement
+    au sprite normal en fin de recharge, ce qui évite un saut visuel lorsque
+    `Weapon.update()` remet le compteur à zéro.
+    """
+    p = max(0.0, min(1.0, progress))
+    if p <= 0.0 or p >= 1.0:
+        return 0.0, 0.0, 0.0
+
+    if p < 0.18:
+        t = p / 0.18
+    elif p > 0.82:
+        t = (1.0 - p) / 0.18
+    else:
+        t = 1.0
+    t = max(0.0, min(1.0, t))
+    blend = t * t * (3.0 - 2.0 * t)  # smoothstep
+    arc = math.sin(math.pi * p)
+
+    if weapon_id == "pistol":
+        # Chargeur extrait vers le bas, puis claqué dans la poignée.
+        return (
+            blend,
+            -0.025 * arc,
+            -0.09 * arc - 0.012 * math.sin(4 * math.pi * p),
+        )
+    if weapon_id == "shotgun":
+        # Long mouvement avant/arrière de la pompe.
+        return (
+            blend,
+            0.018 * math.sin(2 * math.pi * p),
+            -0.07 * arc + 0.018 * math.sin(4 * math.pi * p),
+        )
+    if weapon_id == "rifle":
+        # Arme basculée, insertion du chargeur puis petit coup de verrouillage.
+        seat = math.exp(-((p - 0.66) / 0.075) ** 2)
+        return blend, -0.03 * arc, -0.06 * arc - 0.018 * seat
+    if weapon_id == "minigun":
+        # Mouvement plus lourd pendant l'alimentation de la bande.
+        return (
+            blend,
+            0.012 * math.sin(2 * math.pi * p),
+            -0.05 * arc + 0.01 * math.sin(6 * math.pi * p),
+        )
+    return blend, 0.0, 0.06 * arc
+
+
 class HUD:
     def __init__(self, size):
         self.resize(size)
@@ -117,6 +167,7 @@ class HUD:
         self._slot_icon_cache = {}   # icônes d'armes mises à l'échelle
         self._panel_cache = {}       # plaques translucides du HUD
         self._weapon_scale_cache = {}
+        self._reload_blend_cache = {}
         self._text_cache = {}        # libellés statiques rendus une fois
 
     def _text(self, font, content, color):
@@ -234,10 +285,11 @@ class HUD:
     def _draw_weapon(self, screen, player):
         """Sprite pixel-art de l'arme courante, vu à la première personne.
 
-        Balancement à la marche, recul au tir, abaissement lissé pendant le
-        rechargement, fumée qui s'échappe du canon après les tirs.
+        Balancement à la marche, recul au tir, pose animée pendant le
+        rechargement et fumée qui s'échappe du canon après les tirs.
         """
-        sprite = assets.get("fp_" + player.weapon.spec.id)
+        weapon = player.weapon
+        sprite = assets.get("fp_" + weapon.spec.id)
         target_w = int(self.width * 0.34)
         target_h = int(target_w * sprite.get_height() / sprite.get_width())
         cache_key = (id(sprite), target_w, target_h)
@@ -246,18 +298,60 @@ class HUD:
             scaled = pygame.transform.scale(sprite, (target_w, target_h))
             self._weapon_scale_cache[cache_key] = scaled
 
+        pose_blend, reload_x, reload_y = reload_pose(
+            weapon.spec.id, weapon.reload_progress,
+        )
+        blend_step = max(0, min(12, round(pose_blend * 12)))
+        if blend_step == 0:
+            frame = scaled
+        else:
+            # Chargement paresseux : une arme jamais rechargée ne paie pas
+            # le redimensionnement de sa pose secondaire.
+            reload_sprite = assets.get("fp_" + weapon.spec.id + "_reload")
+            reload_key = (id(reload_sprite), target_w, target_h)
+            reload_scaled = self._weapon_scale_cache.get(reload_key)
+            if reload_scaled is None:
+                reload_scaled = pygame.transform.scale(
+                    reload_sprite, (target_w, target_h),
+                )
+                self._weapon_scale_cache[reload_key] = reload_scaled
+
+            if blend_step == 12:
+                frame = reload_scaled
+            else:
+                blend_key = (
+                    id(sprite), id(reload_sprite), target_w, target_h,
+                    blend_step,
+                )
+                frame = self._reload_blend_cache.get(blend_key)
+                if frame is None:
+                    alpha = round(255 * blend_step / 12)
+                    normal_layer = scaled.copy()
+                    normal_layer.set_alpha(255 - alpha)
+                    reload_layer = reload_scaled.copy()
+                    reload_layer.set_alpha(alpha)
+                    frame = pygame.Surface(
+                        (target_w, target_h), pygame.SRCALPHA,
+                    )
+                    frame.blit(normal_layer, (0, 0))
+                    frame.blit(reload_layer, (0, 0))
+                    self._reload_blend_cache[blend_key] = frame
+
         sway_x = math.sin(self.sway_time * 7) * self.width * 0.008
         sway_y = abs(math.cos(self.sway_time * 7)) * self.height * 0.008
-        # Abaissement interpolé : l'arme plonge au rechargement... et
-        # descend hors champ quand on met en joue (remplacée par la lunette).
-        target_lower = self.height * 0.16 if player.weapon.reloading > 0.0 else 0.0
+        # Abaissement interpolé pour l'ADS et la roulade. Les poses de recharge
+        # ont leurs propres offsets et restent assez hautes pour montrer la
+        # main, le chargeur ou la bande de munitions.
+        target_lower = 0.0
         target_lower += player.ads * self.height * 0.5
         if player.rolling:
             target_lower += self.height * 0.48
         self.lower += (target_lower - self.lower) * 0.16
-        x = self.width // 2 - target_w // 2 + int(self.width * 0.07 + sway_x)
+        x = (self.width // 2 - target_w // 2
+             + int(self.width * (0.07 + reload_x) + sway_x))
         y = (self.height - int(target_h * 0.86)
-             + int(self.kick * self.height * 0.04 + sway_y + self.lower))
+             + int(self.kick * self.height * 0.04 + sway_y + self.lower
+                   + self.height * reload_y))
         tip = (x + target_w // 2, y + int(target_h * 0.04))
 
         # Volutes de fumée derrière l'arme.
@@ -268,7 +362,7 @@ class HUD:
             pygame.draw.circle(screen, (gray, gray, gray), (int(px), int(py)),
                                radius, 1)
 
-        screen.blit(scaled, (x, y))
+        screen.blit(frame, (x, y))
 
         if self.flash > 0.0:
             # Éclair de bouche en étoile, taille légèrement aléatoire.

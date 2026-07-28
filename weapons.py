@@ -78,6 +78,20 @@ class Weapon:
         mark = MARKS[min(self.level, len(MARKS) - 1)]
         return self.spec.name + mark
 
+    @property
+    def reload_progress(self):
+        """Progression visuelle de la recharge, bornée entre 0 et 1.
+
+        La valeur vaut 0 hors recharge, démarre à 0 quand la recharge est
+        déclenchée et atteint 1 juste avant que le chargeur soit rempli.
+        """
+        if self.reloading <= 0.0 or self.spec.reload_time <= 0.0:
+            return 0.0
+        return max(0.0, min(
+            1.0,
+            1.0 - self.reloading / self.spec.reload_time,
+        ))
+
     # ------------------------------------------------------------------
     def update(self, dt):
         self.cooldown = max(0.0, self.cooldown - dt)
