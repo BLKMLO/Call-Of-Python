@@ -20,6 +20,7 @@ avec la texture décalée d'autant.
 
 import math
 import random
+from collections import OrderedDict
 
 import pygame
 
@@ -36,6 +37,8 @@ COLUMN_WIDTH = 2              # largeur en pixels d'une colonne de rendu
 SHADE_LEVELS = 10             # nombre de variantes d'ombrage par texture
 FOG_COLOR = (14, 17, 26)      # brume bleutée ajoutée avec la distance
 CACHE_LIMIT = 4000            # entrées du cache mural (éviction FIFO incrémentale)
+SPRITE_CACHE_BUDGET_BYTES = 64 * 1024 * 1024
+SPRITE_CACHE_MAX_ENTRIES = 512
 MIN_SPRITE_DIST = 0.5          # distance de projection plancher des billboards
                                # (évite qu'un décor/ennemi grossisse à l'infini
                                # de très près) ; ne change pas l'occlusion,
@@ -281,7 +284,9 @@ class Raycaster:
         self.z_buffer = [MAX_DEPTH] * self.num_rays
         self.horizon = self.height // 2
         self._wall_cache = {}
-        self._sprite_cache = {}
+        self._sprite_cache = OrderedDict()
+        self._sprite_cache_bytes = 0
+        self._sprite_cache_budget = SPRITE_CACHE_BUDGET_BYTES
         self._set_fov(FOV)
         self._build_background()
 
@@ -753,16 +758,35 @@ class Raycaster:
         return max(dist * math.cos(delta), 1e-4), delta
 
     def _scaled_sprite(self, sprite, w, h):
-        """Mise à l'échelle mémoïsée (tailles quantifiées au pixel pair)."""
+        """Mise à l'échelle mémoïsée sous budget mémoire LRU strict.
+
+        Les tailles projetées varient continuellement quand la caméra bouge.
+        Une limite en nombre d'entrées ne borne donc pas la RAM : une surface
+        1600×900 coûte plusieurs Mio. Le coût retenu est la taille réelle SDL
+        (`pitch × hauteur`) ; une surface plus grosse que le budget est rendue
+        mais jamais conservée.
+        """
         key = (id(sprite), w, h)
         scaled = self._sprite_cache.get(key)
-        if scaled is None:
-            scaled = pygame.transform.scale(sprite, (w, h))
-            if len(self._sprite_cache) >= CACHE_LIMIT:
-                evict = iter(self._sprite_cache)
-                for old in [next(evict) for _ in range(1024)]:
-                    del self._sprite_cache[old]
-            self._sprite_cache[key] = scaled
+        if scaled is not None:
+            self._sprite_cache.move_to_end(key)
+            return scaled
+
+        scaled = pygame.transform.scale(sprite, (w, h))
+        cost = scaled.get_pitch() * scaled.get_height()
+        budget = max(0, int(self._sprite_cache_budget))
+        if cost > budget:
+            return scaled
+
+        while (self._sprite_cache
+               and (self._sprite_cache_bytes + cost > budget
+                    or len(self._sprite_cache) >= SPRITE_CACHE_MAX_ENTRIES)):
+            _, evicted = self._sprite_cache.popitem(last=False)
+            self._sprite_cache_bytes -= (
+                evicted.get_pitch() * evicted.get_height()
+            )
+        self._sprite_cache[key] = scaled
+        self._sprite_cache_bytes += cost
         return scaled
 
     def _render_sprites(self, screen, player, sprites):

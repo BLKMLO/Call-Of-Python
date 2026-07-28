@@ -266,6 +266,7 @@ class Game:
                           if self.touch.enabled else None)
             moving = player.move(
                 dt, keys, self.settings.keys, self.level, touch_axes,
+                self._movement_blockers(player),
             )
             self.player_moving = moving   # relayé aux clients en coop LAN
 
@@ -364,6 +365,15 @@ class Game:
         """Billboards supplémentaires (coéquipiers en coop)."""
         return []
 
+    def _movement_blockers(self, player):
+        """Entités vivantes que `player` ne peut pas traverser."""
+        blockers = [enemy for enemy in self.enemies if enemy.alive]
+        blockers.extend(
+            other for other in self._all_players()
+            if other is not player and other.alive
+        )
+        return blockers
+
     # ------------------------------------------------------------------
     # Dégâts subis et explosions
     # ------------------------------------------------------------------
@@ -375,6 +385,16 @@ class Game:
             rel = math.atan2(enemy.y - victim.y,
                              enemy.x - victim.x) - victim.angle
             self.hud.on_player_hit(rel)
+
+    def _on_enemy_impact(self, enemy, fatal=False):
+        """Retour visuel et audio d'une balle réellement encaissée."""
+        self.particles.spawn_impact(
+            enemy.x, enemy.y, enemy.impact_type, fatal=fatal,
+        )
+        self.sounds.play(
+            f"{enemy.impact_type}_hit", volume_scale=0.68,
+            pos=(enemy.x, enemy.y), listener=self.player,
+        )
 
     def _explode(self, enemy):
         """Fait détoner un kamikaze : dégâts de zone sur les joueurs ET les
@@ -411,7 +431,9 @@ class Game:
                 died = other.take_damage(damage)
                 self._handle_boss_phase_events(other)
                 if died:
-                    self.particles.spawn_death(other.x, other.y)
+                    self.particles.spawn_death(
+                        other.x, other.y, other.impact_type,
+                    )
                     if other.EXPLODES:
                         self._explode(other)   # réaction en chaîne
         if math.hypot(self.player.x - ex, self.player.y - ey) < radius * 3:
@@ -519,7 +541,7 @@ class Game:
                 ai.alert((self.player.x, self.player.y))
 
     def _separate_enemies(self):
-        """Empêche les ennemis de s'empiler les uns sur les autres."""
+        """Sépare ennemis et joueurs lorsque l'IA les a fait se chevaucher."""
         alive = [e for e in self.enemies if e.alive]
         for i, a in enumerate(alive):
             for b in alive[i + 1:]:
@@ -533,6 +555,33 @@ class Game:
                         a.x, a.y, -ux * push, -uy * push, a.RADIUS)
                     b.x, b.y = self.level.move_with_collisions(
                         b.x, b.y, ux * push, uy * push, b.RADIUS)
+        for player in (p for p in self._all_players() if p.alive):
+            for enemy in alive:
+                dx, dy = enemy.x - player.x, enemy.y - player.y
+                dist = math.hypot(dx, dy)
+                min_dist = player.RADIUS + enemy.RADIUS
+                if dist >= min_dist:
+                    continue
+                if dist <= 1e-6:
+                    ux, uy = math.cos(player.angle), math.sin(player.angle)
+                else:
+                    ux, uy = dx / dist, dy / dist
+                overlap = min_dist - dist
+                enemy.x, enemy.y = self.level.move_with_collisions(
+                    enemy.x, enemy.y, ux * overlap, uy * overlap,
+                    enemy.RADIUS,
+                )
+                remaining = max(
+                    0.0,
+                    min_dist - math.hypot(
+                        enemy.x - player.x, enemy.y - player.y,
+                    ),
+                )
+                if remaining > 0.0:
+                    player.x, player.y = self.level.move_with_collisions(
+                        player.x, player.y, -ux * remaining, -uy * remaining,
+                        player.RADIUS,
+                    )
 
     # ------------------------------------------------------------------
     # Objets à ramasser
@@ -644,8 +693,9 @@ class Game:
         health_before = best.health
         died = best.take_damage(damage)
         self._handle_boss_phase_events(best)
+        if best.health < health_before:
+            self._on_enemy_impact(best, fatal=died)
         if died:
-            self.particles.spawn_death(best.x, best.y)
             self.sounds.play("enemy_die", volume_scale=0.8,
                              pos=(best.x, best.y), listener=self.player)
             if best.EXPLODES:
@@ -655,9 +705,6 @@ class Game:
             # Roulade invulnérable : la balle a croisé la silhouette, mais
             # ne compte ni comme touche ni comme dégâts.
             return None
-        self.particles.spawn_blood(best.x, best.y)
-        self.sounds.play("enemy_hit", volume_scale=0.6,
-                         pos=(best.x, best.y), listener=self.player)
         if best.CAN_ROLL and best.roll_cooldown <= 0.0:
             # L'IA consomme cette demande après la résolution du coup complet :
             # une cartouche de fusil à pompe reste un événement simultané. Le

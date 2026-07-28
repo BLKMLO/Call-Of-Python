@@ -4,12 +4,18 @@ Chaque particule est un petit carré coloré positionné en 3D (x, y sur la
 grille + z = hauteur, 0 = sol, 1 = plafond). Le raycaster les projette à
 l'écran comme les sprites, en respectant le z-buffer des murs.
 
-Effets fournis : sang (impact sur un ennemi), gerbe de mort, poussière
-d'impact sur un mur (teintée de la couleur de la texture touchée).
+Effets fournis : sang rouge, sang possédé vert, éclats d'armure, gerbe de
+mort et poussière d'impact sur un mur (teintée par la texture touchée).
 """
 
 import math
 import random
+
+IMPACT_PALETTES = {
+    "flesh": [(148, 22, 26), (110, 14, 18), (176, 34, 34)],
+    "armor": [(170, 180, 184), (92, 104, 112), (222, 188, 92)],
+    "possessed": [(86, 255, 82), (34, 190, 56), (12, 108, 42)],
+}
 
 
 class Particle:
@@ -49,17 +55,39 @@ class ParticleSystem:
         if len(self.items) > self.MAX_PARTICLES:
             del self.items[: len(self.items) - self.MAX_PARTICLES]
 
-    def spawn_blood(self, x, y):
-        """Giclée de sang quand un ennemi est touché."""
-        self._burst(x, y, 0.55, 10,
-                    [(148, 22, 26), (110, 14, 18), (176, 34, 34)],
-                    speed=1.6, size=0.035, life=0.5)
+    def spawn_impact(self, x, y, impact_type="flesh", fatal=False):
+        """Effet de balle selon la matière de la cible.
 
-    def spawn_death(self, x, y):
-        """Grosse gerbe quand un ennemi meurt."""
-        self._burst(x, y, 0.5, 26,
-                    [(148, 22, 26), (96, 12, 16), (60, 60, 66)],
-                    speed=2.4, size=0.045, life=0.9)
+        ``possessed`` a priorité côté entité, y compris pour un archétype
+        normalement blindé. Une mort augmente la gerbe sans changer sa
+        matière : aucun sang rouge ne sort donc d'une armure ou d'un possédé.
+        """
+        impact_type = impact_type if impact_type in IMPACT_PALETTES else "flesh"
+        count = 28 if fatal else 12
+        if impact_type == "armor":
+            self._burst(
+                x, y, 0.56, count, IMPACT_PALETTES["armor"],
+                speed=2.7 if fatal else 2.0,
+                size=0.034 if fatal else 0.027,
+                life=0.85 if fatal else 0.58,
+                upward=1.25,
+            )
+            return
+        self._burst(
+            x, y, 0.54, count, IMPACT_PALETTES[impact_type],
+            speed=2.5 if fatal else 1.75,
+            size=0.045 if fatal else 0.036,
+            life=0.9 if fatal else 0.55,
+            upward=1.0,
+        )
+
+    def spawn_blood(self, x, y):
+        """Alias historique : giclée rouge d'une cible non blindée."""
+        self.spawn_impact(x, y, "flesh")
+
+    def spawn_death(self, x, y, impact_type="flesh"):
+        """Gerbe fatale cohérente avec la matière de l'ennemi."""
+        self.spawn_impact(x, y, impact_type, fatal=True)
 
     def spawn_wall_dust(self, x, y, color):
         """Éclats de poussière à l'impact d'une balle sur un mur."""

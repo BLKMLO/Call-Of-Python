@@ -1,18 +1,30 @@
 # Changelog
 
-## [Non publié] — 2026-07-27
+## [Non publié] — 2026-07-28
 
 ### Gameplay
 
+- **Animations de recharge propres aux quatre armes** : chaque arme dispose
+  d'une pose détaillée dédiée et d'un mouvement adapté — chargeur du pistolet,
+  pompe du fusil, chargeur du fusil d'assaut et bande du minigun. Le HUD
+  interpole les poses et les met en cache par résolution.
 - **Colosse en trois phases** : sa vitesse et sa cadence progressent aux
   seuils de 66 % et 33 % de vie. Chaque transition libère un pack de vie
   visible sur un flanc, sans couper la ligne de tir vers le boss.
 - **Déferlement possédé** : toutes les apparitions lunaires utilisent une
   aura et des yeux verts mis en cache depuis les sprites existants. Le soldat
   entraîné perd sa roulade et ralentit ; le milicien est également ralenti.
-- **Coop rétrocompatible** : vie maximale et état possédé sont ajoutés en fin
-  des lignes ennemies. Les packs du Colosse sont ajoutés après les booléens
-  historiques des objets, donc les anciens clients les ignorent sans planter.
+- **Instantanés coop rétrocompatibles** : vie maximale et état possédé sont
+  ajoutés en fin des lignes ennemies. Les packs du Colosse sont ajoutés après
+  les booléens historiques des objets, donc les anciens clients les ignorent
+  sans planter.
+- **Impacts selon la cible** : miliciens, soldats, snipers et kamikazes
+  projettent du sang rouge ; lourds et Colosse libèrent des éclats d'armure ;
+  tout ennemi possédé projette du sang vert. Les impacts fatals conservent la
+  matière de la cible au lieu de revenir à une gerbe rouge générique.
+- **Impacts coop hôte-autoritaires** : chaque balle encaissée est transmise
+  comme événement distinct, y compris plusieurs impacts sur le même ennemi
+  entre deux instantanés. Les clients plus anciens ignorent l'extension.
 
 ### Environnements et interface
 
@@ -24,8 +36,45 @@
 - Commandes multi-touch activées après détection SDL ou au premier contact :
   stick, visée par glissement, tir, ADS, roulade, recharge, arme, pause et menu.
 
+### Audio
+
+- Les cinq niveaux et le Déferlement possèdent maintenant des compositions
+  procédurales réellement distinctes : industriel, urbain, solennel,
+  militaire, expérimental et alien. Le menu conserve un thème cinématique.
+- Les boucles restent déterministes, raccordées sans clic, générées sans
+  dépendance externe et remplaçables par les fichiers de `assets/sound/`.
+- Trois sons d'impact synthétisés distinguent blessure organique sourde,
+  plaque métallique touchée et flamme possédée qui s'éteint.
+- Les Paramètres proposent deux volumes indépendants, « Effets sonores » et
+  « Musique ». L'ancien volume global est migré vers les deux valeurs.
+
 ### Fiabilité et automatisation
 
+- Le cache des billboards est maintenant un LRU pondéré limité à `64 Mio`
+  réels (`pitch × hauteur`) et `512` entrées. Le scénario de charge
+  `1600×900`, 24 sprites et 900 images reste à `63,91 Mio` de cache au lieu
+  d'une croissance proche du Gio.
+- Le protocole coop v2 ajoute un identifiant de session et des séquences
+  monotones pour les entrées et instantanés. Les paquets anciens, dupliqués ou
+  issus d'une autre session ne peuvent plus faire régresser l'état.
+- Les événements UDP sont numérotés, rejoués jusqu'à acquittement et bornés.
+  La réapparition est aussi reconstruite depuis l'état joueur, et l'inventaire
+  possédé est inclus dans chaque instantané : perdre un datagramme ne supprime
+  plus définitivement une arme ou une réapparition.
+- Les instantanés v2 de plus de `1100` octets sont compressés avec une taille
+  décompressée strictement bornée, ce qui évite la fragmentation IP des états
+  chargés du Déferlement.
+- L'hôte recalcule les tirs depuis l'arme autorisée : chargeur, cadence,
+  recharge, nombre de plombs, dispersion et dégâts ne sont plus décidés par
+  le client. Par sécurité, les anciens événements `[angle, dégâts]` ne sont
+  plus acceptés ; tous les joueurs actifs doivent utiliser le protocole v2.
+- Le déplacement distant utilise un crédit alimenté par l'horloge de l'hôte,
+  à `3,2 cases/s` hors roulade, au lieu d'une allocation renouvelable par
+  paquet. Les joueurs, ennemis et coéquipiers ont des collisions dynamiques
+  sous-échantillonnées et ne peuvent plus se traverser.
+- La pause de l'hôte est répliquée et bloque déplacement, roulade, recharge et
+  tir de tous les clients, tout en maintenant les acquittements réseau.
+- Une recharge continue lorsque l'arme est rangée.
 - Un pack de phase du Colosse n'est plus perdu lorsque sa zone d'apparition
   est momentanément encombrée : les cadavres sont ignorés et l'événement est
   retenté jusqu'à ce qu'un emplacement praticable soit disponible.
@@ -43,7 +92,14 @@
 ### Tests
 
 - `tests/test_gameplay_extensions.py` contient désormais 11 non-régressions.
-  Suite complète : **54 tests, tous verts**.
+- `tests/test_reload_music.py` ajoute 6 contrôles sur les poses, le rendu HUD,
+  la progression de recharge et les identités musicales.
+- `tests/test_impact_audio.py` ajoute 7 contrôles sur les matières, palettes,
+  volumes séparés, menu, migration et événements coop.
+- `tests/test_p0_p1.py` ajoute 10 contrôles adversariaux : budget mémoire,
+  collisions, débit réel, pause hôte, séquences entrée/instantané, retransmission
+  acquittée, réparation d'inventaire, compression UDP et recharge rangée.
+  Suite complète : **77 tests, tous verts**.
 
 ## [2026-07-25]
 

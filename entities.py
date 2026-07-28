@@ -13,14 +13,43 @@ import assets
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
 
-def _move_with_substeps(level, x, y, dx, dy, radius):
-    """Découpe une impulsion rapide pour qu'un pic de `dt` ne saute pas un mur."""
+def _blocked_by_entity(old_x, old_y, x, y, radius, blockers):
+    """Vrai si le pas entre davantage dans une entité vivante.
+
+    Un chevauchement déjà présent peut ainsi se résorber au lieu d'emprisonner
+    le joueur jusqu'à la prochaine séparation autoritaire.
+    """
+    for blocker in blockers:
+        if not getattr(blocker, "alive", True):
+            continue
+        min_dist = radius + getattr(blocker, "RADIUS", 0.0)
+        new_dist = math.hypot(x - blocker.x, y - blocker.y)
+        old_dist = math.hypot(old_x - blocker.x, old_y - blocker.y)
+        if (new_dist < min_dist - 1e-6
+                and new_dist <= old_dist + 1e-9):
+            return True
+    return False
+
+
+def move_with_entity_collisions(level, x, y, dx, dy, radius, blockers=()):
+    """Déplace un cercle contre la carte et des entités, avec glissement."""
+    next_x, _ = level.move_with_collisions(x, y, dx, 0.0, radius)
+    if not _blocked_by_entity(x, y, next_x, y, radius, blockers):
+        x = next_x
+    _, next_y = level.move_with_collisions(x, y, 0.0, dy, radius)
+    if not _blocked_by_entity(x, y, x, next_y, radius, blockers):
+        y = next_y
+    return x, y
+
+
+def _move_with_substeps(level, x, y, dx, dy, radius, blockers=()):
+    """Découpe une impulsion pour ne traverser ni mur ni entité dynamique."""
     distance = math.hypot(dx, dy)
     steps = max(1, math.ceil(distance / max(0.08, radius * 0.5)))
     step_x, step_y = dx / steps, dy / steps
     for _ in range(steps):
-        next_x, next_y = level.move_with_collisions(
-            x, y, step_x, step_y, radius,
+        next_x, next_y = move_with_entity_collisions(
+            level, x, y, step_x, step_y, radius, blockers,
         )
         if (next_x, next_y) == (x, y):
             break
@@ -163,7 +192,8 @@ class Player(Entity):
         self.pitch = max(-self.MAX_PITCH, min(
             self.MAX_PITCH, self.pitch - mouse_dy * factor * 0.55))
 
-    def move(self, dt, keys_pressed, bindings, level, extra_axes=None):
+    def move(self, dt, keys_pressed, bindings, level, extra_axes=None,
+             blockers=()):
         """Déplacement ZQSD/WASD relatif à la direction de vue, avec collisions.
 
         Retourne True si le joueur a effectivement bougé (pour l'animation).
@@ -174,7 +204,7 @@ class Player(Entity):
             self.x, self.y = _move_with_substeps(
                 level, self.x, self.y,
                 self.roll_dx * distance, self.roll_dy * distance,
-                self.RADIUS,
+                self.RADIUS, blockers,
             )
             moved = (self.x, self.y) != old
             if not moved:              # mur de face : pas d'i-frames sur place
@@ -199,7 +229,9 @@ class Player(Entity):
         dx = (forward * cos_a - strafe * sin_a) * speed
         dy = (forward * sin_a + strafe * cos_a) * speed
         old = (self.x, self.y)
-        self.x, self.y = level.move_with_collisions(self.x, self.y, dx, dy, self.RADIUS)
+        self.x, self.y = _move_with_substeps(
+            level, self.x, self.y, dx, dy, self.RADIUS, blockers,
+        )
         return (self.x, self.y) != old
 
     @staticmethod
@@ -241,7 +273,10 @@ class Player(Entity):
         return super().take_damage(amount)
 
     def update(self, dt):
-        self.weapon.update(dt)
+        # Une recharge reste une action de l'arme, pas de l'emplacement HUD :
+        # changer d'arme ne doit ni la figer ni la rendre instantanée au retour.
+        for weapon in self.weapons:
+            weapon.update(dt)
         self.hurt_flash = max(0.0, self.hurt_flash - dt)
         self.shield = max(0.0, self.shield - dt)
         self.roll_timer = max(0.0, self.roll_timer - dt)
@@ -289,6 +324,7 @@ class Enemy(Entity):
     ROLL_DURATION = 1.0
     ROLL_COOLDOWN = 3.0
     ROLL_SPEED = 2.8
+    IMPACT_TYPE = "flesh"
 
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, max_health=round(self.MAX_HEALTH * health_mult))
@@ -334,6 +370,13 @@ class Enemy(Entity):
     @property
     def rolling(self):
         return self.roll_timer > 0.0
+
+    @property
+    def impact_type(self):
+        """Matière utilisée par les particules et le son d'un impact."""
+        if self.possessed:
+            return "possessed"
+        return type(self).IMPACT_TYPE
 
     @property
     def roll_progress(self):
@@ -506,6 +549,7 @@ class Heavy(Enemy):
     DAMAGE = (10, 18)
     FIRE_DELAY = 0.9
     ATTACK_RANGE = 6.0
+    IMPACT_TYPE = "armor"
 
 
 class Kamikaze(Enemy):
@@ -554,6 +598,7 @@ class Boss(Enemy):
     DETECT_RANGE = 14.0
     TAKES_COVER = False
     IS_BOSS = True
+    IMPACT_TYPE = "armor"
 
     PHASE_THRESHOLDS = (2 / 3, 1 / 3)
     PHASE_SPEEDS = (1.15, 1.28, 1.42)
