@@ -268,6 +268,11 @@ d'implémentation et les décisions techniques non triviales.
     boutons de menu latéraux en parallélogramme avec contour au survol et
     écran de mort verrouillé 3 s avec titre gothique sanglant. Quatre
     non-régressions supplémentaires portent la suite à 81 tests.
+31. Correction visuelle des huit poses de recharge du fusil à pompe et du
+    minigun : anatomie gauche/droite cohérente pour le chargement des
+    cartouches, et chaîne mécanique explicite ouverture du capot → engagement
+    de la bande → calage → fermeture pour le minigun. Dimensions, alpha,
+    keyframes, timings et cache HUD restent inchangés.
 
 ## Dette / manques à connaître
 
@@ -379,6 +384,17 @@ branche de travail `agent/reload-animations-level-music`.
   Les douze nouvelles poses intermédiaires couvrent main d'appui, extraction,
   insertion, cartouche/pompe et bande d'alimentation. Tous les fichiers restent
   en `192x144`, avec alpha et coins transparents.
+- Les quatre poses du fusil à pompe gardent strictement la main droite sur la
+  poignée arrière et font venir la main gauche depuis la gauche de l'écran :
+  relâchement de la pompe, présentation d'une cartouche rouge, insertion dans
+  le port inférieur puis reprise de la pompe. Il ne doit jamais y avoir deux
+  mains droites, deux cartouches ou une cartouche introduite par la fenêtre
+  d'éjection.
+- Les quatre poses du minigun montrent désormais un mécanisme continu :
+  ouverture du capot d'alimentation latéral droit et plateau vide, présentation
+  de la bande depuis la droite, cartouches calées dans le plateau, puis capot
+  refermé avec bande engagée. La main gauche stabilise toujours la poignée
+  arrière gauche ; la main droite manipule le capot et la bande.
 - `Weapon.reload_progress` expose une progression bornée `[0, 1]` uniquement
   pendant la recharge. `hud.reload_frames()` parcourt six points de passage
   (repos inclus aux deux extrémités), soit cinq transitions mécaniques ;
@@ -944,7 +960,10 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
 - **Recharges** : `RELOAD_KEYFRAMES` garde les six points de passage repos →
   `_reload_1` → `_reload_2` → `_reload` → `_reload_3` → repos. Les PNG sont
   `192x144` transparents ; tout asset manquant doit continuer à replier vers
-  `_reload`, puis la pose normale, sans création par frame.
+  `_reload`, puis la pose normale, sans création par frame. Le fusil garde une
+  main droite arrière et une main gauche pour charger par le dessous ; le
+  minigun garde l'ordre capot ouvert → bande présentée → bande calée → capot
+  fermé.
 - **Cristaux lunaires** (`MAP_MOON`, `k`/`prop_alien_crystal`) : bloquent
   déplacement/pathfinding par la case ET balles/perception par un cercle rayon
   0,46 — `PROP_CHARS`, `cover_circles`, ligne de vue et hitscan doivent rester
