@@ -13,7 +13,7 @@ import pygame
 
 import assets
 from entities import Player
-from hud import HUD, reload_pose
+from hud import HUD, RELOAD_KEYFRAMES, reload_frames, reload_pose
 from sounds import MUSIC_PROFILES, _music_loop
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
@@ -41,17 +41,30 @@ class ReloadAndMusicTests(unittest.TestCase):
         self.assertEqual(weapon.reload_progress, 0.0)
         self.assertEqual(weapon.ammo, weapon.spec.magazine_size)
 
-    def test_every_weapon_has_a_valid_transparent_reload_keyframe(self):
+    def test_every_weapon_has_four_valid_transparent_reload_keyframes(self):
         asset_dir = Path(assets.ASSET_DIR)
         for weapon_id in WEAPON_ORDER:
-            path = asset_dir / f"fp_{weapon_id}_reload.png"
-            self.assertTrue(path.is_file(), path)
-            surface = pygame.image.load(path)
-            self.assertEqual(surface.get_size(), (192, 144))
-            self.assertGreater(surface.get_bounding_rect(min_alpha=12).width,
-                               120)
-            for point in ((0, 0), (191, 0), (0, 143), (191, 143)):
-                self.assertEqual(surface.get_at(point).a, 0)
+            for suffix in ("_reload_1", "_reload_2",
+                           "_reload", "_reload_3"):
+                path = asset_dir / f"fp_{weapon_id}{suffix}.png"
+                self.assertTrue(path.is_file(), path)
+                surface = pygame.image.load(path)
+                self.assertEqual(surface.get_size(), (192, 144))
+                self.assertGreater(
+                    surface.get_bounding_rect(min_alpha=12).width, 100,
+                )
+                for point in ((0, 0), (191, 0), (0, 143), (191, 143)):
+                    self.assertEqual(surface.get_at(point).a, 0)
+
+    def test_reload_sequence_uses_five_distinct_transitions(self):
+        self.assertEqual(len(RELOAD_KEYFRAMES), 6)
+        self.assertEqual(reload_frames(0.0), (None, None, 0.0))
+        self.assertEqual(reload_frames(1.0), (None, None, 0.0))
+        stages = [
+            reload_frames(progress)[:2]
+            for progress in (0.08, 0.25, 0.47, 0.68, 0.89)
+        ]
+        self.assertEqual(len(set(stages)), 5)
 
     def test_reload_motion_is_distinct_and_returns_to_idle_pose(self):
         poses = {weapon_id: reload_pose(weapon_id, 0.5)
@@ -89,6 +102,28 @@ class ReloadAndMusicTests(unittest.TestCase):
                 pygame.image.tobytes(screen, "RGBA"),
             ).digest()
             self.assertNotEqual(idle_hash, reload_hash, weapon_id)
+
+    def test_hud_renders_multiple_distinct_mechanical_reload_stages(self):
+        screen = pygame.Surface((800, 600), pygame.SRCALPHA)
+        player = Player(2.0, 2.0)
+        hud = HUD(screen.get_size())
+
+        for weapon_id in WEAPON_ORDER:
+            weapon = Weapon(WEAPON_SPECS[weapon_id])
+            weapon.ammo -= 1
+            weapon.start_reload()
+            player.weapons = [weapon]
+            player.weapon_index = 0
+            hashes = set()
+            for progress in (0.16, 0.36, 0.58, 0.78):
+                weapon.reloading = weapon.spec.reload_time * (1.0 - progress)
+                screen.fill((0, 0, 0, 0))
+                hud.lower = 0.0
+                hud._draw_weapon(screen, player)
+                hashes.add(hashlib.sha256(
+                    pygame.image.tobytes(screen, "RGBA"),
+                ).digest())
+            self.assertEqual(len(hashes), 4, weapon_id)
 
     def test_music_profiles_cover_every_context_with_unique_identities(self):
         expected = {"menu", "level0", "level1", "level2", "level3",

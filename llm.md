@@ -45,7 +45,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 ```
 
 Le workflow `.github/workflows/ci.yml` rejoue compilation, contrôles Ruff
-critiques et les 77 tests sous Python 3.12 sur Ubuntu et Windows.
+critiques et les 81 tests sous Python 3.12 sur Ubuntu et Windows.
 
 ## Architecture
 
@@ -261,17 +261,29 @@ d'implémentation et les décisions techniques non triviales.
     autoritaire, validation complète des armes/cadences/munitions, pause hôte
     globale, budget de déplacement temporel et collisions joueurs/ennemis.
     Dix tests adversariaux portent la suite à 77 tests.
+30. Équilibrage et polish UI : mise en joue du sniper réduite de 25 %
+    (`0,75` → `0,5625 s`), roulade du militaire raccourcie de 25 %
+    (`1,0` → `0,75 s`) avec portée et i-frames réduites ensemble, douze
+    nouvelles poses portant chaque arme à quatre keyframes de recharge,
+    boutons de menu latéraux en parallélogramme avec contour au survol et
+    écran de mort verrouillé 3 s avec titre gothique sanglant. Quatre
+    non-régressions supplémentaires portent la suite à 81 tests.
+31. Correction visuelle des huit poses de recharge du fusil à pompe et du
+    minigun : anatomie gauche/droite cohérente pour le chargement des
+    cartouches, et chaîne mécanique explicite ouverture du capot → engagement
+    de la bande → calage → fermeture pour le minigun. Dimensions, alpha,
+    keyframes, timings et cache HUD restent inchangés.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Soixante-dix-sept
+- **Couverture de tests encore partielle mais en progrès.** Quatre-vingt-un
   tests sont présents : `tests/test_requested_changes.py` (22
-  non-régressions), `tests/test_cleanup.py` (13 contrôles robustesse) et
+  non-régressions), `tests/test_cleanup.py` (15 contrôles robustesse/UI) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
   survie, menus, coop loopback UDP, réglages, sons), qui remplacent les
   anciens `smoke_test2..11.py` jamais commités, plus
   `tests/test_gameplay_extensions.py` (11 tests Colosse, possédés, décors,
-  réseau étendu et tactile), `tests/test_reload_music.py` (6 tests sur les
+  réseau étendu et tactile), `tests/test_reload_music.py` (8 tests sur les
   poses, le HUD, la progression de recharge et les profils musicaux) et
   `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop), plus
   `tests/test_p0_p1.py` (10 tests de mémoire, protocole, sécurité hôte,
@@ -294,7 +306,7 @@ d'implémentation et les décisions techniques non triviales.
 
 # Call of Python — contexte de reprise GPT
 
-Dernière mise à jour : 28 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
+Dernière mise à jour : 29 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
 branche de travail `agent/reload-animations-level-music`.
 
 ## Corrections P0/P1 de robustesse
@@ -367,17 +379,30 @@ branche de travail `agent/reload-animations-level-music`.
 
 ## Animations de recharge et musiques contextuelles
 
-- Les quatre armes disposent d'une pose dédiée `fp_<id>_reload.png`, dérivée
-  du sprite détaillé existant : chargeur extrait du pistolet, pompe ouverte du
-  fusil à pompe, chargeur inséré du fusil d'assaut et bande alimentée du
-  minigun. Les fichiers restent en `192x144`, avec alpha et coins
-  transparents. Les builders historiques de `assets.py` replient sur la pose
-  normale si un PNG de recharge manque.
+- Chaque arme dispose désormais de quatre poses de recharge réelles :
+  `fp_<id>_reload_1.png`, `_reload_2.png`, `_reload.png` et `_reload_3.png`.
+  Les douze nouvelles poses intermédiaires couvrent main d'appui, extraction,
+  insertion, cartouche/pompe et bande d'alimentation. Tous les fichiers restent
+  en `192x144`, avec alpha et coins transparents.
+- Les quatre poses du fusil à pompe gardent strictement la main droite sur la
+  poignée arrière et font venir la main gauche depuis la gauche de l'écran :
+  relâchement de la pompe, présentation d'une cartouche rouge, insertion dans
+  le port inférieur puis reprise de la pompe. Il ne doit jamais y avoir deux
+  mains droites, deux cartouches ou une cartouche introduite par la fenêtre
+  d'éjection.
+- Les quatre poses du minigun montrent désormais un mécanisme continu :
+  ouverture du capot d'alimentation latéral droit et plateau vide, présentation
+  de la bande depuis la droite, cartouches calées dans le plateau, puis capot
+  refermé avec bande engagée. La main gauche stabilise toujours la poignée
+  arrière gauche ; la main droite manipule le capot et la bande.
 - `Weapon.reload_progress` expose une progression bornée `[0, 1]` uniquement
-  pendant la recharge. `hud.reload_pose()` transforme cette valeur en fondu
-  quantifié et en offsets propres à l'arme. Les sprites normaux, poses de
-  recharge et douze transitions sont mis en cache par résolution ; aucune
-  transformation d'image n'est effectuée à chaque frame.
+  pendant la recharge. `hud.reload_frames()` parcourt six points de passage
+  (repos inclus aux deux extrémités), soit cinq transitions mécaniques ;
+  `hud.reload_pose()` conserve les offsets propres à l'arme. Les fondus sont
+  quantifiés sur six niveaux et toutes les poses/combinaisons sont mises en
+  cache par résolution : aucune transformation d'image n'est effectuée à
+  chaque frame. Une pose intermédiaire absente replie sur `_reload`, puis sur
+  la pose normale si nécessaire.
 - Les temps de recharge, le remplissage du chargeur, le son, les contrôles
   tactiles et la coop ne changent pas. La pose revient progressivement au
   repos pendant les 18 % finaux afin que la remise à zéro du compteur ne
@@ -388,9 +413,31 @@ branche de travail `agent/reload-animations-level-music`.
   `_music_loop()` synthétise chaque thème à la demande, de façon déterministe
   et bouclable. Les fichiers `menu.*`, `1.*` à `5.*` et `survival.*` gardent
   la priorité.
-- `tests/test_reload_music.py` contient six non-régressions : progression,
-  intégrité des PNG, mouvement distinct, rendu HUD, couverture des profils et
-  déterminisme/raccord des boucles.
+- `tests/test_reload_music.py` contient huit non-régressions : progression,
+  intégrité des seize PNG de recharge, cinq transitions, mouvements distincts,
+  quatre étapes HUD réellement différentes par arme, couverture des profils
+  et déterminisme/raccord des boucles.
+
+## Équilibrage sniper/militaire et polish des menus/de la mort
+
+- `Sniper.AIM_DELAY = 0.5625` : la mise en joue avant le coup est réduite de
+  25 % par rapport aux `0,75 s` précédents. `FIRE_DELAY = 2.3` reste inchangé
+  et commence toujours après le tir ; il n'y a donc pas de double accélération
+  de la cadence.
+- `Soldier.ROLL_DURATION = 0.75` surcharge la valeur générique d'`Enemy`.
+  `ROLL_SPEED = 2.8` et `ROLL_COOLDOWN = 3.0` ne changent pas : portée,
+  animation et invincibilité diminuent ensemble de 25 %. Le client coop borne
+  aussi un ancien `roll_timer` d'une seconde à la durée courante.
+- Tous les boutons hérités de `MenuBase` sont placés dans le panneau latéral
+  gauche, dessinés comme des parallélogrammes et alignés à gauche. Le contour
+  vert et le liseré orange n'apparaissent qu'au survol. La collision suit le
+  polygone ; les coins transparents ne sont pas cliquables. Les surfaces
+  normales/survolées sont mises en cache par taille.
+- `DEATH_SKIP_LOCK = 3.0` interdit à Entrée, Espace, Échap, clic et tactile
+  d'écourter les trois premières secondes. La fermeture SDL reste gérée par
+  la boucle principale. `HUD.resize()` précalcule le titre serif gothique rouge
+  et ses coulures ; avant le déverrouillage, l'indication affiche
+  « LA MORT VOUS RETIENT... », puis les commandes de passage.
 
 ## Réparation Git, Colosse, possédés, environnements et tactile
 
@@ -471,13 +518,13 @@ branche de travail `agent/reload-animations-level-music`.
   `EnemyAI.proactive_roll_delay` décale seulement les roulades spontanées au
   premier contact (`0.6..1.8 s`) ; il ne pollue pas `roll_cooldown` et ne peut
   donc pas empêcher la première réaction à une balle.
-- L'écran de mort n'emploie plus les grandes lettres rouges espacées ni une
-  surface/glyphe recréé chaque frame. `HUD.resize()` prépare un panneau sombre
-  tactique, un titre sans espacement forcé, un état vital et une indication
-  Entrée/Espace/clic. Les tailles se recalibrent à la résolution ; le fondu et
-  l'indication animée utilisent `death_time`, puisque `HUD.update()` est figé
-  pendant la cinématique. Les raccourcis historiques, dont Échap, continuent
-  tous à avancer immédiatement vers l'écran de fin.
+- L'écran de mort ne recrée aucune surface ni aucun glyphe par frame.
+  `HUD.resize()` prépare le panneau sombre, le titre serif rouge avec coulures,
+  l'état vital et les deux indications verrouillée/déverrouillée. Les tailles
+  se recalibrent à la résolution ; le fondu et l'indication animée utilisent
+  `death_time`, puisque `HUD.update()` est figé pendant la cinématique.
+  Entrée/Espace/Échap/clic/tactile sont ignorés avant
+  `DEATH_SKIP_LOCK = 3.0`, puis peuvent avancer vers l'écran de fin.
 
 ## Passe de nettoyage, robustesse et sécurité LAN
 
@@ -525,10 +572,12 @@ branche de travail `agent/reload-animations-level-music`.
   à `2.55` (+50 %). Sa cadence reste strictement `FIRE_DELAY = 1.3` : ne pas
   confondre mobilité et fréquence de tir lors d'un futur équilibrage.
 - Le militaire `Soldier` possède `CAN_ROLL = True`. En combat et avec un côté
-  praticable, l'IA effectue une roulade latérale de `1.0 s`, à `2.8` cases/s,
+  praticable, l'IA effectue une roulade latérale de `0.75 s`, à `2.8` cases/s,
   avec invincibilité pendant toute l'animation et cooldown de `3.0 s` entre
-  deux déclenchements. Il ne navigue, ne vise et ne tire pas pendant l'action.
-  Les trois frames sont `assets/enemy_soldier_roll_0..2.png` (`64x96`).
+  deux déclenchements. Durée, portée et i-frames sont donc 25 % plus courtes
+  que dans la version à une seconde. Il ne navigue, ne vise et ne tire pas
+  pendant l'action. Les trois frames sont
+  `assets/enemy_soldier_roll_0..2.png` (`64x96`).
 - Le sprint a été supprimé. La touche configurable `roulade` (Maj par défaut)
   déclenche une roulade joueur de `0.55 s`, vitesse `4.55`, i-frames centrales
   de `0.30 s` et aucun cooldown après l'animation. La direction suit ZQSD, ou
@@ -562,10 +611,11 @@ branche de travail `agent/reload-animations-level-music`.
 
 ## Corrections de la passe combat et environnements
 
-- Le sniper conserve sa pose de mise en joue à genou mais son anticipation
-  passe de `1.25` à `0.75` seconde (`Sniper.AIM_DELAY`). Le cooldown de
-  `2.3` secondes commence toujours après le tir : seule la télégraphie avant
-  le coup est raccourcie.
+- Le sniper conserve sa pose de mise en joue à genou. Son anticipation,
+  d'abord passée de `1.25` à `0.75` seconde, vaut désormais `0.5625 s`
+  (`Sniper.AIM_DELAY`, nouvelle réduction de 25 %). Le cooldown de `2.3`
+  secondes commence toujours après le tir : seule la télégraphie avant le
+  coup est raccourcie.
 - Les frames de tir de `grunt`, `soldier`, `heavy`, `boss` et du coéquipier
   `ally` ont été régénérées en vue strictement frontale. Arme et flash sont
   orientés vers le joueur ; chaque silhouette reste alignée au sol et garde
@@ -600,9 +650,9 @@ branche de travail `agent/reload-animations-level-music`.
 - `ai.cover_adjusted_chance()` conserve la précision normale à exposition
   complète, mais renforce légèrement le couvert : facteur
   `0.28 + 0.72 * exposure` au lieu de `0.35 + 0.65 * exposure`.
-- Le sniper possède `AIM_DELAY = 0.75`. Lorsque son arme est prête, il passe
+- Le sniper possède `AIM_DELAY = 0.5625`. Lorsque son arme est prête, il passe
   en `aiming`, s'immobilise et utilise `assets/enemy_sniper_aim.png` (un genou
-  au sol). Le tir part à la première frame après 0,75 s. Perdre la ligne de
+  au sol). Le tir part à la première frame après 0,5625 s. Perdre la ligne de
   vue, se replier au corps à corps, changer d'état, mourir ou perdre la cible
   annule la visée ; aucun tir ne reste stocké derrière un mur.
 - La pose à genou a été régénérée pour corriger l'anatomie puis replacée en
@@ -646,15 +696,17 @@ branche de travail `agent/reload-animations-level-music`.
   une silhouette opaque plus basse (`44x74`, alignée au sol). Le moteur garde
   donc les pieds au sol et le personnage paraît réellement agenouillé sans
   modifier le raycaster.
-- Le délai de 0,75 s s'ajoute au temps entre deux tirs (`FIRE_DELAY = 2.3`) :
-  le cooldown commence après le tir, pas au début de la mise en joue.
+- Le délai de 0,5625 s s'ajoute au temps entre deux tirs
+  (`FIRE_DELAY = 2.3`) : le cooldown commence après le tir, pas au début de
+  la mise en joue.
 - Une exposition de `1.0` ne doit jamais être pénalisée par le bonus de
   couvert. L'exposition est bornée entre `0.0` et `1.0`.
 - Le joueur n'a aucun cooldown mais `Player.start_roll()` doit toujours refuser
   un redéclenchement pendant `rolling`. Le cooldown soldat de `3.0 s` se mesure
-  de déclenchement à déclenchement et inclut sa seconde de roulade. Ne jamais
-  remplacer le déplacement sous-échantillonné par un unique grand pas
-  collisionné.
+  de déclenchement à déclenchement et inclut ses `0.75 s` de roulade. Ne
+  jamais remplacer le déplacement sous-échantillonné par un unique grand pas
+  collisionné. Les instantanés coop historiques peuvent annoncer jusqu'à
+  `1.0 s`, mais le client les borne à `Soldier.ROLL_DURATION`.
 - `MAP_MOON`, `PROP_CHARS`, `cover_circles`, le test de ligne de vue et le
   hitscan doivent rester cohérents : retirer seulement l'un d'eux rendrait un
   cristal traversable, invisible à l'IA ou perméable aux balles.
@@ -682,7 +734,7 @@ branche de travail `agent/reload-animations-level-music`.
 
 ## Validation disponible
 
-La suite contient 77 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 81 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -692,13 +744,14 @@ roulades joueur/soldat (direction, i-frames, enchaînement/cooldown, collision,
 frames et IA), compatibilité réseau de la roulade, cristaux de couverture et
 nouveau fond de menu.
 
-`tests/test_cleanup.py` ajoute 13 contrôles : paquets UDP bornés et non-objets,
+`tests/test_cleanup.py` ajoute 15 contrôles : paquets UDP bornés et non-objets,
 réglages malformés/sauvegarde atomique/JSON imbriqué (RecursionError), IPv4,
 conflits et touches réservées, téléportation/`NaN`/spam de roulade, séquences
 de roulades enchaînées et paquets retardés, validation autoritaire des armes,
 bouclier et mort en coop, commandes ignorées en pause, cache du sprite
-d'arme, mise en page de mort à basse résolution et file d'apparitions en
-temps constant.
+d'arme, mise en page gothique de mort à basse résolution, verrou non skippable
+de trois secondes, géométrie/collision des boutons parallélogrammes et file
+d'apparitions en temps constant.
 
 `tests/test_smoke.py` (session 24) ajoute 8 tests de fumée généraux : boot
 (réglages + SoundBank avec/sans mixer), campagne (frames complètes, mort
@@ -715,10 +768,10 @@ Laboratoire, densité des cratères, multi-touch, rejet du clic souris
 synthétique, reprise de pause sans action maintenue et blocage de la roulade
 coop après l'issue.
 
-`tests/test_reload_music.py` ajoute 6 contrôles : progression normalisée de
-la recharge, dimensions/alpha des quatre poses, mouvements distincts, rendu
-HUD réellement différent, couverture des sept profils musicaux et génération
-déterministe/distincte/raccordée.
+`tests/test_reload_music.py` ajoute 8 contrôles : progression normalisée de
+la recharge, dimensions/alpha des seize poses, cinq transitions, mouvements
+distincts, quatre étapes HUD réellement différentes par arme, couverture des
+sept profils musicaux et génération déterministe/distincte/raccordée.
 
 `tests/test_impact_audio.py` ajoute 7 contrôles : classification et priorité
 des matières, palettes de particules non mélangées, migration/persistance des
@@ -810,11 +863,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
-77 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
-gameplay/graphiques ; `test_cleanup.py` : 13 contrôles robustesse/réseau ;
+81 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+gameplay/graphiques ; `test_cleanup.py` : 15 contrôles robustesse/réseau/UI ;
 `test_smoke.py` : 8 tests de fumée généraux ;
 `test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
-`test_reload_music.py` : 6 tests recharge/audio ;
+`test_reload_music.py` : 8 tests recharge/audio ;
 `test_impact_audio.py` : 7 tests impacts/volumes/menu/coop ;
 `test_p0_p1.py` : 10 tests mémoire/protocole/collisions/sécurité) :
 
@@ -884,19 +937,33 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
   `RemotePlayer`, clamp réseau `rt`, allocation anti-téléportation `ROLL_SPEED`,
   séquence `rs` (l'hôte rejette les datagrammes UDP retardés ; front `rt=0`→`rt>0`
   pour les anciens clients).
-- **Roulade soldat** (`CAN_ROLL`) : 1,0 s à 2,8 cases/s, cooldown 3,0 s de
-  déclenchement à déclenchement. `hit_roll_request` posé après résolution
-  complète d'un coup (tous les plombs d'un fusil à pompe passent avant l'esquive).
-- **Sniper** : `AIM_DELAY = 0,75 s` (télégraphie à genou, `enemy_sniper_aim.png`),
-  puis `FIRE_DELAY = 2,3 s` APRÈS le tir. Toute perte de vue/cible annule la visée.
+- **Roulade soldat** (`CAN_ROLL`) : 0,75 s à 2,8 cases/s, cooldown 3,0 s de
+  déclenchement à déclenchement. Portée et i-frames ont diminué ensemble de
+  25 %. `hit_roll_request` est posé après résolution complète d'un coup (tous
+  les plombs d'un fusil à pompe passent avant l'esquive).
+- **Sniper** : `AIM_DELAY = 0,5625 s` (télégraphie à genou,
+  `enemy_sniper_aim.png`), puis `FIRE_DELAY = 2,3 s` APRÈS le tir. Toute perte
+  de vue/cible annule la visée.
 - **Couvert** : `cover_adjusted_chance()` = `0,28 + 0,72 * exposure` ; une
   exposition de 1,0 n'est jamais pénalisée. `exposure` bornée [0, 1].
 - **Grunt** : `SPEED = 2,55` (+50 %), cadence inchangée `FIRE_DELAY = 1,3`.
 - **Bouclier de spawn** (3 s, aussi pour les coéquipiers en coop) : les tests de
   dégâts doivent faire `player.shield = 0.0` d'abord.
 - **Caméra de mort** : gameplay figé à `outcome == "dead"`, `death_time` tourne
-  (~`DEATH_CAM_TIME`) avant `finished`. HUD préparé dans `HUD.resize()` ; vider
-  `_weapon_scale_cache` dans `resize()`.
+  (~`DEATH_CAM_TIME`) avant `finished`. Aucune entrée ne peut passer la mort
+  avant `DEATH_SKIP_LOCK = 3.0`. HUD et titre sanglant préparés dans
+  `HUD.resize()` ; vider `_weapon_scale_cache`, `_reload_blend_cache` et
+  `_reload_sprite_cache` dans `resize()`.
+- **Menus** : tous les boutons passent par `MenuBase._button_surface()` et
+  `_button_contains()` ; conserver la forme parallélogramme, le placement
+  latéral gauche, le contour uniquement au survol et la collision polygonale.
+- **Recharges** : `RELOAD_KEYFRAMES` garde les six points de passage repos →
+  `_reload_1` → `_reload_2` → `_reload` → `_reload_3` → repos. Les PNG sont
+  `192x144` transparents ; tout asset manquant doit continuer à replier vers
+  `_reload`, puis la pose normale, sans création par frame. Le fusil garde une
+  main droite arrière et une main gauche pour charger par le dessous ; le
+  minigun garde l'ordre capot ouvert → bande présentée → bande calée → capot
+  fermé.
 - **Cristaux lunaires** (`MAP_MOON`, `k`/`prop_alien_crystal`) : bloquent
   déplacement/pathfinding par la case ET balles/perception par un cercle rayon
   0,46 — `PROP_CHARS`, `cover_circles`, ligne de vue et hitscan doivent rester

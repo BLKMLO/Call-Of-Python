@@ -22,9 +22,10 @@ from coop import (
     _starting_remote_weapons,
 )
 from entities import Player, RemotePlayer
-from game import Game
+from game import DEATH_CAM_TIME, DEATH_SKIP_LOCK, Game
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
+from menu import MenuBase
 from network import UdpPeer
 from settings import DEFAULT_KEYS, RESERVED_KEYS, Settings, valid_ipv4
 from survival import SurvivalGame
@@ -283,7 +284,69 @@ class CleanupTests(unittest.TestCase):
                              hud._death_panel.get_width() - 40)
         self.assertLessEqual(hud._death_hint.get_width(),
                              hud._death_panel.get_width() - 40)
+        self.assertGreater(hud._death_title.get_height(),
+                           hud.death_font.get_height())
+        pixels = pygame.image.tobytes(hud._death_title, "RGBA")
+        self.assertGreater(
+            sum(1 for index in range(0, len(pixels), 4)
+                if (pixels[index] > pixels[index + 1] * 2
+                    and pixels[index] > pixels[index + 2] * 2
+                    and pixels[index + 3] > 0)),
+            50,
+        )
         self.assertNotEqual(screen.get_at((320, 240))[:3], (80, 90, 100))
+
+    def test_death_screen_cannot_be_skipped_during_first_three_seconds(self):
+        game = Game.__new__(Game)
+        game.outcome = "dead"
+        game.death_time = DEATH_SKIP_LOCK - 0.01
+        skip = pygame.event.Event(
+            pygame.KEYDOWN, key=pygame.K_RETURN, scancode=0,
+        )
+
+        game.handle_event(skip)
+        self.assertAlmostEqual(game.death_time, DEATH_SKIP_LOCK - 0.01)
+
+        game.death_time = DEATH_SKIP_LOCK
+        game.handle_event(skip)
+        self.assertGreater(game.death_time, DEATH_CAM_TIME)
+
+    def test_all_menu_buttons_share_left_parallelogram_hitboxes(self):
+        class DemoMenu(MenuBase):
+            title = "Démo"
+
+            def items(self):
+                return [("first", "PREMIER"), ("second", "SECOND")]
+
+        sounds = Mock()
+        menu = DemoMenu(sounds)
+        screen = pygame.Surface((1280, 720))
+        rows = menu._layout(screen)
+        self.assertTrue(all(rect.centerx < screen.get_width() * 0.35
+                            for _ident, _label, rect, _split in rows))
+
+        _ident, _label, rect, _split = rows[0]
+        points = menu._button_points(rect)
+        self.assertNotEqual(points[0][0], points[3][0])
+        self.assertFalse(menu._button_contains(rect, rect.topleft))
+        self.assertTrue(menu._button_contains(rect, rect.center))
+
+        normal = menu._button_surface(rect.size, False)
+        hovered = menu._button_surface(rect.size, True)
+        self.assertEqual(normal.get_at((0, 0)).a, 0)
+        self.assertNotEqual(
+            pygame.image.tobytes(normal, "RGBA"),
+            pygame.image.tobytes(hovered, "RGBA"),
+        )
+
+        ignored = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=rect.topleft,
+        )
+        self.assertIsNone(menu.handle_event(ignored, screen))
+        clicked = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=1, pos=rect.center,
+        )
+        self.assertEqual(menu.handle_event(clicked, screen), "first")
 
     def test_survival_spawn_queue_is_constant_time(self):
         game = SurvivalGame.__new__(SurvivalGame)

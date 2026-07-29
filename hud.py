@@ -19,6 +19,17 @@ HUD_AMBER = (238, 166, 75)
 HUD_TEXT = (220, 231, 230)
 HUD_DIM = (115, 139, 143)
 
+# Séquence mécanique commune : les suffixes désignent les assets
+# `fp_<arme><suffixe>.png`. `None` représente la pose normale.
+RELOAD_KEYFRAMES = (
+    (0.00, None),
+    (0.16, "_reload_1"),
+    (0.36, "_reload_2"),
+    (0.58, "_reload"),
+    (0.78, "_reload_3"),
+    (1.00, None),
+)
+
 
 def reload_pose(weapon_id, progress):
     """Poids de la pose et déplacement propre à chaque recharge.
@@ -70,6 +81,27 @@ def reload_pose(weapon_id, progress):
     return blend, 0.0, 0.06 * arc
 
 
+def reload_frames(progress):
+    """Retourne les deux poses encadrantes et leur fondu normalisé.
+
+    Les six points de passage produisent cinq transitions mécaniques. Le
+    fondu est lissé puis quantifié lors du rendu, afin de conserver un cache
+    borné et de ne faire aucune composition d'image à chaque frame.
+    """
+    p = max(0.0, min(1.0, progress))
+    if p <= 0.0 or p >= 1.0:
+        return None, None, 0.0
+    for index in range(len(RELOAD_KEYFRAMES) - 1):
+        start, first = RELOAD_KEYFRAMES[index]
+        end, second = RELOAD_KEYFRAMES[index + 1]
+        if p <= end:
+            local = (p - start) / (end - start)
+            local = max(0.0, min(1.0, local))
+            blend = local * local * (3.0 - 2.0 * local)
+            return first, second, blend
+    return None, None, 0.0
+
+
 class HUD:
     def __init__(self, size):
         self.resize(size)
@@ -106,7 +138,7 @@ class HUD:
         )
         death_size = max(38, self.height // 10)
         self.death_font = pygame.font.SysFont(
-            "bahnschrift,dejavusans,arial,liberationsans",
+            "georgia,cambria,timesnewroman,dejavuserif,liberationserif",
             death_size, bold=True,
         )
         death_max_w = min(self.width - 80, 820)
@@ -114,7 +146,7 @@ class HUD:
                and death_size > 28):
             death_size -= 2
             self.death_font = pygame.font.SysFont(
-                "bahnschrift,dejavusans,arial,liberationsans",
+                "georgia,cambria,timesnewroman,dejavuserif,liberationserif",
                 death_size, bold=True,
             )
         self.death_small_font = pygame.font.SysFont(
@@ -142,9 +174,7 @@ class HUD:
                          (0, 0, 5, panel_h), border_radius=3)
         pygame.draw.line(self._death_panel, (174, 42, 46, 180),
                          (24, 47), (panel_w - 24, 47), 2)
-        self._death_title = self.death_font.render(
-            "VOUS ÊTES MORT", True, (236, 229, 222),
-        )
+        self._death_title = self._bloody_title("VOUS ÊTES MORT")
         self._death_kicker = self.death_small_font.render(
             "SIGNAL VITAL PERDU  //  UNITÉ HORS COMBAT",
             True, (203, 78, 76),
@@ -152,6 +182,10 @@ class HUD:
         self._death_hint = self.death_small_font.render(
             "ENTRÉE  ·  ESPACE  ·  CLIC   POUR PASSER",
             True, (142, 154, 158),
+        )
+        self._death_locked_hint = self.death_small_font.render(
+            "LA MORT VOUS RETIENT...",
+            True, (123, 48, 47),
         )
         # Vignette du bouclier temporaire : bordure bleutée qui s'estompe
         # vers le centre (construite une fois, modulée par set_alpha ensuite).
@@ -168,7 +202,34 @@ class HUD:
         self._panel_cache = {}       # plaques translucides du HUD
         self._weapon_scale_cache = {}
         self._reload_blend_cache = {}
+        self._reload_sprite_cache = {}
         self._text_cache = {}        # libellés statiques rendus une fois
+
+    def _bloody_title(self, text):
+        """Titre gothique rouge sombre avec coulures précalculées."""
+        glyphs = self.death_font.render(text, True, (174, 28, 34))
+        drip_space = max(14, glyphs.get_height() // 3)
+        title = pygame.Surface(
+            (glyphs.get_width() + 8, glyphs.get_height() + drip_space),
+            pygame.SRCALPHA,
+        )
+        shadow = self.death_font.render(text, True, (26, 0, 3))
+        title.blit(shadow, (6, 5))
+        title.blit(glyphs, (4, 1))
+        baseline = glyphs.get_height() - max(4, glyphs.get_height() // 10)
+        for fraction, length_scale, width in (
+                (0.08, 0.52, 2), (0.23, 0.86, 3), (0.47, 0.62, 2),
+                (0.69, 1.00, 3), (0.88, 0.70, 2)):
+            x = 4 + round(glyphs.get_width() * fraction)
+            length = max(6, round(drip_space * length_scale))
+            color = (143, 18, 25, 235)
+            pygame.draw.line(
+                title, color, (x, baseline), (x, baseline + length), width,
+            )
+            pygame.draw.circle(
+                title, color, (x, baseline + length), max(2, width),
+            )
+        return title
 
     def _text(self, font, content, color):
         """`font.render` mémoïsé pour les chaînes (quasi) constantes.
@@ -292,49 +353,50 @@ class HUD:
         sprite = assets.get("fp_" + weapon.spec.id)
         target_w = int(self.width * 0.34)
         target_h = int(target_w * sprite.get_height() / sprite.get_width())
-        cache_key = (id(sprite), target_w, target_h)
-        scaled = self._weapon_scale_cache.get(cache_key)
-        if scaled is None:
-            scaled = pygame.transform.scale(sprite, (target_w, target_h))
-            self._weapon_scale_cache[cache_key] = scaled
+        scaled = self._scaled_weapon_frame(sprite, target_w, target_h)
 
-        pose_blend, reload_x, reload_y = reload_pose(
+        _pose_blend, reload_x, reload_y = reload_pose(
             weapon.spec.id, weapon.reload_progress,
         )
-        blend_step = max(0, min(12, round(pose_blend * 12)))
-        if blend_step == 0:
+        first_suffix, second_suffix, frame_blend = reload_frames(
+            weapon.reload_progress,
+        )
+        blend_step = max(0, min(6, round(frame_blend * 6)))
+        if first_suffix is None and second_suffix is None:
             frame = scaled
         else:
-            # Chargement paresseux : une arme jamais rechargée ne paie pas
-            # le redimensionnement de sa pose secondaire.
-            reload_sprite = assets.get("fp_" + weapon.spec.id + "_reload")
-            reload_key = (id(reload_sprite), target_w, target_h)
-            reload_scaled = self._weapon_scale_cache.get(reload_key)
-            if reload_scaled is None:
-                reload_scaled = pygame.transform.scale(
-                    reload_sprite, (target_w, target_h),
-                )
-                self._weapon_scale_cache[reload_key] = reload_scaled
-
-            if blend_step == 12:
-                frame = reload_scaled
+            first = self._reload_frame(
+                weapon.spec.id, first_suffix, sprite,
+            )
+            second = self._reload_frame(
+                weapon.spec.id, second_suffix, sprite,
+            )
+            first_scaled = self._scaled_weapon_frame(
+                first, target_w, target_h,
+            )
+            second_scaled = self._scaled_weapon_frame(
+                second, target_w, target_h,
+            )
+            if blend_step == 0:
+                frame = first_scaled
+            elif blend_step == 6:
+                frame = second_scaled
             else:
                 blend_key = (
-                    id(sprite), id(reload_sprite), target_w, target_h,
-                    blend_step,
+                    id(first), id(second), target_w, target_h, blend_step,
                 )
                 frame = self._reload_blend_cache.get(blend_key)
                 if frame is None:
-                    alpha = round(255 * blend_step / 12)
-                    normal_layer = scaled.copy()
-                    normal_layer.set_alpha(255 - alpha)
-                    reload_layer = reload_scaled.copy()
-                    reload_layer.set_alpha(alpha)
+                    alpha = round(255 * blend_step / 6)
+                    first_layer = first_scaled.copy()
+                    first_layer.set_alpha(255 - alpha)
+                    second_layer = second_scaled.copy()
+                    second_layer.set_alpha(alpha)
                     frame = pygame.Surface(
                         (target_w, target_h), pygame.SRCALPHA,
                     )
-                    frame.blit(normal_layer, (0, 0))
-                    frame.blit(reload_layer, (0, 0))
+                    frame.blit(first_layer, (0, 0))
+                    frame.blit(second_layer, (0, 0))
                     self._reload_blend_cache[blend_key] = frame
 
         sway_x = math.sin(self.sway_time * 7) * self.width * 0.008
@@ -380,6 +442,35 @@ class HUD:
         elif self.kick > 0.4:
             # Juste après un tir : une volute de fumée naît au canon.
             self.smoke.append([tip[0] + random.uniform(-4, 4), tip[1], 0.0])
+
+    def _scaled_weapon_frame(self, sprite, target_w, target_h):
+        """Met à l'échelle une pose une seule fois par résolution."""
+        key = (id(sprite), target_w, target_h)
+        scaled = self._weapon_scale_cache.get(key)
+        if scaled is None:
+            scaled = pygame.transform.scale(sprite, (target_w, target_h))
+            self._weapon_scale_cache[key] = scaled
+        return scaled
+
+    def _reload_frame(self, weapon_id, suffix, normal):
+        """Charge paresseusement une pose, avec repli sur l'asset historique."""
+        if suffix is None:
+            return normal
+        key = (weapon_id, suffix)
+        if key in self._reload_sprite_cache:
+            return self._reload_sprite_cache[key]
+        try:
+            frame = assets.get(f"fp_{weapon_id}{suffix}")
+        except (KeyError, pygame.error):
+            if suffix == "_reload":
+                frame = normal
+            else:
+                try:
+                    frame = assets.get(f"fp_{weapon_id}_reload")
+                except (KeyError, pygame.error):
+                    frame = normal
+        self._reload_sprite_cache[key] = frame
+        return frame
 
     def _draw_crosshair(self, screen):
         """Viseur dynamique : s'écarte quand on tire (dispersion)."""
@@ -742,7 +833,7 @@ class HUD:
         screen.blit(hint, ((self.width - hint.get_width()) // 2,
                            self.height // 2 + 10))
 
-    def draw_death_screen(self, screen, t):
+    def draw_death_screen(self, screen, t, skip_unlocked=False):
         """Écran de mort tactique, lisible et cohérent avec le HUD.
 
         `t` : temps écoulé depuis la mort (s)."""
@@ -774,8 +865,10 @@ class HUD:
             # `HUD.update` est volontairement figé après la mort : l'horloge
             # de la cinématique est donc la seule source d'animation fiable.
             pulse = 0.78 + 0.22 * math.sin(t * 4.0)
-            self._death_hint.set_alpha(int(220 * hint_alpha * pulse))
-            screen.blit(self._death_hint, self._death_hint.get_rect(
+            hint = (self._death_hint if skip_unlocked
+                    else self._death_locked_hint)
+            hint.set_alpha(int(220 * hint_alpha * pulse))
+            screen.blit(hint, hint.get_rect(
                 center=(self.width // 2, rect.bottom - 27),
             ))
 

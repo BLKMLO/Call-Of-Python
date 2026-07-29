@@ -1275,6 +1275,13 @@ class CoopClientGame:
             possessed = bool(data[12]) if len(data) > 12 else False
             if roll_timer is None:
                 roll_timer = 0.0
+            else:
+                # Un ancien hôte peut encore annoncer la roulade historique
+                # d'une seconde. Le client corrigé ne prolonge jamais
+                # l'animation ni ses i-frames au-delà de l'archétype courant.
+                roll_timer = min(
+                    roll_timer, ENEMY_TYPES[kind].ROLL_DURATION,
+                )
             seen.add(net_id)
             ghost = self.ghosts.get(net_id)
             if ghost is None:
