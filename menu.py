@@ -6,6 +6,8 @@ aux changements de résolution). Chaque menu retourne une chaîne d'action
 ("play", "settings", "quit", "back", ...) depuis `handle_event`.
 """
 
+from typing import ClassVar
+
 import pygame
 
 import assets
@@ -45,12 +47,13 @@ def format_stats(stats):
 
 
 class MenuBase:
-    """Mécanique commune : lignes centrées, survol à la souris, clic."""
+    """Mécanique commune : boutons latéraux, survol à la souris, clic."""
 
     title = ""
     menu_vertical_offset = 0.0
     _background_cache = {}
     _panel_cache = {}
+    _button_cache: ClassVar[dict] = {}
 
     def __init__(self, sounds):
         self.sounds = sounds
@@ -82,8 +85,8 @@ class MenuBase:
             rows.append((ident, label, rect, split_x))
         return rows
 
-    @staticmethod
-    def _bracket_split(font, label, rect):
+    @classmethod
+    def _bracket_split(cls, font, label, rect):
         """Point de bascule gauche/droite d'un bouton "<  valeur  >".
 
         Doit tomber entre les deux chevrons, pas au centre du texte entier :
@@ -95,10 +98,62 @@ class MenuBase:
             return rect.centerx
         lt = label.index("<")
         gt = label.index(">")
-        text_left = rect.centerx - font.size(label)[0] // 2
+        text_left = cls._button_text_left(rect)
         lt_x = text_left + font.size(label[:lt])[0]
         gt_x = text_left + font.size(label[:gt + 1])[0]
         return (lt_x + gt_x) // 2
+
+    @staticmethod
+    def _button_skew(rect):
+        return max(10, min(24, rect.height // 3))
+
+    @classmethod
+    def _button_points(cls, rect):
+        """Sommets du parallélogramme commun à tous les boutons."""
+        skew = cls._button_skew(rect)
+        return [
+            (rect.left + skew, rect.top),
+            (rect.right, rect.top),
+            (rect.right - skew, rect.bottom - 1),
+            (rect.left, rect.bottom - 1),
+        ]
+
+    @classmethod
+    def _button_contains(cls, rect, point):
+        """Collision exacte, sans coins transparents cliquables."""
+        x, y = point
+        if not (rect.left <= x < rect.right and rect.top <= y < rect.bottom):
+            return False
+        skew = cls._button_skew(rect)
+        ratio = (y - rect.top) / max(1, rect.height - 1)
+        left = rect.left + skew * (1.0 - ratio)
+        right = rect.right - skew * ratio
+        return left <= x <= right
+
+    @classmethod
+    def _button_text_left(cls, rect):
+        return rect.left + cls._button_skew(rect) + max(10, rect.height // 4)
+
+    @classmethod
+    def _button_surface(cls, size, hovered):
+        """Fond parallélogramme mis en cache par taille et état."""
+        key = (size, bool(hovered))
+        surface = cls._button_cache.get(key)
+        if surface is not None:
+            return surface
+        surface = pygame.Surface(size, pygame.SRCALPHA)
+        rect = surface.get_rect()
+        points = cls._button_points(rect)
+        fill = (27, 58, 53, 232) if hovered else (7, 16, 22, 205)
+        pygame.draw.polygon(surface, fill, points)
+        if hovered:
+            # Le contour n'apparaît qu'au survol, comme demandé.
+            pygame.draw.polygon(surface, HOVER_COLOR, points, 2)
+            pygame.draw.line(
+                surface, WARM_COLOR, points[0], points[3], 3,
+            )
+        cls._button_cache[key] = surface
+        return surface
 
     @staticmethod
     def _font(screen_h, small=False):
@@ -164,12 +219,15 @@ class MenuBase:
 
     @staticmethod
     def _content_center_x(screen):
-        return screen.get_width() // 2
+        w = screen.get_width()
+        panel_w = min(int(w * 0.46), 650)
+        margin = max(12, int(w * 0.025))
+        return margin + panel_w // 2
 
     def _panel_rect(self, screen):
         """Cadre central commun, également utilisé par les sous-écrans."""
         w, h = screen.get_size()
-        panel_w = min(int(w * 0.42), 650)
+        panel_w = min(int(w * 0.46), 650)
         panel_h = int(h * 0.82)
         rect = pygame.Rect(0, 0, panel_w, panel_h)
         rect.center = (self._content_center_x(screen), h // 2 + h // 40)
@@ -271,7 +329,7 @@ class MenuBase:
     def handle_event(self, event, screen):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for ident, _label, rect, split_x in self._layout(screen):
-                if rect.collidepoint(event.pos):
+                if ident is not None and self._button_contains(rect, event.pos):
                     self.sounds.play("click", volume_scale=0.5)
                     return self.on_click(ident, event.pos, rect, split_x)
         return None
@@ -292,22 +350,17 @@ class MenuBase:
         rows = self._layout(screen)
         font = self._font(h, small=len(rows) > 8)
         for ident, label, rect, _split_x in rows:
-            hovered = rect.collidepoint(mouse) and ident is not None
+            hovered = (ident is not None
+                       and self._button_contains(rect, mouse))
             if ident is not None:
-                fill = (29, 59, 54, 225) if hovered else (10, 20, 26, 188)
-                border = HOVER_COLOR if hovered else (62, 84, 88)
-                button = pygame.Surface(rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(button, fill, button.get_rect(),
-                                 border_radius=4)
-                pygame.draw.rect(button, border, button.get_rect(), 1,
-                                 border_radius=4)
-                if hovered:
-                    pygame.draw.rect(button, WARM_COLOR,
-                                     (0, 0, 4, rect.height), border_radius=2)
-                screen.blit(button, rect)
+                screen.blit(self._button_surface(rect.size, hovered), rect)
             color = HOVER_COLOR if hovered else TEXT_COLOR
             text = font.render(label, True, color)
-            screen.blit(text, text.get_rect(center=rect.center))
+            text_rect = text.get_rect()
+            text_rect.midleft = (
+                self._button_text_left(rect), rect.centery,
+            )
+            screen.blit(text, text_rect)
         footer = pygame.Surface((w, max(42, h // 11)), pygame.SRCALPHA)
         footer.fill((3, 8, 12, 205))
         screen.blit(footer, (0, h - footer.get_height()))
@@ -354,10 +407,20 @@ class MainMenu(MenuBase):
     def _layout(self, screen):
         rows = super()._layout(screen)
         max_w = self._panel_rect(screen).width - 34
-        return [(ident, label,
-                 pygame.Rect(rect.centerx - min(rect.width, max_w) // 2,
-                             rect.y, min(rect.width, max_w), rect.height), split)
-                for ident, label, rect, split in rows]
+        result = []
+        font = self._font(
+            screen.get_height(), small=len(rows) > 8,
+        )
+        for ident, label, rect, _split in rows:
+            width = min(rect.width, max_w)
+            resized = pygame.Rect(
+                rect.centerx - width // 2, rect.y, width, rect.height,
+            )
+            result.append((
+                ident, label, resized,
+                self._bracket_split(font, label, resized),
+            ))
+        return result
 
     def draw(self, screen):
         super().draw(screen)
@@ -617,12 +680,14 @@ class SealBrokenScreen(MenuBase):
 
     def draw(self, screen):
         super().draw(screen)
-        w, h = screen.get_size()
+        _w, h = screen.get_size()
         font = self._font(h, small=True)
         y = h // 5 + h // 12
         for line in self.LORE:
             surf = font.render(line, True, (200, 160, 130))
-            screen.blit(surf, surf.get_rect(center=(w // 2, y)))
+            screen.blit(surf, surf.get_rect(
+                center=(self._content_center_x(screen), y),
+            ))
             y += int(font.get_height() * 1.35)
 
 

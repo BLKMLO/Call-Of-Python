@@ -29,6 +29,7 @@ SHOUT_HEARING = 5.0          # rayon du cri d'alerte d'un ennemi
 # la vue bascule et plonge, puis « VOUS ÊTES MORT » s'affiche.
 DEATH_FALL_TIME = 1.3        # durée de la chute/bascule de la caméra (s)
 DEATH_CAM_TIME = 4.0         # durée totale avant l'écran de fin (s)
+DEATH_SKIP_LOCK = 3.0        # aucune entrée ne peut écourter les 3 premières s
 
 # Scancodes des touches 1..4 (indépendants de la disposition AZERTY/QWERTY).
 SLOT_SCANCODES = {30: 0, 31: 1, 32: 2, 33: 3}
@@ -107,7 +108,8 @@ class Game:
         if event.type in FINGER_EVENTS:
             actions = self.touch.handle_event(event)
             if self.outcome == "dead":
-                if event.type == pygame.FINGERDOWN:
+                if (event.type == pygame.FINGERDOWN
+                        and self.death_time >= DEATH_SKIP_LOCK):
                     self.death_time = DEATH_CAM_TIME + 0.01
                 return None
             for action in actions:
@@ -119,10 +121,13 @@ class Game:
         # pas activer la pause ici, car cela gelait le chronomètre de la caméra
         # et laissait « VOUS ÊTES MORT » affiché indéfiniment.
         if self.outcome == "dead":
-            if ((event.type == pygame.KEYDOWN
+            skip_requested = (
+                (event.type == pygame.KEYDOWN
                  and event.key in (pygame.K_ESCAPE, pygame.K_RETURN,
                                    pygame.K_KP_ENTER, pygame.K_SPACE))
-                    or event.type == pygame.MOUSEBUTTONDOWN):
+                or event.type == pygame.MOUSEBUTTONDOWN
+            )
+            if skip_requested and self.death_time >= DEATH_SKIP_LOCK:
                 self.death_time = DEATH_CAM_TIME + 0.01
             return None
         if event.type == pygame.KEYDOWN:
@@ -748,7 +753,11 @@ class Game:
 
         if dead:
             self._death_cam_roll(screen, fall)
-            self.hud.draw_death_screen(screen, self.death_time)
+            self.hud.draw_death_screen(
+                screen,
+                self.death_time,
+                skip_unlocked=self.death_time >= DEATH_SKIP_LOCK,
+            )
             return
 
         if self.player.rolling:

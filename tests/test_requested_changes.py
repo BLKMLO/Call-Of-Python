@@ -82,7 +82,7 @@ class RequestedChangesTests(unittest.TestCase):
         self.assertLess(cover_adjusted_chance(0.8, 0.5), 0.8 * 0.675)
         self.assertAlmostEqual(cover_adjusted_chance(0.8, 0.0), 0.224)
 
-    def test_sniper_waits_075_seconds_before_firing(self):
+    def test_sniper_waits_05625_seconds_before_firing(self):
         sniper = Sniper(1.5, 1.5)
         ai = EnemyAI(sniper)
         player = SimpleNamespace(
@@ -92,12 +92,12 @@ class RequestedChangesTests(unittest.TestCase):
 
         self.assertEqual(ai._try_shoot(player, None, 7.0), [])
         self.assertTrue(sniper.aiming)
-        self.assertAlmostEqual(sniper.aim_timer, 0.75)
-        sniper.update_timers(0.74)
+        self.assertAlmostEqual(sniper.aim_timer, 0.5625)
+        sniper.update_timers(0.55)
         self.assertEqual(ai._try_shoot(player, None, 7.0), [])
 
         # Dépasse très légèrement le seuil pour éviter le bruit flottant de
-        # 0.74 + 0.01 ; en jeu, le tir part à la première frame après 0,75 s.
+        # l'addition ; en jeu, le tir part à la première frame après 0,5625 s.
         sniper.update_timers(0.02)
         with patch("ai.exposure_fraction", return_value=1.0), \
                 patch("ai.random.random", return_value=1.0):
@@ -140,7 +140,9 @@ class RequestedChangesTests(unittest.TestCase):
                              0, 0, 0, 1, 0.8]]
         client._apply_enemies(rolling_snapshot)
         self.assertTrue(client.ghosts[8].rolling)
-        self.assertAlmostEqual(client.ghosts[8].roll_timer, 0.8)
+        self.assertAlmostEqual(
+            client.ghosts[8].roll_timer, Soldier.ROLL_DURATION,
+        )
 
     def test_other_ranged_fire_sprites_keep_their_idle_scale(self):
         # Le sniper est contrôlé séparément entre sa pose de visée accroupie
@@ -212,9 +214,11 @@ class RequestedChangesTests(unittest.TestCase):
         player.move(0.5, keys, DEFAULT_KEYS, level)
         self.assertLess(player.x, 1.8)
 
-    def test_soldier_roll_has_three_frames_one_second_iframes_and_cooldown(self):
+    def test_soldier_roll_has_three_frames_075s_iframes_and_cooldown(self):
         soldier = Soldier(2.5, 2.5)
         self.assertTrue(soldier.start_roll(0.0, 1.0))
+        self.assertAlmostEqual(soldier.roll_timer, 0.75)
+        self.assertAlmostEqual(soldier.roll_invuln, 0.75)
         health = soldier.health
         soldier.take_damage(30)
         self.assertEqual(soldier.health, health)
@@ -224,11 +228,11 @@ class RequestedChangesTests(unittest.TestCase):
         self.assertEqual(len({pygame.image.tostring(frame, "RGBA")
                               for frame in frames}), 3)
 
-        soldier.update_timers(1.01)
+        soldier.update_timers(0.76)
         soldier.take_damage(30)
         self.assertEqual(soldier.health, health - 30)
         self.assertFalse(soldier.start_roll(1.0, 0.0))
-        soldier.update_timers(2.0)
+        soldier.update_timers(2.25)
         self.assertTrue(soldier.start_roll(1.0, 0.0))
 
     def test_soldier_ai_chooses_a_lateral_roll_and_suspends_fire(self):

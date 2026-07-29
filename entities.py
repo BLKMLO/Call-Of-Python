@@ -538,6 +538,7 @@ class Soldier(Enemy):
     USES_COVER = True
     FLANKS = True
     CAN_ROLL = True
+    ROLL_DURATION = 0.75
 
 
 class Heavy(Enemy):
@@ -581,7 +582,7 @@ class Sniper(Enemy):
     KEEP_DISTANCE = True
     MIN_RANGE = 5.0        # ... mais fébrile au corps à corps
     USES_COVER = True
-    AIM_DELAY = 0.75       # télégraphie brève : lisible sans rendre le tir poussif
+    AIM_DELAY = 0.5625     # -25 % : télégraphie lisible sans attente poussive
 
 
 class Boss(Enemy):
