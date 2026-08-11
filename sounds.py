@@ -25,13 +25,14 @@ from dataclasses import dataclass
 
 import pygame
 
+from resources import resource_directory
+
 SAMPLE_RATE = 22050
 HEARING_RANGE = 18.0     # distance au-delà de laquelle un son du monde est inaudible
 
 # Dossier des fichiers audio réels (effets et musiques personnalisées),
 # optionnel : tout est synthétisé par défaut si rien n'y est trouvé.
-SOUND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "assets", "sound")
+SOUND_DIR = os.path.join(resource_directory("assets"), "sound")
 AUDIO_EXTENSIONS = ("ogg", "mp3", "wav", "flac")
 
 

@@ -1,150 +1,119 @@
-# Call of Python — FPS en Python / pygame
+# Call of Python — FPS Python / pygame
 
-FPS rétro en pseudo-3D par raycasting, inspiré de *Wolfenstein 3D* et écrit
-en Python 3.12. `pygame` est la seule dépendance externe ; le multijoueur
-LAN utilise les sockets UDP de la bibliothèque standard.
+FPS retro en pseudo-3D par raycasting, jouable en solo et en cooperation LAN.
+Le jeu propose une campagne de cinq missions, un mode survie de 30 vagues,
+six archetypes ennemis, quatre armes evolutives et une direction pixel-art
+militaire/SF.
 
-Le jeu propose une campagne de cinq niveaux, un mode survie coopératif et
-une direction graphique pixel-art militaire/SF. Les textures, sprites
-directionnels et armes sont fournis dans `assets/`.
-
-## Lancer le jeu
+## Installation
 
 ```bash
-pip install -r requirements.txt
-python main.py
+python -m pip install .
+call-of-python
 ```
 
-Le pack PNG livré est chargé en priorité. En cas de fichier manquant,
-`python assets.py` génère uniquement les éléments absents. Pour restaurer
-volontairement tous les anciens visuels procéduraux :
+Le lancement depuis un clone reste possible avec `python main.py`. La
+combinaison supportee est Python 3.12 avec pygame 2.6.1. Les tags produisent
+aussi des distributions autonomes Windows et Linux dans GitHub Actions.
+
+Le pack PNG livre est toujours prioritaire. `python assets.py` genere
+uniquement les fichiers absents. Seule la commande suivante remplace les
+visuels existants par les anciens fallbacks proceduraux :
 
 ```bash
 python assets.py --force-procedural
 ```
 
-## Contrôles
+## Controles
 
-Les touches sont modifiables dans **Paramètres**.
+| Action | Clavier / souris | Manette SDL |
+|---|---|---|
+| Deplacement | ZQSD | Stick gauche |
+| Vue | Souris | Stick droit |
+| Tir | Clic gauche | Gachette droite ou RB |
+| Mise en joue | Clic droit | Gachette gauche |
+| Roulade | Maj | A / Croix |
+| Recharger | R | X / Carre |
+| Changer d'arme | 1–4 ou molette | Y / Triangle |
+| Pause | Echap | Start |
+| FPS | F3 | — |
+| Plein ecran | F11 | — |
 
-| Action | Touche par défaut |
-|---|---|
-| Avancer / reculer | `Z` / `S` |
-| Gauche / droite | `Q` / `D` |
-| Roulade | `Maj` |
-| Regarder / viser | Souris |
-| Tirer | Clic gauche |
-| Mise en joue | Clic droit maintenu |
-| Changer d'arme | `1`–`4` ou molette |
-| Recharger | `R` |
-| Afficher les FPS | `F3` |
-| Plein écran / fenêtré | `F11` |
-| Pause | `Échap` |
+Les touches clavier sont remappables. Les manettes Xbox, PlayStation et
+compatibles passent par les mappings SDL, avec zone morte et vibration courte
+sur les degats. Les commandes tactiles multi-doigts restent disponibles.
 
-Sur un écran tactile détecté par SDL, le jeu affiche automatiquement un
-stick gauche, une zone de visée par glissement et des boutons pour tirer,
-viser, rouler, recharger, changer d'arme, mettre en pause et revenir au menu.
-Le clavier et la souris restent utilisables en parallèle.
+Les Parametres exposent aussi : volumes separes, sensibilite, FOV 60–90 degres,
+secousses de camera 0/50/100 %, ADS en maintien ou bascule et trois difficultes.
 
-La résolution, les volumes indépendants des effets et de la musique, la
-sensibilité et les touches sont sauvegardés dans `settings.json`.
-
-## Modes de jeu
+## Modes
 
 ### Campagne
 
-Parcourez l'**Entrepôt**, la **Métropole**, le **Gouvernement**, la
-**Base militaire** et le **Laboratoire** pour stopper une invasion. Chaque
-niveau possède sa carte, ses ennemis, ses décors et son ambiance.
+Entrepot, Metropole, Gouvernement, Base militaire puis Laboratoire. L'arsenal
+est conserve entre les missions. Le Colosse final possede trois phases et
+libere deux packs de vie avant de reveler le portail lunaire.
 
-Le niveau suivant se débloque après l'élimination de tous les ennemis.
-L'arsenal et une partie de la vie sont conservés entre les missions, mais
-une mort relance la campagne depuis le début. Le meilleur niveau atteint
-reste mémorisé.
+### Le Deferlement
 
-Le Colosse du Laboratoire n'était pas le chef de l'invasion, mais le Sceau
-qui retenait un portail lunaire. Son combat comporte trois phases de plus en
-plus agressives ; un pack de vie apparaît à chacun de ses deux seuils. Sa
-chute débloque **Le Déferlement**.
+Trente vagues lunaires de creatures possedees, avec submersion progressive,
+ravitaillement periodique et un Colosse toutes les dix vagues. Un directeur
+ajuste legerement la cadence d'apparition selon la sante du joueur et la
+pression deja presente ; il ne modifie jamais les degats, la composition ou
+le nombre d'ennemis prevu.
 
-### Le Déferlement
+Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v3 refuse
+explicitement toute autre version. L'hote valide deplacements, collisions,
+roulades, cadence, chargeurs et degats.
 
-Mode survie sur une plaine lunaire ouverte : les ennemis apparaissent par
-un portail central pendant 30 vagues de plus en plus rapides. Les envahisseurs
-y sont possédés, avec aura et yeux verts fluorescents ; le soldat entraîné
-ne peut plus rouler et se déplace moins vite. Un Colosse rejoint la horde
-toutes les dix vagues, tandis que soins et améliorations d'armes sont
-distribués à intervalles réguliers.
+## Points techniques
 
-Le mode est jouable seul ou en coopération LAN. Un joueur héberge la
-partie sur le port UDP `5577`, jusqu'à trois autres joueurs rejoignent son
-adresse IPv4 locale. L'hôte valide déplacements, roulades et tirs ; la partie
-ne se termine que si tous les joueurs sont à terre simultanément. Tous les
-joueurs actifs doivent utiliser la version actuelle du protocole : un ancien
-client peut encore recevoir les instantanés compatibles, mais ses tirs au
-format non vérifiable sont refusés par l'hôte.
+- simulation a pas fixe de 60 Hz, rendu decouple jusqu'a 120 Hz ;
+- raycasting multi-couches, murs variables, portes, z-buffer et billboards ;
+- IA avec perception, BFS, couverture, contournement et esquives ;
+- cache billboards LRU borne a 64 Mio et cache mural FIFO incremental ;
+- UDP compresse, fragmente en datagrammes de 1 200 octets maximum, reassemble
+  avec limites de taille/temps et limite par adresse source ;
+- protocole sequence, evenements fiables acquittes et inventaire autoritaire ;
+- ressources resolues en mode source, wheel et PyInstaller ;
+- 89 tests et couverture globale superieure au seuil CI de 70 %.
 
-## Fonctionnalités principales
-
-- **Raycasting avancé** : murs texturés à hauteurs variables, portes
-  coulissantes, z-buffer, ciel dynamique et visée verticale.
-- **Combat FPS** : pistolet, fusil à pompe, fusil d'assaut et minigun avec
-  recul, animation de recharge propre à chaque arme, niveaux d'amélioration
-  et mise en joue.
-- **Impacts différenciés** : sang rouge et blessure sourde pour les cibles
-  organiques, éclats et choc métallique pour les blindés, sang vert et
-  extinction alien pour les possédés du Déferlement.
-- **Ennemis variés** : milicien, soldat, lourd, kamikaze, sniper et
-  Colosse, avec sprites directionnels et animations.
-- **IA tactique** : détection, patrouille, alerte des alliés, couverture,
-  contournement et pathfinding BFS.
-- **Décors interactifs** : véhicules, mobilier, rochers et cristaux aliens
-  influencent déplacements, pathfinding et lignes de tir.
-- **HUD complet** : vie, munitions, arsenal, minimap, statistiques,
-  indicateurs de dégâts, barre de boss et compteur de FPS optionnel.
-- **Ambiance dynamique** : cycle solaire propre à chaque niveau, audio
-  spatial et six thèmes procéduraux distincts — industriel, urbain, solennel,
-  militaire, laboratoire et lunaire — plus le thème du menu — avec volumes
-  séparés pour la musique et les effets.
-- **Progression** : armes à ramasser, trousses de soins, packs de vie
-  cachés, statistiques et records sauvegardés.
-- **Optimisations** : cache de billboards LRU limité à 64 Mio, éclairage
-  pré-calculé, raycasting optimisé, instantanés LAN compressés et calculs
-  d'IA cadencés.
-
-Des fichiers audio personnalisés peuvent être placés dans `assets/sound/`
-aux formats MP3, OGG, WAV ou FLAC : `menu`, `survival`, `reload` et les
-numéros de niveaux (`1`, `2`, etc.). Les sons synthétisés restent utilisés
-en l'absence de fichiers.
+Des fichiers audio `menu`, `survival`, `reload` et `1` a `5` peuvent etre
+places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.
 
 ## Architecture
 
-| Fichier | Rôle |
+| Fichier | Role |
 |---|---|
-| `main.py` | Point d'entrée et machine à états |
-| `settings.py` | Paramètres, touches et progression |
-| `menu.py` | Menus et écrans de fin |
-| `game.py` | Boucle de jeu, tir, objets, portes et statistiques |
-| `survival.py` | Gestion des vagues du Déferlement |
-| `network.py` / `coop.py` | Transport UDP et coopération hôte/client |
-| `level.py` | Cartes, thèmes, ennemis et difficulté |
-| `raycaster.py` | Rendu 3D, sprites, ciel et particules |
-| `entities.py` / `ai.py` | Joueur, ennemis, objets et comportements |
-| `weapons.py` | Armes et améliorations |
-| `hud.py` | Interface de jeu et minimap |
-| `touch_controls.py` | Détection et commandes multi-touch |
-| `particles.py` / `sounds.py` | Effets visuels et audio |
-| `assets.py` | Chargement des PNG et fallback procédural |
+| `main.py`, `runtime.py` | Etats, rendu et horloge fixe |
+| `game.py`, `survival.py` | Gameplay de mission et vagues |
+| `difficulty.py` | Profils et directeur de pression |
+| `entities.py`, `ai.py`, `weapons.py` | Entites, comportements et arsenal |
+| `raycaster.py`, `hud.py`, `particles.py` | Rendu du monde et interface |
+| `network.py`, `coop.py`, `version.py` | Transport et replication LAN |
+| `settings.py`, `menu.py` | Configuration et ecrans |
+| `gamepad.py`, `touch_controls.py` | Manette et tactile |
+| `assets.py`, `resources.py`, `sounds.py` | Ressources et audio |
 
-## Étendre le jeu
+Voir [`docs/architecture.md`](docs/architecture.md),
+[`docs/network-protocol.md`](docs/network-protocol.md) et
+[`docs/distribution.md`](docs/distribution.md).
 
-- **Arme** : ajouter un `WeaponSpec` dans `weapons.py` et les sprites
-  `fp_<id>` / `fp_<id>_reload` / `pickup_<id>`.
-- **Niveau** : ajouter une grille et sa configuration dans `LEVELS`
-  (`level.py`).
-- **Décor** : ajouter un sprite `prop_<id>`, une entrée dans `PROP_SPECS`
-  et un caractère dans `PROP_CHARS`.
-- **Ennemi** : hériter d'`Enemy` dans `entities.py` ; l'IA existante est
-  réutilisable.
-- **Texture** : modifier ou ajouter les PNG dans `assets/` ; le fallback
-  procédural reste optionnel.
+## Qualite et distribution
+
+```bash
+python -m pip install ".[dev]"
+ruff check .
+python -m coverage run -m unittest discover -s tests -v
+python -m coverage report
+python -m pip wheel . --no-deps --wheel-dir dist
+```
+
+Executable local :
+
+```bash
+python -m pip install ".[build]"
+python -m PyInstaller --clean --noconfirm call_of_python.spec
+```
+
+Le projet est distribue sous licence [MIT](LICENSE).

@@ -31,6 +31,7 @@ from entities import (
     move_with_entity_collisions,
 )
 from game import GUNSHOT_HEARING, SLOT_SCANCODES, Game, new_stats
+from gamepad import GamepadInput
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
 from network import DEFAULT_PORT, UdpPeer
@@ -38,6 +39,7 @@ from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
 from survival import SurvivalGame
 from touch_controls import FINGER_EVENTS, TouchControls
+from version import PROTOCOL_VERSION
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
 RESPAWN_DELAY = 6.0        # secondes avant la réapparition d'un joueur
@@ -48,7 +50,6 @@ JOIN_TIMEOUT = 5.0         # délai de connexion avant abandon
 LOST_TIMEOUT = 5.0         # silence de l'hôte = connexion perdue
 MAX_CLIENTS = 3            # quatre joueurs au total, hôte compris
 MAX_REMOTE_FIRE_EVENTS = 32
-PROTOCOL_VERSION = 2
 MAX_RELIABLE_EVENTS = 512
 MAX_EVENTS_PER_SNAPSHOT = 128
 MOVE_BURST_SECONDS = 0.15
@@ -162,7 +163,7 @@ class CoopHostGame(SurvivalGame):
         if not remote.alive:
             return
         client = self.clients[pid]
-        for index, pickup in enumerate(self.pickups):
+        for pickup in self.pickups:
             if pickup.taken or math.hypot(pickup.x - remote.x,
                                           pickup.y - remote.y) > 0.55:
                 continue
@@ -248,11 +249,15 @@ class CoopHostGame(SurvivalGame):
                 self._handle_input(message, addr)
 
     def _handle_join(self, message, addr):
-        protocol = (
-            PROTOCOL_VERSION
-            if message.get("v") == PROTOCOL_VERSION
-            else 1
-        )
+        protocol = message.get("v")
+        if (not isinstance(protocol, int) or isinstance(protocol, bool)
+                or protocol != PROTOCOL_VERSION):
+            self.peer.send({
+                "t": "incompatible",
+                "expected": PROTOCOL_VERSION,
+                "received": protocol if isinstance(protocol, int) else None,
+            }, addr)
+            return
         for pid, client in self.clients.items():
             if client["addr"] == addr:      # re-join du même client
                 client["protocol"] = protocol
@@ -608,7 +613,12 @@ class CoopHostGame(SurvivalGame):
             self.hud.draw_dead_overlay(screen)
 
     def close(self):
+        self.gamepad.close()
         self.peer.close()
+
+    def network_diagnostics(self):
+        """Expose les compteurs sans donner acces a la socket."""
+        return self.peer.diagnostics()
 
 
 # ----------------------------------------------------------------------
@@ -639,9 +649,13 @@ class CoopClientGame:
                       for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
-        self.raycaster = Raycaster(screen.get_size(), self.level)
+        self.raycaster = Raycaster(
+            screen.get_size(), self.level,
+            math.radians(getattr(settings, "fov", 70)),
+        )
         self.hud = HUD(screen.get_size())
         self.touch = TouchControls(screen.get_size())
+        self.gamepad = GamepadInput()
         self.stats = new_stats()
         self.paused = False
         self.host_paused = False
@@ -706,6 +720,7 @@ class CoopClientGame:
 
     # -- événements -------------------------------------------------------
     def handle_event(self, event):
+        self.gamepad.handle_event(event)
         if event.type == pygame.WINDOWFOCUSLOST:
             self.player.aiming = False
             self._mouse_fire_held = False
@@ -770,15 +785,19 @@ class CoopClientGame:
                 self._mouse_fire_held = True
                 self._fire()
             elif event.button == 3 and not self.player.rolling:
-                self._mouse_aim_held = True
-                self.player.aiming = True
+                if getattr(self.settings, "toggle_ads", False):
+                    self._mouse_aim_held = not self._mouse_aim_held
+                else:
+                    self._mouse_aim_held = True
+                self.player.aiming = self._mouse_aim_held
         elif (event.type == pygame.MOUSEBUTTONUP
               and not getattr(event, "touch", False)):
             if event.button == 1:
                 self._mouse_fire_held = False
             elif event.button == 3:
-                self._mouse_aim_held = False
-                self.player.aiming = self.touch.aim_held
+                if not getattr(self.settings, "toggle_ads", False):
+                    self._mouse_aim_held = False
+                    self.player.aiming = self.touch.aim_held
         return None
 
     def _handle_touch_action(self, action):
@@ -828,6 +847,24 @@ class CoopClientGame:
 
     # -- boucle -------------------------------------------------------------
     def update(self, dt):
+        self.gamepad.update()
+        for action in self.gamepad.consume_actions():
+            if action == "pause" and not self.host_paused:
+                self.paused = not self.paused
+                self.player.aiming = False
+            elif (not self.controls_paused and self.outcome is None
+                  and self.player.alive):
+                if action == "roll":
+                    self.player.start_roll(
+                        pygame.key.get_pressed(), self.settings.keys,
+                        self.gamepad.movement_axes(),
+                    )
+                elif action == "reload":
+                    self._request_reload()
+                elif action == "weapon":
+                    self.player.cycle_weapon(1)
+                elif action == "fire":
+                    self._fire()
         self.time += dt
         self.fps = self.fps * 0.95 + (1.0 / max(dt, 1e-4)) * 0.05
         self.shake = max(0.0, self.shake - dt * 3.5)
@@ -844,19 +881,28 @@ class CoopClientGame:
             self.stats["time"] += dt
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             touch_dx, touch_dy = self.touch.consume_look()
-            mouse_dx += touch_dx
-            mouse_dy += touch_dy
+            pad_dx, pad_dy = self.gamepad.look_delta()
+            mouse_dx += touch_dx + pad_dx
+            mouse_dy += touch_dy + pad_dy
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
             if not player.rolling:
-                player.aiming = self._mouse_aim_held or self.touch.aim_held
+                player.aiming = (
+                    self._mouse_aim_held
+                    or self.touch.aim_held
+                    or self.gamepad.aim_held
+                )
                 player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
-            touch_axes = (self.touch.movement_axes()
-                          if self.touch.enabled else None)
+            touch_axes = self.touch.movement_axes() if self.touch.enabled else (0, 0)
+            pad_axes = self.gamepad.movement_axes()
+            extra_axes = (
+                max(-1.0, min(1.0, touch_axes[0] + pad_axes[0])),
+                max(-1.0, min(1.0, touch_axes[1] + pad_axes[1])),
+            )
             moving = player.move(
-                dt, keys, self.settings.keys, self.level, touch_axes,
+                dt, keys, self.settings.keys, self.level, extra_axes,
                 [
                     entity
                     for entity in (
@@ -877,7 +923,8 @@ class CoopClientGame:
                 self.sounds.play("step" if self.step_side else "step2",
                                  volume_scale=0.35)
             if (not player.rolling
-                    and (self._mouse_fire_held or self.touch.fire_held)
+                    and (self._mouse_fire_held or self.touch.fire_held
+                         or self.gamepad.fire_held)
                     and player.weapon.spec.automatic):
                 self._fire()
             player.update(dt)
@@ -990,9 +1037,9 @@ class CoopClientGame:
                 pid = message.get("id")
                 if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
                     session_id = message.get("sid")
-                    if (message.get("v") == PROTOCOL_VERSION
-                            and (not isinstance(session_id, str)
-                                 or not 1 <= len(session_id) <= 64)):
+                    if (message.get("v") != PROTOCOL_VERSION
+                            or not isinstance(session_id, str)
+                            or not 1 <= len(session_id) <= 64):
                         continue
                     event_sequence = message.get("es", 0)
                     if (not isinstance(event_sequence, int)
@@ -1008,6 +1055,14 @@ class CoopClientGame:
             elif kind == "full":
                 self.disconnected = True
                 self.disconnect_reason = "Partie complète (4 joueurs maximum)."
+            elif kind == "incompatible":
+                self.disconnected = True
+                expected = message.get("expected")
+                self.disconnect_reason = (
+                    f"Version réseau incompatible (protocole {expected} requis)."
+                    if isinstance(expected, int)
+                    else "Version réseau incompatible."
+                )
             elif kind == "snap" and self.pid is not None:
                 self.last_snap = self.time
                 self._apply_snapshot(message)
@@ -1057,8 +1112,6 @@ class CoopClientGame:
         session_id = snap.get("sid")
         sequence = snap.get("sq")
         host_session = getattr(self, "host_session", None)
-        if session_id is None and sequence is None:
-            return host_session is None  # compatibilité avec un hôte v1
         if (not isinstance(session_id, str)
                 or not 1 <= len(session_id) <= 64
                 or session_id != host_session
@@ -1164,6 +1217,7 @@ class CoopClientGame:
                     self.player.health = health
                     self.player.hurt_flash = 0.35
                     self.sounds.play("player_hit")
+                    self.gamepad.rumble()
                     self.shake = min(1.0, self.shake + 0.5)
                 else:
                     self.player.health = health
@@ -1330,8 +1384,9 @@ class CoopClientGame:
     def _apply_pickups(self, rows):
         """Applique les objets statiques puis les apparitions du Colosse."""
         static_rows = rows[:self.base_pickup_count]
-        for pickup, taken in zip(self.pickups[:self.base_pickup_count],
-                                 static_rows):
+        for pickup, taken in zip(
+                self.pickups[:self.base_pickup_count], static_rows,
+                strict=False):
             # Une ligne dynamique mal placée ne doit pas valoir True par
             # simple conversion booléenne.
             if (isinstance(taken, bool)
@@ -1481,9 +1536,11 @@ class CoopClientGame:
                 sprites.append(pickup)
 
         pitch_px = int(self.player.pitch * self.raycaster.height)
-        if self.shake > 0.0:
+        shake_scale = getattr(self.settings, "camera_shake", 1.0)
+        if self.shake > 0.0 and shake_scale > 0.0:
             pitch_px += int(random.uniform(-1, 1) * self.shake
-                            * self.raycaster.height * 0.02)
+                            * self.raycaster.height * 0.02
+                            * shake_scale)
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
         if self.player.rolling:
@@ -1503,4 +1560,9 @@ class CoopClientGame:
         self.touch.draw(screen, paused=self.controls_paused)
 
     def close(self):
+        self.gamepad.close()
         self.peer.close()
+
+    def network_diagnostics(self):
+        """Expose les compteurs sans donner acces a la socket."""
+        return self.peer.diagnostics()

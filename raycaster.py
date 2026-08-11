@@ -271,9 +271,10 @@ _zoom_scratch = None
 class Raycaster:
     """Rendu du monde : ciel/sol thématisés, murs texturés, sprites, particules."""
 
-    def __init__(self, size, level):
+    def __init__(self, size, level, fov=FOV):
         self.width = self.height = 0
         self.level_config = level.config
+        self.base_fov = min(math.radians(90), max(math.radians(60), fov))
         self.resize(size)
         self.set_level(level)
 
@@ -287,7 +288,7 @@ class Raycaster:
         self._sprite_cache = OrderedDict()
         self._sprite_cache_bytes = 0
         self._sprite_cache_budget = SPRITE_CACHE_BUDGET_BYTES
-        self._set_fov(FOV)
+        self._set_fov(self.base_fov)
         self._build_background()
 
     def _set_fov(self, fov):
@@ -448,11 +449,17 @@ class Raycaster:
         self.background = pygame.Surface((self.width, total))
         for y in range(half):
             t = y / max(1, half)
-            color = [int(a + (b - a) * t) for a, b in zip(sky_top, sky_bot)]
+            color = [
+                int(a + (b - a) * t)
+                for a, b in zip(sky_top, sky_bot, strict=True)
+            ]
             pygame.draw.line(self.background, color, (0, y), (self.width, y))
         for y in range(half, total):
             t = (y - half) / max(1, total - half)
-            color = [int(a + (b - a) * t) for a, b in zip(floor_top, floor_bot)]
+            color = [
+                int(a + (b - a) * t)
+                for a, b in zip(floor_top, floor_bot, strict=True)
+            ]
             pygame.draw.line(self.background, color, (0, y), (self.width, y))
         if self.level_config.get("moon_ground"):
             self._texture_moon_ground(half, total)

@@ -87,7 +87,7 @@ class CleanupTests(unittest.TestCase):
                 self.assertEqual(len(set(loaded.keys.values())), len(loaded.keys))
                 self.assertFalse(set(loaded.keys.values()) & RESERVED_KEYS)
                 loaded.save()
-                with open(path, "r", encoding="utf-8") as stream:
+                with open(path, encoding="utf-8") as stream:
                     self.assertIsInstance(json.load(stream), dict)
                 self.assertFalse(os.path.exists(path + ".tmp"))
 

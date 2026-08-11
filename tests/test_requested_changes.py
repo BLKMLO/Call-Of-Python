@@ -14,8 +14,16 @@ import pygame
 import assets
 from ai import EnemyAI, cover_adjusted_chance
 from coop import CoopClientGame
-from entities import (PORTAL_FRAME_MS, PORTAL_FRAMES, PROP_SPECS, Grunt,
-                      Player, Prop, Sniper, Soldier)
+from entities import (
+    PORTAL_FRAME_MS,
+    PORTAL_FRAMES,
+    PROP_SPECS,
+    Grunt,
+    Player,
+    Prop,
+    Sniper,
+    Soldier,
+)
 from game import Game
 from level import LEVELS, MAP_LAB, MAP_MOON, SURVIVAL_LEVEL, Level
 from raycaster import Raycaster, has_line_of_sight

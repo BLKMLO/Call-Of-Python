@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.4.0] — 2026-08-11
+
+### Moteur et reseau
+
+- Simulation decouplee du rendu et cadencee a 60 Hz, avec accumulateur borne.
+- Protocole LAN v3 strict : toute autre version est refusee avant allocation.
+- Port hote exclusif sous Windows, Linux et macOS ; correction du double bind.
+- Compression puis fragmentation applicative en datagrammes de 1 200 octets,
+  reassemblage borne, limitation par source et compteurs de diagnostic.
+
+### Jouabilite et accessibilite
+
+- Profils Recrue, Soldat et Veteran appliques a la vie, aux degats et a la
+  cadence d'apparition.
+- Directeur du Deferlement adaptant uniquement la cadence a la pression.
+- FOV 60–90 degres, secousses 0/50/100 % et ADS maintien/bascule.
+- Manettes SDL Xbox/PlayStation : deux sticks, gachettes, boutons standards,
+  branchement a chaud, zone morte et vibration.
+
+### Industrialisation
+
+- `pyproject.toml`, wheel installable, commande `call-of-python`, licence MIT,
+  resolution des ressources en source/wheel/PyInstaller et lockfile uv.
+- Builds PyInstaller Windows/Linux sur tags et execution manuelle.
+- Ruff complet, couverture CI minimale de 70 %, build du wheel et 89 tests.
+- Documentation architecture, protocole, distribution et deux ADR.
+
 ## [Non publié] — 2026-07-28
 
 ### Gameplay

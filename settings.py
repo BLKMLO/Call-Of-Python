@@ -12,6 +12,8 @@ from ipaddress import AddressValueError, IPv4Address
 
 import pygame
 
+from difficulty import DIFFICULTIES, DIFFICULTY_ORDER
+
 # Résolutions proposées dans le menu des paramètres.
 RESOLUTIONS = [
     (800, 600),
@@ -100,6 +102,10 @@ class Settings:
         self.music_volume = 0.7          # musique (0.0 → 1.0)
         self.sensitivity = 0.5           # sensibilité souris (0.1 → 1.0)
         self.invert_mouse = False        # inverse les deux axes de la souris
+        self.fov = 70                    # champ de vision horizontal (degres)
+        self.camera_shake = 1.0          # 0=desactive, 0.5=reduit, 1=normal
+        self.toggle_ads = False          # clic droit bascule la visee
+        self.difficulty = "soldier"      # profil d'equilibrage
         self.fullscreen = False          # F11 : plein écran / mode fenêtré
         self.keys = dict(DEFAULT_KEYS)   # keycodes pygame par action
         self.best_level = 0              # meilleur niveau atteint (affiché au menu)
@@ -143,7 +149,7 @@ class Settings:
     def load(self):
         """Charge les paramètres depuis le JSON (silencieux si absent/corrompu)."""
         try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            with open(SETTINGS_FILE, encoding="utf-8") as f:
                 raw = f.read(MAX_SETTINGS_BYTES + 1)
             if len(raw) > MAX_SETTINGS_BYTES:
                 return
@@ -171,6 +177,16 @@ class Settings:
             self.invert_mouse = _safe_bool(
                 data.get("invert_mouse"), self.invert_mouse,
             )
+            self.fov = _safe_int(data.get("fov"), self.fov, 60, 90)
+            self.camera_shake = _safe_float(
+                data.get("camera_shake"), self.camera_shake, 0.0, 1.0,
+            )
+            self.toggle_ads = _safe_bool(
+                data.get("toggle_ads"), self.toggle_ads,
+            )
+            difficulty = data.get("difficulty")
+            if difficulty in DIFFICULTIES:
+                self.difficulty = difficulty
             self.fullscreen = _safe_bool(data.get("fullscreen"), self.fullscreen)
             self.best_level = _safe_int(data.get("best_level"), 0, 0, 5)
             self.survival_unlocked = _safe_bool(
@@ -216,6 +232,10 @@ class Settings:
             "music_volume": self.music_volume,
             "sensitivity": self.sensitivity,
             "invert_mouse": self.invert_mouse,
+            "fov": self.fov,
+            "camera_shake": self.camera_shake,
+            "toggle_ads": self.toggle_ads,
+            "difficulty": self.difficulty,
             "fullscreen": self.fullscreen,
             "best_level": self.best_level,
             "survival_unlocked": self.survival_unlocked,
@@ -243,6 +263,13 @@ class Settings:
 
     def reset_keys(self):
         self.keys = dict(DEFAULT_KEYS)
+
+    def cycle_difficulty(self, direction):
+        index = DIFFICULTY_ORDER.index(self.difficulty)
+        self.difficulty = DIFFICULTY_ORDER[
+            (index + direction) % len(DIFFICULTY_ORDER)
+        ]
+        return self.difficulty
 
     def bind_key(self, action, key):
         """Assigne une touche sans doublon ; échange avec l'action en conflit."""

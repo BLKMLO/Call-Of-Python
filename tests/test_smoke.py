@@ -21,8 +21,14 @@ import pygame
 import settings as settings_module
 from coop import CoopClientGame, CoopHostGame
 from game import DEATH_CAM_TIME, Game
-from menu import (EndScreen, LevelCompleteScreen, MainMenu, MultiplayerMenu,
-                  SealBrokenScreen, SettingsMenu)
+from menu import (
+    EndScreen,
+    LevelCompleteScreen,
+    MainMenu,
+    MultiplayerMenu,
+    SealBrokenScreen,
+    SettingsMenu,
+)
 from settings import RESOLUTIONS, Settings
 from sounds import MUSIC_KEYS, SoundBank
 from survival import FINAL_WAVE, SurvivalGame

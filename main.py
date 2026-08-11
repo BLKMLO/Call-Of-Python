@@ -22,11 +22,19 @@ import pygame
 from coop import CoopClientGame, CoopHostGame
 from game import Game
 from level import LEVELS
-from menu import (EndScreen, LevelCompleteScreen, MainMenu, MultiplayerMenu,
-                  SealBrokenScreen, SettingsMenu)
+from menu import (
+    EndScreen,
+    LevelCompleteScreen,
+    MainMenu,
+    MultiplayerMenu,
+    SealBrokenScreen,
+    SettingsMenu,
+)
+from runtime import SIMULATION_STEP, FixedStepClock
 from settings import Settings
 from sounds import SoundBank
 from survival import FINAL_WAVE, SurvivalGame
+from version import GAME_VERSION
 
 
 def create_window(settings):
@@ -68,8 +76,9 @@ def main():
 
     settings = Settings()
     screen = create_window(settings)
-    pygame.display.set_caption("Call of Python")
+    pygame.display.set_caption(f"Call of Python {GAME_VERSION}")
     clock = pygame.time.Clock()
+    simulation_clock = FixedStepClock()
     sounds = SoundBank(settings)
 
     main_menu = MainMenu(sounds, settings)
@@ -161,7 +170,9 @@ def main():
 
     running = True
     while running:
-        dt = min(clock.tick(60) / 1000.0, 0.05)  # dt borné (fenêtre déplacée...)
+        # Le rendu peut monter a 120 Hz, mais toute la simulation reste a
+        # 60 Hz. Un gel de fenetre ne cree donc ni teleporation, ni rafale IA.
+        frame_time = clock.tick(120) / 1000.0
 
         # ------------------------------------------------------------------
         # Événements
@@ -237,7 +248,8 @@ def main():
         sounds.refresh_music_volume()   # suit le réglage de volume en direct
 
         if state == "game":
-            game.update(dt)
+            for _ in range(simulation_clock.advance(frame_time)):
+                game.update(SIMULATION_STEP)
             game.draw(screen)
             if getattr(game, "disconnected", False):
                 # Hôte injoignable ou connexion perdue : retour au menu LAN.

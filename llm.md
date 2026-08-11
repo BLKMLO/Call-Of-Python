@@ -29,6 +29,22 @@ Repo GitHub : `BLKMLO/Call-Of-Python` (renommé depuis `BLKMLO/TempGPT`).
 La branche par défaut est `main` ; les évolutions partent d'une branche
 `agent/<description>` et reviennent par pull request.
 
+## Modernisation 0.4.0 (11 aout 2026)
+
+- Simulation a pas fixe 60 Hz via `runtime.FixedStepClock`; rendu jusqu'a
+  120 Hz et rattrapage limite a huit pas.
+- Protocole v3 strict centralise dans `version.py`. Une autre version recoit
+  `incompatible` et ne cree aucun joueur.
+- `network.UdpPeer` n'active plus `SO_REUSEADDR` sur POSIX. Les messages sont
+  compresses puis fragmentes en datagrammes de 1 200 octets, avec limites de
+  reassemblage, TTL, debit source et compteurs.
+- Difficultes Recrue/Soldat/Veteran, directeur de pression limite a la cadence,
+  FOV, secousses et ADS configurables.
+- `gamepad.py` fournit les mappings SDL Xbox/PlayStation, zone morte,
+  branchement a chaud et vibration.
+- `pyproject.toml`, licence MIT, wheel, PyInstaller et workflow d'artefacts.
+- Ruff complet, couverture minimale de 70 % et 89 tests.
+
 ## Lancer / tester
 
 ```bash
@@ -44,18 +60,21 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   python -m unittest discover -s tests -v
 ```
 
-Le workflow `.github/workflows/ci.yml` rejoue compilation, contrôles Ruff
-critiques et les 81 tests sous Python 3.12 sur Ubuntu et Windows.
+Le workflow `.github/workflows/ci.yml` rejoue compilation, Ruff complet,
+89 tests, couverture et construction du wheel sous Python 3.12 sur Ubuntu et
+Windows.
 
 ## Architecture
 
 | Fichier        | Rôle |
 |----------------|------|
 | `main.py`      | Point d'entrée, machine à états (menu / jeu / Sceau / Déferlement / fin), musique |
+| `runtime.py` / `version.py` | Horloge fixe 60 Hz et versions jeu/protocole |
 | `settings.py`  | Paramètres + persistance JSON (résolution, volumes effets/musique, sensibilité, souris inversée, plein écran F11, touches, progression, records) |
 | `menu.py`      | Menu principal, paramètres, fin de niveau, écran du Sceau, game over / victoire |
 | `game.py`      | Boucle de gameplay : entrées, tir hitscan, ramassages, alertes, portes, stats, caméra de mort |
 | `survival.py`  | Le Déferlement : vagues, délai de submersion dégressif, apparitions, ravitaillement |
+| `difficulty.py` | Profils Recrue/Soldat/Veteran et directeur de pression |
 | `network.py`   | Couche LAN : datagrammes UDP + JSON, sockets non bloquantes, sans thread |
 | `coop.py`      | Coop LAN : hôte autoritaire (`CoopHostGame`) et client répliqué (`CoopClientGame`) |
 | `level.py`     | Cartes ASCII + niveaux (thème, ennemis, armes, décors, difficulté) + portes coulissantes |
@@ -64,6 +83,7 @@ critiques et les 81 tests sous Python 3.12 sur Ubuntu et Windows.
 | `ai.py`        | Machine à états des ennemis (idle / chase / attack / cover) + pathfinding BFS + tactiques (flanc, couverture) |
 | `weapons.py`   | Specs des armes + niveaux d'amélioration (Mk. II...) |
 | `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss, écran de mort |
+| `gamepad.py` / `touch_controls.py` | Entrees SDL manette et tactile |
 | `particles.py` | Particules 3D (sang, impacts, poussière, surgissements) |
 | `sounds.py`    | Effets + sept thèmes contextuels synthétisés en pur Python (+ overrides fichiers réels dans `assets/sound/`) |
 | `assets.py`    | Chargement des PNG (`assets/`) ; générateurs procéduraux de secours (`_BUILDERS`) si un PNG manque |
@@ -150,9 +170,9 @@ d'implémentation et les décisions techniques non triviales.
 - **Textures (refonte graphique)** : les PNG d'`assets/` ont été refaits
   à la main en art détaillé (via ChatGPT, branche `agent/refonte-graphique`),
   bien plus riches que les générateurs procéduraux d'`assets.py` — ces
-  derniers ne servent plus que de secours si un PNG manque. Ne PAS relancer
-  `python assets.py` (il écraserait les textures détaillées par les
-  procédurales). Ajout au passage : polices système (`SysFont`), fond de
+  derniers ne servent plus que de secours si un PNG manque. `python assets.py`
+  ne complete que les fichiers absents ; seul `--force-procedural` ecrase les
+  textures detaillees. Ajout au passage : polices système (`SysFont`), fond de
   menu (`assets/menu_background.png`), plein écran F11.
 - **Cadrage des décors (`prop_*`)** : la refonte a découpé une planche de
   sprites aux mauvais décalages → certains décors contenaient des
@@ -276,7 +296,7 @@ d'implémentation et les décisions techniques non triviales.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Quatre-vingt-un
+- **Couverture de tests encore partielle mais en progrès.** Quatre-vingt-neuf
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (15 contrôles robustesse/UI) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
@@ -287,10 +307,10 @@ d'implémentation et les décisions techniques non triviales.
   poses, le HUD, la progression de recharge et les profils musicaux) et
   `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop), plus
   `tests/test_p0_p1.py` (10 tests de mémoire, protocole, sécurité hôte,
-  collisions et pause coop).
-- **Ruff complet** : 19 remarques stylistiques préexistantes restent ouvertes.
-  La CI bloque uniquement les erreurs Python critiques (`E9`, `F63`, `F7`,
-  `F82`) afin de ne pas rendre toutes les PR rouges pour cette dette connue.
+  collisions et pause coop) et `tests/test_modernization.py` (8 tests horloge,
+  MTU, port exclusif, version, difficulte, accessibilite, FOV et manette).
+- **Ruff complet** : la dette historique est corrigee et la CI execute toutes
+  les regles E, F, I, UP et B configurees dans `pyproject.toml`.
 - **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
   jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
   observés).
@@ -306,8 +326,8 @@ d'implémentation et les décisions techniques non triviales.
 
 # Call of Python — contexte de reprise GPT
 
-Dernière mise à jour : 29 juillet 2026. Dépôt `BLKMLO/Call-Of-Python`,
-branche de travail `agent/reload-animations-level-music`.
+Dernière mise à jour : 11 aout 2026. Dépôt `BLKMLO/Call-Of-Python`,
+branche de travail `agent/p0-p2-modernization`.
 
 ## Corrections P0/P1 de robustesse
 
@@ -318,7 +338,8 @@ branche de travail `agent/reload-animations-level-music`.
   près de `940 Mio` de RSS supplémentaire dans le scénario d'audit.
   `_wall_cache` conserve en revanche son FIFO à éviction unique, car ses
   colonnes étroites et l'invariant anti-pic sont différents.
-- Le protocole coop courant vaut `PROTOCOL_VERSION = 2`. Le handshake fournit
+- Le protocole coop courant vaut `PROTOCOL_VERSION = 3`. Le handshake refuse
+  explicitement toute autre version avant allocation. Il fournit
   un `session_id`; chaque entrée possède `iq`, chaque instantané `sq`, et le
   client rejette toute autre session ainsi que les séquences anciennes ou
   dupliquées. Les événements fiables `rev` portent leur propre numéro, restent
@@ -331,10 +352,10 @@ branche de travail `agent/reload-animations-level-music`.
   l'inventaire `[weapon_id, level]` et l'arme active : un événement `wpk` perdu
   ne supprime plus définitivement une arme. Les anciens lecteurs ignorent ces
   champs ajoutés en fin de ligne.
-- Les instantanés v2 supérieurs à `1100` octets sont compressés par `UdpPeer`
-  avec le préfixe `Z1`. La décompression est bornée à `BUFFER_SIZE`; ne jamais
-  accepter un flux zlib non terminé, des données supplémentaires ou une
-  expansion sans limite.
+- Les instantanes v3 sont compresses a partir de `900` octets quand utile,
+  puis fragmentes en datagrammes de `1200` octets maximum. La decompression et
+  la reconstitution restent bornees a `BUFFER_SIZE`; ne jamais accepter un
+  flux zlib incomplet, des donnees supplementaires ou une expansion illimitee.
 - Un tir client v2 est un déclenchement `[weapon_id, [angles...]]`. L'hôte
   possède ses propres instances `Weapon` et dérive chargeur, cadence, recharge,
   dégâts, rayon d'impact, dispersion et nombre exact de plombs. Les anciens
@@ -718,7 +739,7 @@ branche de travail `agent/reload-animations-level-music`.
   invincibilité, des dégâts ou une cadence décidés sans borne par le client.
   La compatibilité des anciens instantanés concerne leur lecture, pas le
   relâchement des contrôles de l'hôte.
-- Le protocole v2 exige `session_id`, `iq` et `sq`; les événements `rev` ne
+- Le protocole v3 exige `session_id`, `iq` et `sq`; les événements `rev` ne
   sont consommés qu'en séquence contiguë puis acquittés par `ea`. Ne jamais
   vider le journal après un seul envoi ni réaccepter `[angle, dégâts]`.
 - `_sprite_cache_bytes` doit toujours rester inférieur ou égal à
@@ -734,7 +755,7 @@ branche de travail `agent/reload-animations-level-music`.
 
 ## Validation disponible
 
-La suite contient 81 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 89 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -783,6 +804,10 @@ collision joueur/ennemi avec grand `dt`, débit distant alimenté par l'horloge
 hôte, pause globale, séquence d'entrée, retransmission jusqu'à acquittement,
 session/ordre des instantanés, réparation de l'inventaire, compression UDP et
 recharge d'une arme rangée.
+
+`tests/test_modernization.py` ajoute 8 controles : horloge fixe, fragmentation
+et reassemblage sous MTU, exclusivite du port, refus de version, profils et
+directeur, persistance accessibilite, FOV et zone morte manette.
 
 Commande utilisée :
 
@@ -863,13 +888,14 @@ pip install -r requirements.txt
 python main.py
 ```
 
-81 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+89 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 15 contrôles robustesse/réseau/UI ;
 `test_smoke.py` : 8 tests de fumée généraux ;
 `test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
 `test_reload_music.py` : 8 tests recharge/audio ;
 `test_impact_audio.py` : 7 tests impacts/volumes/menu/coop ;
-`test_p0_p1.py` : 10 tests mémoire/protocole/collisions/sécurité) :
+`test_p0_p1.py` : 10 tests mémoire/protocole/collisions/sécurité ;
+`test_modernization.py` : 8 tests moteur/reseau/accessibilite/manette) :
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \

@@ -18,7 +18,9 @@ import random
 
 import pygame
 
-ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+from resources import resource_directory
+
+ASSET_DIR = resource_directory("assets")
 TEX_SIZE = 64          # taille finale des textures de murs (carrées)
 
 _cache = {}
@@ -238,7 +240,7 @@ def _tex_stone():
     rng = random.Random(103)
     s = _tex_base()
     _rect(s, 0, 0, 32, 32, (42, 42, 48), rng, 4)          # joints
-    for row, (y, h) in enumerate(((0, 9), (9, 8), (17, 9), (26, 6))):
+    for y, h in ((0, 9), (9, 8), (17, 9), (26, 6)):
         x = -rng.randint(0, 3)
         while x < 32:
             w = rng.randint(6, 11)

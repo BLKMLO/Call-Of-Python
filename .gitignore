@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 settings.json
 .venv/
+*.egg-info/
+.coverage
+coverage.xml
+build/
+dist/

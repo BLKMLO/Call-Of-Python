@@ -26,7 +26,6 @@ sa composition d'ennemis, ses armes au sol et sa difficulté.
 
 import math
 
-
 # Décor associé à chaque caractère de carte.
 PROP_CHARS = {"c": "car", "n": "bench", "t": "tribune",
               "m": "labtable", "r": "rock", "k": "alien_crystal",
