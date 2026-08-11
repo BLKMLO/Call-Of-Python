@@ -8,11 +8,13 @@ propriété `outcome` : None (en cours), "dead" ou "victory".
 import math
 import random
 
-import assets
 import pygame
 
+import assets
 from ai import EnemyAI
+from difficulty import get_difficulty
 from entities import ENEMY_TYPES, Pickup, Player, Prop
+from gamepad import GamepadInput
 from hud import HUD
 from level import Level
 from particles import ParticleSystem
@@ -47,6 +49,9 @@ class Game:
         self.sounds = sounds
         self.level = Level(level_index, config=level_config)
         self.level_index = level_index
+        self.difficulty = get_difficulty(
+            getattr(settings, "difficulty", "soldier"),
+        )
         self.stats = carry_stats if carry_stats is not None else new_stats()
 
         # Le joueur repart du spawn ; s'il vient du niveau précédent, il
@@ -59,8 +64,14 @@ class Game:
                                      carry_player.health + LEVEL_HEAL)
         self.player.activate_shield()  # invulnérabilité le temps de s'orienter
 
-        hp_mult = self.level.config["enemy_health_mult"]
-        dmg_mult = self.level.config["enemy_damage_mult"]
+        hp_mult = (
+            self.level.config["enemy_health_mult"]
+            * self.difficulty.enemy_health
+        )
+        dmg_mult = (
+            self.level.config["enemy_damage_mult"]
+            * self.difficulty.enemy_damage
+        )
         self.enemies = [ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
                         for x, y, kind in self.level.enemy_spawns]
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
@@ -70,9 +81,13 @@ class Game:
                       for x, y, kind in self.level.prop_spawns]
 
         self.particles = ParticleSystem()
-        self.raycaster = Raycaster(screen.get_size(), self.level)
+        self.raycaster = Raycaster(
+            screen.get_size(), self.level,
+            math.radians(getattr(settings, "fov", 70)),
+        )
         self.hud = HUD(screen.get_size())
         self.touch = TouchControls(screen.get_size())
+        self.gamepad = GamepadInput()
         self.paused = False
         self.outcome = None      # None (en cours), "dead" ou "victory"
         self.end_delay = 0.0     # petit délai avant l'écran de fin
@@ -94,6 +109,9 @@ class Game:
     # ------------------------------------------------------------------
     def handle_event(self, event):
         """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
+        gamepad = getattr(self, "gamepad", None)
+        if gamepad is not None:
+            gamepad.handle_event(event)
         if event.type == pygame.WINDOWFOCUSLOST:
             self.player.aiming = False
             self._mouse_fire_held = False
@@ -180,15 +198,19 @@ class Game:
                 self._mouse_fire_held = True
                 self._player_fire()
             elif event.button == 3 and not self.player.rolling:
-                self._mouse_aim_held = True
-                self.player.aiming = True
+                if getattr(self.settings, "toggle_ads", False):
+                    self._mouse_aim_held = not self._mouse_aim_held
+                else:
+                    self._mouse_aim_held = True
+                self.player.aiming = self._mouse_aim_held
         elif (event.type == pygame.MOUSEBUTTONUP
               and not getattr(event, "touch", False)):
             if event.button == 1:
                 self._mouse_fire_held = False
             elif event.button == 3:
-                self._mouse_aim_held = False
-                self.player.aiming = self.touch.aim_held
+                if not getattr(self.settings, "toggle_ads", False):
+                    self._mouse_aim_held = False
+                    self.player.aiming = self.touch.aim_held
         return None
 
     def _handle_touch_action(self, action):
@@ -232,6 +254,25 @@ class Game:
     # Simulation
     # ------------------------------------------------------------------
     def update(self, dt):
+        self.gamepad.update()
+        for action in self.gamepad.consume_actions():
+            if action == "pause" and self.outcome is None:
+                self.paused = not self.paused
+                self.player.aiming = False
+            elif not self.paused and self.outcome is None and self.player.alive:
+                if action == "roll":
+                    self.player.start_roll(
+                        pygame.key.get_pressed(), self.settings.keys,
+                        self.gamepad.movement_axes(),
+                    )
+                elif action == "reload":
+                    self.player.weapon.start_reload()
+                    if self.player.weapon.reloading > 0.0:
+                        self.sounds.play("reload")
+                elif action == "weapon":
+                    self.player.cycle_weapon(1)
+                elif action == "fire":
+                    self._player_fire()
         # Mort : on fige le gameplay mais on laisse tourner la caméra de
         # mort (chute + fondu) et les particules, même si une pause avait été
         # activée juste avant le coup fatal.
@@ -256,21 +297,30 @@ class Game:
             # Visée à la souris (mouvement relatif, curseur capturé).
             mouse_dx, mouse_dy = pygame.mouse.get_rel()
             touch_dx, touch_dy = self.touch.consume_look()
-            mouse_dx += touch_dx
-            mouse_dy += touch_dy
+            pad_dx, pad_dy = self.gamepad.look_delta()
+            mouse_dx += touch_dx + pad_dx
+            mouse_dy += touch_dy + pad_dy
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
             if not player.rolling:
-                player.aiming = self._mouse_aim_held or self.touch.aim_held
+                player.aiming = (
+                    self._mouse_aim_held
+                    or self.touch.aim_held
+                    or self.gamepad.aim_held
+                )
                 player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
 
             # Déplacement normal ou impulsion de roulade collisionnée.
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
-            touch_axes = (self.touch.movement_axes()
-                          if self.touch.enabled else None)
+            touch_axes = self.touch.movement_axes() if self.touch.enabled else (0, 0)
+            pad_axes = self.gamepad.movement_axes()
+            extra_axes = (
+                max(-1.0, min(1.0, touch_axes[0] + pad_axes[0])),
+                max(-1.0, min(1.0, touch_axes[1] + pad_axes[1])),
+            )
             moving = player.move(
-                dt, keys, self.settings.keys, self.level, touch_axes,
+                dt, keys, self.settings.keys, self.level, extra_axes,
                 self._movement_blockers(player),
             )
             self.player_moving = moving   # relayé aux clients en coop LAN
@@ -289,7 +339,8 @@ class Game:
 
             # Tir maintenu (armes automatiques uniquement).
             if (not player.rolling
-                    and (self._mouse_fire_held or self.touch.fire_held)
+                    and (self._mouse_fire_held or self.touch.fire_held
+                         or self.gamepad.fire_held)
                     and player.weapon.spec.automatic):
                 self._player_fire()
 
@@ -349,7 +400,11 @@ class Game:
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
                     possessed=False):
         """Ajoute un ennemi en cours de partie (vagues du Déferlement)."""
-        enemy = ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
+        enemy = ENEMY_TYPES[kind](
+            x, y,
+            hp_mult * self.difficulty.enemy_health,
+            dmg_mult * self.difficulty.enemy_damage,
+        )
         enemy.set_possessed(possessed)
         self.enemies.append(enemy)
         self.ais.append(EnemyAI(enemy))
@@ -386,6 +441,9 @@ class Game:
         """Effets d'une balle ennemie encaissée par `victim`."""
         if victim is self.player:
             self.sounds.play("player_hit")
+            gamepad = getattr(self, "gamepad", None)
+            if gamepad is not None:
+                gamepad.rumble()
             self.shake = min(1.0, self.shake + 0.5)
             rel = math.atan2(enemy.y - victim.y,
                              enemy.x - victim.x) - victim.angle
@@ -535,6 +593,10 @@ class Game:
         self.raycaster.resize(size)
         self.hud.resize(size)
         self.touch.resize(size)
+
+    def close(self):
+        """Libere les ressources SDL optionnelles de la partie."""
+        self.gamepad.close()
 
     def _alert_allies(self, position, radius, exclude=None):
         """Réveille les ennemis inactifs proches d'un bruit (tir, cri)."""
@@ -734,9 +796,11 @@ class Game:
 
         # Horizon : visée verticale + secousse aléatoire du tremblement.
         pitch_px = int(self.player.pitch * self.raycaster.height)
-        if self.shake > 0.0:
+        shake_scale = getattr(self.settings, "camera_shake", 1.0)
+        if self.shake > 0.0 and shake_scale > 0.0:
             pitch_px += int(random.uniform(-1, 1) * self.shake
-                            * self.raycaster.height * 0.02)
+                            * self.raycaster.height * 0.02
+                            * shake_scale)
 
         # Caméra de mort : la vue plonge vers le sol pendant l'effondrement.
         dead = self.outcome == "dead"

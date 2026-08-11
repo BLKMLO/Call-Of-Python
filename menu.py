@@ -11,6 +11,7 @@ from typing import ClassVar
 import pygame
 
 import assets
+from difficulty import get_difficulty
 from settings import KEY_ACTIONS, RESOLUTIONS, valid_ipv4
 
 TITLE_COLOR = (238, 242, 240)
@@ -470,6 +471,10 @@ class SettingsMenu(MenuBase):
 
     def items(self):
         s = self.settings
+        ads_mode = "Bascule" if getattr(s, "toggle_ads", False) else "Maintien"
+        difficulty = get_difficulty(
+            getattr(s, "difficulty", "soldier"),
+        ).label
         rows = [
             ("resolution", f"Résolution :  <  {s.resolution[0]} x {s.resolution[1]}  >"),
             ("sound_volume",
@@ -478,6 +483,13 @@ class SettingsMenu(MenuBase):
              f"Musique :  <  {int(s.music_volume * 100)} %  >"),
             ("sensitivity", f"Sensibilité souris :  <  {int(s.sensitivity * 100)} %  >"),
             ("invert_mouse", f"Souris inversée :  <  {'Oui' if s.invert_mouse else 'Non'}  >"),
+            ("fov", f"Champ de vision :  <  {getattr(s, 'fov', 70)} deg  >"),
+            ("camera_shake",
+             f"Secousses camera :  <  {int(getattr(s, 'camera_shake', 1.0) * 100)} %  >"),
+            ("toggle_ads",
+             f"Visee clic droit :  <  {ads_mode}  >"),
+            ("difficulty",
+             f"Difficulte :  <  {difficulty}  >"),
             (None, ""),  # séparateur
         ]
         for action in KEY_ACTIONS:
@@ -526,6 +538,22 @@ class SettingsMenu(MenuBase):
             s.save()
         elif ident == "invert_mouse":
             s.invert_mouse = not s.invert_mouse   # bascule (les deux moitiés)
+            s.save()
+        elif ident == "fov":
+            s.fov = min(90, max(60, s.fov + 5 * direction))
+            s.save()
+        elif ident == "camera_shake":
+            values = (0.0, 0.5, 1.0)
+            index = min(range(len(values)), key=lambda i: abs(
+                values[i] - s.camera_shake
+            ))
+            s.camera_shake = values[(index + direction) % len(values)]
+            s.save()
+        elif ident == "toggle_ads":
+            s.toggle_ads = not s.toggle_ads
+            s.save()
+        elif ident == "difficulty":
+            s.cycle_difficulty(direction)
             s.save()
         elif ident == "reset_keys":
             s.reset_keys()

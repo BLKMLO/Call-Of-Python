@@ -1,0 +1,58 @@
+name: Executables
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: executables-${{ github.ref }}-${{ matrix.os }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    env:
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+      PYGAME_HIDE_SUPPORT_PROMPT: "1"
+
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Installer Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Installer et valider
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[build]"
+          python -m unittest discover -s tests -v
+
+      - name: Construire l'executable autonome
+        run: python -m PyInstaller --clean --noconfirm call_of_python.spec
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Call-Of-Python-${{ runner.os }}-${{ github.ref_name }}
+          path: dist/Call-Of-Python/
+          if-no-files-found: error
+          retention-days: 30

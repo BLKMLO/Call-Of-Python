@@ -22,6 +22,7 @@ import math
 import random
 from collections import deque
 
+from difficulty import ThreatDirector
 from game import Game
 from level import SURVIVAL_LEVEL
 
@@ -103,6 +104,9 @@ class SurvivalGame(Game):
         self.spawn_queue = deque()     # types d'ennemis en attente
         self.spawn_cooldown = 0.0
         self.alert_pulse = 0.0
+        self.director = ThreatDirector(
+            getattr(settings, "difficulty", "soldier"),
+        )
 
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
         """Tous les envahisseurs lunaires sont des variantes possédées."""
@@ -126,6 +130,9 @@ class SurvivalGame(Game):
     # Vagues
     # ------------------------------------------------------------------
     def _update_waves(self, dt):
+        alive_ratio = sum(e.alive for e in self.enemies) / MAX_ALIVE
+        health_ratio = self.player.health / max(1, self.player.max_health)
+        self.director.observe(health_ratio, alive_ratio)
         self._process_spawn_queue(dt)
 
         # La horde connaît toujours plus ou moins la position du joueur :
@@ -202,7 +209,7 @@ class SurvivalGame(Game):
         self.particles.spawn_portal(enemy.x, enemy.y)
         self.sounds.play("spawn", volume_scale=0.8,
                          pos=(enemy.x, enemy.y), listener=self.player)
-        self.spawn_cooldown = SPAWN_INTERVAL
+        self.spawn_cooldown = self.director.interval(SPAWN_INTERVAL)
         self._prune_corpses()
 
     def _pick_spawn_point(self):
@@ -224,7 +231,7 @@ class SurvivalGame(Game):
         if excess <= 0:
             return
         kept_e, kept_a = [], []
-        for enemy, ai in zip(self.enemies, self.ais):
+        for enemy, ai in zip(self.enemies, self.ais, strict=True):
             if not enemy.alive and excess > 0:
                 excess -= 1
                 continue        # les plus anciens cadavres disparaissent
