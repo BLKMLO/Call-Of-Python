@@ -696,6 +696,22 @@ ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
                "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss}
 
 
+# `get_bounding_rect` parcourt tous les pixels du PNG : mesuré une fois par
+# sprite, jamais à chaque apparition d'ennemi (une vague en crée des dizaines).
+_visible_bounds_cache = {}
+
+
+def _visible_bounds(sprite_name):
+    """Boîte opaque du sprite et hauteur de sa toile, mémoïsées."""
+    measured = _visible_bounds_cache.get(sprite_name)
+    if measured is None:
+        sprite = assets.get(sprite_name)
+        bounds = sprite.get_bounding_rect(min_alpha=8)
+        measured = (bounds.width, bounds.height, sprite.get_height())
+        _visible_bounds_cache[sprite_name] = measured
+    return measured
+
+
 def _height_for_visible_width(sprite_name, target_width):
     """Hauteur de projection qui donne au contenu opaque la largeur voulue.
 
@@ -703,20 +719,18 @@ def _height_for_visible_width(sprite_name, target_width):
     larges que leur dessin visible. La projection ne doit donc pas utiliser
     la toile transparente comme mesure physique de l'objet.
     """
-    sprite = assets.get(sprite_name)
-    bounds = sprite.get_bounding_rect(min_alpha=8)
-    if bounds.width <= 0:
+    visible_w, _visible_h, canvas_h = _visible_bounds(sprite_name)
+    if visible_w <= 0:
         return 0.1
-    return target_width * sprite.get_height() / bounds.width
+    return target_width * canvas_h / visible_w
 
 
 def _height_for_visible_height(sprite_name, target_height):
     """Hauteur de projection qui donne au contenu opaque la hauteur voulue."""
-    sprite = assets.get(sprite_name)
-    bounds = sprite.get_bounding_rect(min_alpha=8)
-    if bounds.height <= 0:
+    _visible_w, visible_h, canvas_h = _visible_bounds(sprite_name)
+    if visible_h <= 0:
         return target_height
-    return target_height * sprite.get_height() / bounds.height
+    return target_height * canvas_h / visible_h
 
 
 # Décors : largeur physique visée du dessin opaque, en unités monde. Ces

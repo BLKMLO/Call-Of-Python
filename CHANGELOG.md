@@ -1,5 +1,51 @@
 # Changelog
 
+## [Non publié] — 2026-08-15
+
+### Corrections
+
+- **Animation de marche des ennemis figée** : `EnemyAI.update()` remettait
+  `moving` à False *avant* `update_timers()`, si bien que `anim_time` restait
+  éternellement à zéro. Tous les ennemis se déplaçaient sur une seule frame au
+  lieu d'alterner `walk` et `walk2`.
+- **Gâchette manette** : `consume_actions()` remettait à zéro l'état maintenu
+  du tir, ce qui recréait un front montant à chaque frame — pistolet et fusil à
+  pompe tiraient en rafale manette en main alors qu'ils sont semi-automatiques.
+- **Branche de couverture de l'IA** : le comportement de l'état `cover` était
+  suspendu au `elif` du test kamikaze au lieu d'appartenir à la chaîne d'états.
+  Il est replacé dans la chaîne et le test kamikaze devient indépendant.
+
+### Performances
+
+- **Traversée des murs bornée par la hauteur maximale du niveau**
+  (`cast_ray_layers`) : une fois un mur touché, la profondeur au-delà de
+  laquelle même le mur le plus haut resterait masqué est calculée, et le rayon
+  s'arrête. Un couloir banal explorait jusque-là toute la carte case par case.
+  Le rendu du monde gagne 11 à 18 % selon le niveau (1280x720).
+- **Caméra de mort et roulade** : `pygame.transform.rotozoom` coûtait à lui
+  seul 17 ms par frame en 1280x720. Rotation entière puis agrandissement dans
+  un tampon réutilisé (`raycaster.rotate_zoom_screen`) : environ trois fois
+  moins cher, pour le même cadrage.
+- **Lignes de vue de l'IA** : le rayon est borné à la distance de la cible au
+  lieu des trente cases de portée maximale, et le test de couverture est ignoré
+  sur les niveaux sans cristal.
+- **Billboards** : les colonnes voisines non occultées sont fusionnées en une
+  seule tranche et découpées par rectangle source, sans sous-surface allouée.
+- **Apparitions** : la boîte opaque des sprites (`get_bounding_rect`, un
+  parcours complet des pixels) est mesurée une fois par PNG et non plus à
+  chaque ennemi, décor ou objet créé.
+- **HUD** : points de vie, munitions, contacts, éliminations et état de roulade
+  passent par le cache de glyphes borné, porté à 512 entrées.
+- **Commandes tactiles** : l'habillage complet (anneau, sept pastilles et leurs
+  libellés) était recomposé à chaque frame ; il est désormais préparé une fois
+  par résolution, seuls le pouce du stick et les boutons enfoncés sont blittés.
+- **Séparation des ennemis** : comparaison des distances au carré, la racine
+  n'est calculée que pour les paires réellement en chevauchement.
+
+Le rendu est inchangé au pixel près : six niveaux, quarante-huit angles de
+caméra et une empreinte SHA-256 identique avant/après, plus 9 000 rayons en
+couches et 9 000 lignes de vue comparés à l'implémentation d'origine.
+
 ## [0.4.0] — 2026-08-11
 
 ### Moteur et reseau

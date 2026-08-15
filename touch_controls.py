@@ -55,6 +55,12 @@ class TouchControls:
         self._overlay = None
         self._font = None
         self._buttons = {}
+        self._labels = {}
+        self._held_surfaces = {}
+        self._knob_surface = None
+        self._knob_radius = 0
+        self._stick_center = (0, 0)
+        self._stick_radius = 0
         self.resize(size)
 
     @property
@@ -78,6 +84,60 @@ class TouchControls:
                      max(20, round(radius * scale)), label)
             for action, (x, y, radius, label) in self.BUTTON_LAYOUT.items()
         }
+        self._labels = {
+            action: self._font.render(label, True, (226, 255, 238))
+            for action, (_x, _y, _radius, label) in self._buttons.items()
+        }
+        self._build_overlay()
+
+    def _build_overlay(self):
+        """Prépare la partie fixe de l'habillage (anneau, boutons, libellés).
+
+        Le tactile vise les machines les plus modestes : refaire toute la
+        surface transparente et rendre les sept libellés à chaque frame y
+        coûtait bien plus cher que le reste du HUD. Seuls le pouce du stick
+        et les boutons enfoncés sont désormais dessinés par frame.
+        """
+        overlay = pygame.Surface(self.size, pygame.SRCALPHA)
+        width, height = self.size
+        scale = min(width, height)
+        center = (round(self.MOVE_CENTER[0] * width),
+                  round(self.MOVE_CENTER[1] * height))
+        radius = max(32, round(self.MOVE_RADIUS * scale))
+        pygame.draw.circle(overlay, (5, 18, 20, 112), center, radius)
+        pygame.draw.circle(overlay, (70, 238, 161, 155), center, radius, 2)
+        for action, (cx, cy, button_radius, _label) in self._buttons.items():
+            overlay.blit(self._button_surface(action, button_radius,
+                                              held=False),
+                         (cx - button_radius, cy - button_radius))
+        self._overlay = overlay
+        self._stick_center = center
+        self._stick_radius = radius
+        # Variantes enfoncées et pouce du stick : même translucidité qu'avant,
+        # mais composées une fois pour toutes.
+        self._held_surfaces = {
+            action: self._button_surface(action, button_radius, held=True)
+            for action, (_cx, _cy, button_radius, _label)
+            in self._buttons.items()
+        }
+        knob_radius = max(16, radius // 3)
+        knob = pygame.Surface((knob_radius * 2, knob_radius * 2),
+                              pygame.SRCALPHA)
+        pygame.draw.circle(knob, (102, 255, 185, 178),
+                           (knob_radius, knob_radius), knob_radius)
+        self._knob_surface = knob
+        self._knob_radius = knob_radius
+
+    def _button_surface(self, action, radius, held):
+        """Pastille complète (fond, contour, libellé) sur fond transparent."""
+        surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        fill = (42, 214, 127, 188) if held else (5, 18, 20, 132)
+        pygame.draw.circle(surface, fill, (radius, radius), radius)
+        pygame.draw.circle(surface, (88, 255, 174, 190),
+                           (radius, radius), radius, 2)
+        text = self._labels[action]
+        surface.blit(text, text.get_rect(center=(radius, radius)))
+        return surface
 
     def reset(self):
         """Libère tous les doigts lors d'une perte de focus ou d'une pause."""
@@ -177,32 +237,19 @@ class TouchControls:
             return
         if screen.get_size() != self.size:
             self.resize(screen.get_size())
-        overlay = self._overlay
-        overlay.fill((0, 0, 0, 0))
-        width, height = self.size
-        scale = min(width, height)
+        screen.blit(self._overlay, (0, 0))
 
-        center = (round(self.MOVE_CENTER[0] * width),
-                  round(self.MOVE_CENTER[1] * height))
-        radius = max(32, round(self.MOVE_RADIUS * scale))
-        pygame.draw.circle(overlay, (5, 18, 20, 112), center, radius)
-        pygame.draw.circle(overlay, (70, 238, 161, 155), center, radius, 2)
-        knob = (
-            round(center[0] + self.move_x * radius * 0.62),
-            round(center[1] + self.move_y * radius * 0.62),
-        )
-        pygame.draw.circle(overlay, (102, 255, 185, 178),
-                           knob, max(16, radius // 3))
+        center, radius = self._stick_center, self._stick_radius
+        knob_radius = self._knob_radius
+        screen.blit(self._knob_surface, (
+            round(center[0] + self.move_x * radius * 0.62) - knob_radius,
+            round(center[1] + self.move_y * radius * 0.62) - knob_radius,
+        ))
 
-        for action, (cx, cy, button_radius, label) in self._buttons.items():
+        for action, (cx, cy, button_radius, _label) in self._buttons.items():
             held = ((action == "fire" and self.fire_held)
                     or (action == "aim" and self.aim_held)
                     or (paused and action == "pause"))
-            fill = ((42, 214, 127, 188) if held
-                    else (5, 18, 20, 132))
-            pygame.draw.circle(overlay, fill, (cx, cy), button_radius)
-            pygame.draw.circle(overlay, (88, 255, 174, 190),
-                               (cx, cy), button_radius, 2)
-            text = self._font.render(label, True, (226, 255, 238))
-            overlay.blit(text, text.get_rect(center=(cx, cy)))
-        screen.blit(overlay, (0, 0))
+            if held:
+                screen.blit(self._held_surfaces[action],
+                            (cx - button_radius, cy - button_radius))

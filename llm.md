@@ -43,7 +43,42 @@ La branche par défaut est `main` ; les évolutions partent d'une branche
 - `gamepad.py` fournit les mappings SDL Xbox/PlayStation, zone morte,
   branchement a chaud et vibration.
 - `pyproject.toml`, licence MIT, wheel, PyInstaller et workflow d'artefacts.
-- Ruff complet, couverture minimale de 70 % et 89 tests.
+- Ruff complet, couverture minimale de 70 % et 100 tests.
+
+## Passe bugs et performances (15 aout 2026)
+
+- `EnemyAI.update()` appelle `update_timers()` AVANT de remettre `moving` à
+  False : sinon `anim_time` reste à zéro et aucun ennemi n'alterne ses deux
+  poses de marche. Ne jamais réinverser ces deux lignes.
+- Le comportement de l'état `cover` appartient à la chaîne d'états ; le test
+  de contact du kamikaze est un `if` indépendant placé après elle.
+- `GamepadInput.consume_actions()` ne touche plus à `_fire_was_held` : seul
+  `update()` possède l'état maintenu de la gâchette, faute de quoi les armes
+  semi-automatiques tiraient en rafale à la manette.
+- `cast_ray_layers(..., max_height=...)` s'arrête dès qu'un mur plus lointain
+  ne peut plus dépasser (`Raycaster.max_height`, recalculé dans `set_level`).
+  Tout nouveau niveau doit déclarer ses hauteurs dans `heights` : une hauteur
+  appliquée ailleurs qu'à travers ce dictionnaire ferait disparaître des
+  sommets de murs.
+- `has_line_of_sight` borne son rayon à `int(dist) + 2` croisements et saute
+  `first_cover_hit` quand `level.cover_circles` est vide.
+- `raycaster.rotate_zoom_screen()` remplace `pygame.transform.rotozoom` pour
+  la roulade et la caméra de mort (rotation entière puis agrandissement dans
+  un tampon réutilisé, ~3x moins cher). Ne pas revenir à `rotozoom`.
+- `entities._visible_bounds()` mémoïse `get_bounding_rect` par nom de sprite :
+  une vague du Déferlement créait des dizaines d'ennemis, chacun scannant deux
+  PNG entiers.
+- `HUD._text()` accepte désormais les compteurs bornés (PV, munitions,
+  contacts, éliminations, roulade) ; le cache monte à 512 entrées et reste
+  vidé dans `resize()`. Ne jamais y mettre une chaîne à cardinalité libre, et
+  ne jamais appeler `set_alpha` sur une surface qui en sort.
+- `TouchControls` compose son habillage (anneau, pastilles, libellés) une fois
+  par résolution dans `_build_overlay()` ; `draw()` ne blitte plus que le
+  pouce du stick et les pastilles enfoncées.
+- `tests/test_bugfix_perf.py` verrouille tout cela, dont deux comparaisons
+  différentielles (rayons en couches et lignes de vue) avec l'implémentation
+  d'origine recopiée dans le test : toute optimisation future du rayon doit
+  continuer à rendre exactement les mêmes murs.
 
 ## Lancer / tester
 
@@ -61,7 +96,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 ```
 
 Le workflow `.github/workflows/ci.yml` rejoue compilation, Ruff complet,
-89 tests, couverture et construction du wheel sous Python 3.12 sur Ubuntu et
+100 tests, couverture et construction du wheel sous Python 3.12 sur Ubuntu et
 Windows.
 
 ## Architecture
@@ -293,10 +328,19 @@ d'implémentation et les décisions techniques non triviales.
     cartouches, et chaîne mécanique explicite ouverture du capot → engagement
     de la bande → calage → fermeture pour le minigun. Dimensions, alpha,
     keyframes, timings et cache HUD restent inchangés.
+32. Passe bugs et performances (15 août 2026) : animation de marche des
+    ennemis réparée, gâchette manette rendue semi-automatique, branche de
+    couverture replacée dans la chaîne d'états. Côté performances, traversée
+    des murs bornée par la hauteur maximale du niveau, `rotozoom` remplacé
+    pour la roulade et la caméra de mort, lignes de vue bornées, tranches de
+    billboards fusionnées, boîtes opaques et habillage tactile mémoïsés :
+    -11 à -18 % sur le rendu du monde, frames de mort/roulade deux fois plus
+    rapides, rendu identique au pixel près. Onze tests portent la suite à
+    100 tests.
 
 ## Dette / manques à connaître
 
-- **Couverture de tests encore partielle mais en progrès.** Quatre-vingt-neuf
+- **Couverture de tests encore partielle mais en progrès.** Cent
   tests sont présents : `tests/test_requested_changes.py` (22
   non-régressions), `tests/test_cleanup.py` (15 contrôles robustesse/UI) et
   `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
@@ -307,7 +351,8 @@ d'implémentation et les décisions techniques non triviales.
   poses, le HUD, la progression de recharge et les profils musicaux) et
   `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop), plus
   `tests/test_p0_p1.py` (10 tests de mémoire, protocole, sécurité hôte,
-  collisions et pause coop) et `tests/test_modernization.py` (8 tests horloge,
+  collisions et pause coop), `tests/test_bugfix_perf.py` (11 tests de la passe
+  correctifs/performances) et `tests/test_modernization.py` (8 tests horloge,
   MTU, port exclusif, version, difficulte, accessibilite, FOV et manette).
 - **Ruff complet** : la dette historique est corrigee et la CI execute toutes
   les regles E, F, I, UP et B configurees dans `pyproject.toml`.
@@ -755,7 +800,7 @@ branche de travail `agent/p0-p2-modernization`.
 
 ## Validation disponible
 
-La suite contient 89 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 100 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -834,8 +879,9 @@ Détails complets dans `CHANGELOG.md`. Points à connaître pour la suite :
   `SO_REUSEADDR`, qui y autorise un double bind UDP silencieux) ; ailleurs,
   `SO_REUSEADDR` est conservé.
 - Nouveaux caches à respecter : `_sysfont` (menu.py, durée de vie process),
-  `HUD._text_cache` (borné à 256, réservé aux libellés STATIQUES, vidé dans
-  `resize()` avec les polices), `HUD._slot_icon_cache`, `raycaster._zoom_scratch`
+  `HUD._text_cache` (borné à `HUD.TEXT_CACHE_LIMIT` = 512, libellés statiques
+  ET compteurs bornés, vidé dans `resize()` avec les polices),
+  `HUD._slot_icon_cache`, `raycaster._zoom_scratch`
   (tampon ADS unique, réalloué au changement de taille), variantes alpha des
   murs d'énergie mémoïsées dans `_wall_cache` sous une clé `(*clé, alpha)`
   avec alpha quantifié par pas de 16 — la surface du chemin opaque (255) n'est
@@ -888,7 +934,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-89 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+100 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 15 contrôles robustesse/réseau/UI ;
 `test_smoke.py` : 8 tests de fumée généraux ;
 `test_gameplay_extensions.py` : 11 tests Colosse/tactile ;

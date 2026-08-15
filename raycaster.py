@@ -137,7 +137,7 @@ def cast_ray(level, ox, oy, angle, max_depth=MAX_DEPTH):
 
 
 def cast_ray_layers(level, ox, oy, angle, heights, screen_dist, horizon,
-                    ray_cos, max_depth=MAX_DEPTH):
+                    ray_cos, max_depth=MAX_DEPTH, max_height=None):
     """Comme `cast_ray`, mais renvoie TOUS les murs traversés du plus proche
     au plus loin — tant qu'aucun n'occulte entièrement la suite au-dessus de
     l'horizon (ou jusqu'à la sortie de la carte / la portée max).
@@ -146,12 +146,20 @@ def cast_ray_layers(level, ox, oy, angle, heights, screen_dist, horizon,
     des murs plus bas (salles, barrières) : un raycaster classique s'arrête
     au premier mur et masque tout ce qui est derrière, même plus haut.
 
+    `max_height` (mur le plus haut du niveau) borne la traversée : dès qu'un
+    mur est assez proche pour masquer même un mur de cette hauteur, plus rien
+    derrière ne peut être visible et le rayon s'arrête. Sans cette borne, un
+    couloir banal continuait d'explorer la carte entière case par case.
+
     Les profondeurs renvoyées sont déjà corrigées du fisheye (`ray_cos`).
     Liste de (profondeur, tile, vertical, offset), du plus proche au plus loin.
     """
     grid = level.grid
     width, height = level.width, level.height
     doors = level.doors
+    if max_height is None:
+        max_height = max(heights.values(), default=1.0)
+        max_height = max(1.0, max_height)
     sin_a = math.sin(angle) or 1e-8
     cos_a = math.cos(angle) or 1e-8
     map_x, map_y = int(ox), int(oy)
@@ -171,22 +179,34 @@ def cast_ray_layers(level, ox, oy, angle, heights, screen_dist, horizon,
     # que s'il dépasse au-dessus : sinon il est entièrement masqué. Ce filtre
     # ramène le coût près de celui d'un rayon simple dans les zones dégagées.
     highest_top = float(horizon + 1)
+    # Profondeur au-delà de laquelle même le mur le plus haut du niveau
+    # resterait sous `highest_top` : la traversée peut s'arrêter là.
+    depth_limit = float(max_depth)
+    tall_margin = max_height - 0.5
+    if not (0 <= map_x < width and 0 <= map_y < height):
+        return hits               # origine hors carte : rien à traverser
+    # La ligne de la grille n'est relue que lorsque le rayon change de rangée :
+    # un pas sur deux économise une indexation dans la boucle la plus chaude.
+    row = grid[map_y]
     for _ in range(max_depth * 3):
         if t_max_x < t_max_y:
             map_x += step_x
+            if not 0 <= map_x < width:
+                break             # hors carte : plus rien de modélisé derrière
             depth = t_max_x * ray_cos
             t_max_x += t_delta_x
             vertical = True
         else:
             map_y += step_y
+            if not 0 <= map_y < height:
+                break
             depth = t_max_y * ray_cos
             t_max_y += t_delta_y
+            row = grid[map_y]
             vertical = False
-        if not (0 <= map_x < width and 0 <= map_y < height):
-            break                 # hors carte : plus rien de modélisé derrière
-        if depth > max_depth:
+        if depth > depth_limit:
             break
-        tile = grid[map_y][map_x]
+        tile = row[map_x]
         if tile == ".":
             continue
         off = ((oy + depth / ray_cos * sin_a) if vertical
@@ -207,6 +227,13 @@ def cast_ray_layers(level, ox, oy, angle, heights, screen_dist, horizon,
             highest_top = top
             if highest_top <= 0:
                 break             # occulte jusqu'au haut de l'écran : on arrête
+            margin = horizon - highest_top
+            if margin > 0.0 and tall_margin > 0.0:
+                # Un mur de `max_height` situé plus loin que cette profondeur
+                # serait entièrement masqué : inutile de continuer.
+                cutoff = screen_dist * tall_margin / margin
+                if cutoff < depth_limit:
+                    depth_limit = cutoff
     return hits
 
 
@@ -216,9 +243,15 @@ def has_line_of_sight(level, x0, y0, x1, y1):
     if dist < 1e-6:
         return True
     angle = math.atan2(y1 - y0, x1 - x0)
-    if level.first_cover_hit(x0, y0, angle, dist) < dist - 0.05:
+    if level.cover_circles and level.first_cover_hit(
+            x0, y0, angle, dist) < dist - 0.05:
         return False
-    depth, _, _, _ = cast_ray(level, x0, y0, angle)
+    # Le rayon n'a pas besoin d'aller plus loin que la cible : chaque pas
+    # franchit au moins une case, donc `dist + 2` croisements suffisent
+    # toujours à dépasser la cible. Sans cette borne, un test de vue à deux
+    # cases traversait quand même trente cases de carte.
+    depth, _, _, _ = cast_ray(level, x0, y0, angle,
+                              max_depth=min(MAX_DEPTH, int(dist) + 2))
     return depth > dist - 0.05
 
 
@@ -265,7 +298,31 @@ def zoom_screen(screen, zoom):
     pygame.transform.scale(_zoom_scratch, (w, h), screen)
 
 
+def rotate_zoom_screen(screen, angle, scale):
+    """Fait pivoter et agrandir l'image déjà rendue, puis la recentre.
+
+    `pygame.transform.rotozoom` combinait les deux opérations avec un
+    filtrage lissé : il coûtait à lui seul plus de 10 ms par frame en
+    1280x720, soit plus que tout le rendu du monde, pendant la roulade et
+    toute la caméra de mort. La rotation entière (non lissée, façon
+    pixel-art) suivie d'une mise à l'échelle dans un tampon réutilisé donne
+    le même cadrage pour environ un tiers du coût.
+    """
+    global _rotate_scratch
+    rotated = pygame.transform.rotate(screen, angle)
+    if scale > 1.001:
+        width = int(rotated.get_width() * scale)
+        height = int(rotated.get_height() * scale)
+        if (_rotate_scratch is None
+                or _rotate_scratch.get_size() != (width, height)):
+            _rotate_scratch = pygame.Surface((width, height))
+        rotated = pygame.transform.scale(rotated, (width, height),
+                                         _rotate_scratch)
+    return rotated
+
+
 _zoom_scratch = None
+_rotate_scratch = None
 
 
 class Raycaster:
@@ -314,6 +371,8 @@ class Raycaster:
         # Hauteurs des murs (multiplicateur d'unités monde ; 1.0 par défaut)
         # et repérage du mur d'énergie (limite du monde, rendu fondu).
         self.heights = self.level_config.get("heights", {})
+        # Mur le plus haut du niveau : borne la traversée en couches.
+        self.max_height = max(1.0, max(self.heights.values(), default=1.0))
         theme = {**self.level_config["theme"], "D": "wall_door"}
         self.energy_tile = next((c for c, t in theme.items()
                                  if t == "wall_energy"), None)
@@ -643,9 +702,12 @@ class Raycaster:
         z_buffer = self.z_buffer
         ray_cos = self.ray_cos
         heights = self.heights
+        max_height = self.max_height
         screen_dist = self.screen_dist
         horizon = self.horizon
-        angle = pangle - self.half_fov + 0.5 * self.delta_angle
+        delta_angle = self.delta_angle
+        draw_column = self._draw_wall_column
+        angle = pangle - self.half_fov + 0.5 * delta_angle
 
         for ray in range(self.num_rays):
             x = ray * COLUMN_WIDTH
@@ -653,16 +715,21 @@ class Raycaster:
             # loin) : le sommet d'un mur haut derrière un mur bas reste ainsi
             # visible.
             layers = cast_ray_layers(level, px, py, angle, heights,
-                                     screen_dist, horizon, ray_cos[ray])
-            angle += self.delta_angle
+                                     screen_dist, horizon, ray_cos[ray],
+                                     max_height=max_height)
+            angle += delta_angle
             if not layers:
                 z_buffer[ray] = MAX_DEPTH
                 continue
             z_buffer[ray] = layers[0][0]   # mur le plus proche (occlusion sprites)
+            if len(layers) == 1:           # cas ultra-majoritaire
+                depth, tile, vertical, offset = layers[0]
+                draw_column(screen, x, depth, tile, vertical, offset)
+                continue
             # Dessin du plus loin au plus proche : les murs proches recouvrent
             # le bas des murs lointains, mais leur sommet dépasse encore.
             for depth, tile, vertical, offset in reversed(layers):
-                self._draw_wall_column(screen, x, depth, tile, vertical, offset)
+                draw_column(screen, x, depth, tile, vertical, offset)
 
     def _draw_wall_column(self, screen, x, depth, tile, vertical, offset):
         """Projette et dessine une colonne de mur à la profondeur `depth`
@@ -827,20 +894,31 @@ class Raycaster:
             top = bottom - h
 
             # Occlusion par les murs : blit en tranches verticales, comparées
-            # au z-buffer colonne par colonne.
+            # au z-buffer colonne par colonne. Les colonnes voisines visibles
+            # sont fusionnées en une seule tranche : un sprite dégagé ne coûte
+            # plus qu'un blit au lieu d'un par colonne de 2 px, et le découpage
+            # passe par un rectangle source (aucune sous-surface allouée).
+            z_buffer = self.z_buffer
             first_ray = max(0, screen_x // COLUMN_WIDTH)
             last_ray = min(self.num_rays - 1, (screen_x + w) // COLUMN_WIDTH)
             drawn = False
-            for ray in range(first_ray, last_ray + 1):
-                if self.z_buffer[ray] < proj_dist:
-                    continue  # un mur est devant cette tranche du sprite
-                strip_x = max(screen_x, ray * COLUMN_WIDTH)
-                strip_end = min(screen_x + w, (ray + 1) * COLUMN_WIDTH)
+            run_start = -1
+            for ray in range(first_ray, last_ray + 2):
+                visible = (ray <= last_ray and z_buffer[ray] >= proj_dist)
+                if visible:
+                    if run_start < 0:
+                        run_start = ray
+                    continue
+                if run_start < 0:
+                    continue      # un mur est devant cette tranche du sprite
+                strip_x = max(screen_x, run_start * COLUMN_WIDTH)
+                strip_end = min(screen_x + w, ray * COLUMN_WIDTH)
+                run_start = -1
                 strip_w = strip_end - strip_x
                 if strip_w <= 0:
                     continue
-                strip = scaled.subsurface((strip_x - screen_x, 0, strip_w, h))
-                screen.blit(strip, (strip_x, top))
+                screen.blit(scaled, (strip_x, top),
+                            (strip_x - screen_x, 0, strip_w, h))
                 drawn = True
 
             if drawn and getattr(obj, "max_health", None) and obj.alive:

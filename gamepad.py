@@ -103,9 +103,15 @@ class GamepadInput:
         self._fire_was_held = firing
 
     def consume_actions(self):
+        """Vide la file des actions ponctuelles produites par `update()`.
+
+        L'état maintenu de la gâchette appartient à `update()` : le remettre
+        à zéro ici recréait un front montant à chaque frame, et un pistolet
+        ou un fusil à pompe tirait en continu manette en main alors qu'ils
+        sont semi-automatiques.
+        """
         actions = tuple(self._actions)
         self._actions.clear()
-        self._fire_was_held = False
         return actions
 
     def movement_axes(self):
