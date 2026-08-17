@@ -76,7 +76,7 @@ roulades, cadence, chargeurs et degats.
   avec limites de taille/temps et limite par adresse source ;
 - protocole sequence, evenements fiables acquittes et inventaire autoritaire ;
 - ressources resolues en mode source, wheel et PyInstaller ;
-- 89 tests et couverture globale superieure au seuil CI de 70 %.
+- 100 tests et couverture globale superieure au seuil CI de 70 %.
 
 Des fichiers audio `menu`, `survival`, `reload` et `1` a `5` peuvent etre
 places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.

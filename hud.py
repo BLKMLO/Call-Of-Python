@@ -231,17 +231,21 @@ class HUD:
             )
         return title
 
-    def _text(self, font, content, color):
-        """`font.render` mémoïsé pour les chaînes (quasi) constantes.
+    TEXT_CACHE_LIMIT = 512
 
-        Réservé aux libellés statiques (titres, chiffres d'emplacement,
-        nom d'arme/niveau) : le cache est borné et invalidé dans resize()
-        avec les polices.
+    def _text(self, font, content, color):
+        """`font.render` mémoïsé pour les chaînes à faible cardinalité.
+
+        Libellés statiques (titres, chiffres d'emplacement, nom d'arme ou de
+        niveau) mais aussi compteurs bornés (points de vie, munitions,
+        contacts, éliminations) : rendre un glyphe coûte bien plus cher que
+        de le retrouver ici, et ces chaînes reviennent des centaines de fois.
+        Le cache est borné et invalidé dans `resize()` avec les polices.
         """
         key = (id(font), content, color)
         surf = self._text_cache.get(key)
         if surf is None:
-            if len(self._text_cache) >= 256:
+            if len(self._text_cache) >= self.TEXT_CACHE_LIMIT:
                 self._text_cache.clear()
             surf = font.render(content, True, color)
             self._text_cache[key] = surf
@@ -574,7 +578,7 @@ class HUD:
         frac = max(0.0, player.health / player.max_health)
         health_color = HUD_GREEN if frac > 0.35 else (230, 75, 67)
         label = self._text(self.font, "INTÉGRITÉ", HUD_DIM)
-        hp_text = self.font.render(f"{player.health:03d} PV", True, HUD_TEXT)
+        hp_text = self._text(self.font, f"{player.health:03d} PV", HUD_TEXT)
         screen.blit(label, (left_rect.x + 14, left_rect.y + 10))
         screen.blit(hp_text, (left_rect.right - hp_text.get_width() - 12,
                               left_rect.y + 10))
@@ -585,7 +589,7 @@ class HUD:
         else:  # compatibilité avec une éventuelle sauvegarde/ancienne session
             roll_label = f"ROULADE  {player.roll_cooldown:.1f} s"
             roll_color = HUD_DIM
-        roll_text = self.small_font.render(roll_label, True, roll_color)
+        roll_text = self._text(self.small_font, roll_label, roll_color)
         screen.blit(roll_text, (left_rect.x + 14,
                                 left_rect.y - roll_text.get_height() - 4))
         segments = 10
@@ -615,7 +619,7 @@ class HUD:
         else:
             ammo_str = f"{weapon.ammo} / {weapon.spec.magazine_size}"
             ammo_col = (235, 100, 78) if low else HUD_TEXT
-        ammo_text = self.big_font.render(ammo_str, True, ammo_col)
+        ammo_text = self._text(self.big_font, ammo_str, ammo_col)
         name_text = self._text(self.font, weapon.display_name.upper(),
                                HUD_AMBER)
         screen.blit(name_text, (right_rect.x + 12, right_rect.y + 8))
@@ -627,10 +631,10 @@ class HUD:
             remaining = survival["remaining"]   # inclut la file d'attente
         else:
             remaining = sum(1 for e in enemies if e.alive)
-        info = self.font.render(f"CONTACTS  {remaining:02d}", True, HUD_AMBER)
+        info = self._text(self.font, f"CONTACTS  {remaining:02d}", HUD_AMBER)
         kill_count = stats["kills"] if stats is not None else 0
-        kills = self.font.render(f"NEUTRALISÉS  {kill_count:02d}",
-                                 True, HUD_TEXT)
+        kills = self._text(self.font, f"NEUTRALISÉS  {kill_count:02d}",
+                           HUD_TEXT)
         info_w = max(info.get_width(), kills.get_width()) + 26
         info_h = info.get_height() + kills.get_height() + 17
         info_rect = pygame.Rect(self.width - margin - info_w, margin,

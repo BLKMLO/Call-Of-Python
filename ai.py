@@ -134,8 +134,12 @@ class EnemyAI:
             enemy.cancel_aim()
             return events
 
-        enemy.moving = False  # remis à True par les déplacements (pose "marche")
+        # `update_timers` fait avancer le cycle de marche tant que l'ennemi
+        # bouge : il doit donc voir l'état du pas précédent. Remettre `moving`
+        # à False avant l'appel figeait `anim_time` à zéro, et tous les ennemis
+        # marchaient sur une seule frame.
         enemy.update_timers(dt)
+        enemy.moving = False  # remis à True par les déplacements (pose "marche")
         self.path_timer += dt
         self.flank_timer -= dt
         self.proactive_roll_delay = max(0.0,
@@ -250,11 +254,6 @@ class EnemyAI:
             else:
                 self._strafe(dt, player, level)
                 events += self._try_shoot(player, level, dist)
-
-        # Kamikaze : au contact, il se déclenche (game.py gère l'explosion).
-        if (enemy.MELEE and enemy.EXPLODES and enemy.ai_state == "chase"
-                and dist < enemy.EXPLOSION_RADIUS * 0.5):
-            events.append(("explode", enemy))
         elif state == "cover":
             if enemy.cover_target is not None:
                 self._navigate_towards(dt, enemy.cover_target, level)
@@ -268,6 +267,13 @@ class EnemyAI:
             elif sees_player and dist < enemy.ATTACK_RANGE:
                 # On riposte quand même si le joueur nous suit à couvert.
                 events += self._try_shoot(player, level, dist)
+
+        # Kamikaze : au contact, il se déclenche (game.py gère l'explosion).
+        # Volontairement hors de la chaîne d'états : il ne prend jamais de
+        # couverture, mais le test ne doit pas dépendre de cette coïncidence.
+        if (enemy.MELEE and enemy.EXPLODES and enemy.ai_state == "chase"
+                and dist < enemy.EXPLOSION_RADIUS * 0.5):
+            events.append(("explode", enemy))
 
         return events
 
