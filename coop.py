@@ -31,7 +31,7 @@ from entities import (
     move_with_entity_collisions,
 )
 from game import GUNSHOT_HEARING, SLOT_SCANCODES, Game, new_stats
-from gamepad import GamepadInput
+from gamepad import GamepadInput, reset_gameplay_input
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
 from network import DEFAULT_PORT, UdpPeer
@@ -664,7 +664,7 @@ class CoopClientGame:
         self.time = 0.0
         self.shake = 0.0
         self.show_fps = False
-        self.fps = 60.0
+        self.fps = 0.0
         self.sparkle_timer = 0.0
         self.step_distance = 0.0
         self.step_side = False
@@ -721,14 +721,13 @@ class CoopClientGame:
     # -- événements -------------------------------------------------------
     def handle_event(self, event):
         self.gamepad.handle_event(event)
+        if (event.type == pygame.CONTROLLERBUTTONDOWN and self.controls_paused
+                and event.button == pygame.CONTROLLER_BUTTON_B):
+            return "menu"
         if event.type == pygame.WINDOWFOCUSLOST:
-            self.player.aiming = False
-            self._mouse_fire_held = False
-            self._mouse_aim_held = False
-            self.touch.reset()
+            reset_gameplay_input(self)
             if self.outcome is None:
                 self.paused = True
-            pygame.mouse.get_rel()
             return None
         if event.type in FINGER_EVENTS:
             actions = self.touch.handle_event(event)
@@ -741,11 +740,7 @@ class CoopClientGame:
             if event.key == pygame.K_ESCAPE:
                 if not self.host_paused:
                     self.paused = not self.paused
-                self.player.aiming = False
-                self._mouse_fire_held = False
-                self._mouse_aim_held = False
-                self.touch.reset()
-                pygame.mouse.get_rel()
+                reset_gameplay_input(self)
             elif self.controls_paused and event.key == pygame.K_m:
                 return "menu"
             elif event.key == pygame.K_F3:
@@ -804,13 +799,7 @@ class CoopClientGame:
         if action == "pause":
             if not self.host_paused:
                 self.paused = not self.paused
-            self.player.aiming = False
-            self._mouse_fire_held = False
-            self._mouse_aim_held = False
-            # Libère aussi les commandes posées pendant la pause afin qu'un
-            # tir/ADS ne parte pas tout seul à la reprise.
-            self.touch.reset()
-            pygame.mouse.get_rel()
+            reset_gameplay_input(self)
             return None
         if action == "menu":
             return "menu" if self.controls_paused else None
@@ -849,9 +838,10 @@ class CoopClientGame:
     def update(self, dt):
         self.gamepad.update()
         for action in self.gamepad.consume_actions():
-            if action == "pause" and not self.host_paused:
+            if action == "pause" and not self.host_paused and self.outcome is None:
                 self.paused = not self.paused
-                self.player.aiming = False
+                reset_gameplay_input(self)
+                break
             elif (not self.controls_paused and self.outcome is None
                   and self.player.alive):
                 if action == "roll":
@@ -866,7 +856,6 @@ class CoopClientGame:
                 elif action == "fire":
                     self._fire()
         self.time += dt
-        self.fps = self.fps * 0.95 + (1.0 / max(dt, 1e-4)) * 0.05
         self.shake = max(0.0, self.shake - dt * 3.5)
         self._net_receive()
         self._ensure_joined(dt)
@@ -1159,13 +1148,8 @@ class CoopClientGame:
         """Applique la pause hôte et neutralise toute commande déjà armée."""
         was_paused = getattr(self, "host_paused", False)
         self.host_paused = paused
-        if paused and not was_paused:
-            self.player.aiming = False
-            self._mouse_fire_held = False
-            self._mouse_aim_held = False
-            self.pending_fires.clear()
-            self.touch.reset()
-            pygame.mouse.get_rel()
+        if paused != was_paused:
+            reset_gameplay_input(self)
 
     def _apply_players(self, players):
         seen = set()
@@ -1556,7 +1540,7 @@ class CoopClientGame:
         if not self.player.alive and self.outcome is None:
             self.hud.draw_dead_overlay(screen)
         if self.controls_paused:
-            self.hud.draw_pause(screen)
+            self.hud.draw_pause(screen, host_paused=self.host_paused)
         self.touch.draw(screen, paused=self.controls_paused)
 
     def close(self):

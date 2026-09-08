@@ -14,7 +14,7 @@ import assets
 from ai import EnemyAI
 from difficulty import get_difficulty
 from entities import ENEMY_TYPES, Pickup, Player, Prop
-from gamepad import GamepadInput
+from gamepad import GamepadInput, reset_gameplay_input
 from hud import HUD
 from level import Level
 from particles import ParticleSystem
@@ -95,7 +95,7 @@ class Game:
         self.time = 0.0
         self.shake = 0.0         # amplitude du tremblement d'écran (0 → 1)
         self.show_fps = False    # bascule F3
-        self.fps = 60.0          # FPS lissés (affichage)
+        self.fps = 0.0           # Mesurés par l'horloge de rendu dans main.py.
         self.sparkle_timer = 0.0 # émission des étincelles des packs de vie
         self.step_distance = 0.0 # distance parcourue depuis le dernier pas
         self.step_side = False   # alterne les deux sons de pas
@@ -112,16 +112,13 @@ class Game:
         gamepad = getattr(self, "gamepad", None)
         if gamepad is not None:
             gamepad.handle_event(event)
+        if (event.type == pygame.CONTROLLERBUTTONDOWN and self.paused
+                and self.outcome is None and event.button == pygame.CONTROLLER_BUTTON_B):
+            return "menu"
         if event.type == pygame.WINDOWFOCUSLOST:
-            self.player.aiming = False
-            self._mouse_fire_held = False
-            self._mouse_aim_held = False
-            touch = getattr(self, "touch", None)
-            if touch is not None:
-                touch.reset()
+            reset_gameplay_input(self)
             if self.outcome is None:
                 self.paused = True
-            pygame.mouse.get_rel()
             return None
         if event.type in FINGER_EVENTS:
             actions = self.touch.handle_event(event)
@@ -144,6 +141,8 @@ class Game:
                  and event.key in (pygame.K_ESCAPE, pygame.K_RETURN,
                                    pygame.K_KP_ENTER, pygame.K_SPACE))
                 or event.type == pygame.MOUSEBUTTONDOWN
+                or (event.type == pygame.CONTROLLERBUTTONDOWN
+                    and event.button == pygame.CONTROLLER_BUTTON_A)
             )
             if skip_requested and self.death_time >= DEATH_SKIP_LOCK:
                 self.death_time = DEATH_CAM_TIME + 0.01
@@ -151,11 +150,7 @@ class Game:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.paused = not self.paused
-                self.player.aiming = False
-                self._mouse_fire_held = False
-                self._mouse_aim_held = False
-                self.touch.reset()
-                pygame.mouse.get_rel()  # évite un saut de caméra à la reprise
+                reset_gameplay_input(self)
             elif self.paused and event.key == pygame.K_m:
                 return "menu"
             elif event.key == pygame.K_F3:
@@ -217,13 +212,7 @@ class Game:
         """Traduit une action tactile ponctuelle vers le gameplay existant."""
         if action == "pause":
             self.paused = not self.paused
-            self.player.aiming = False
-            self._mouse_fire_held = False
-            self._mouse_aim_held = False
-            # Une commande posée pendant la pause ne doit pas rester armée
-            # au moment de la reprise (tir/ADS maintenu notamment).
-            self.touch.reset()
-            pygame.mouse.get_rel()
+            reset_gameplay_input(self)
             return None
         if action == "menu":
             return "menu" if self.paused else None
@@ -258,7 +247,8 @@ class Game:
         for action in self.gamepad.consume_actions():
             if action == "pause" and self.outcome is None:
                 self.paused = not self.paused
-                self.player.aiming = False
+                reset_gameplay_input(self)
+                break
             elif not self.paused and self.outcome is None and self.player.alive:
                 if action == "roll":
                     self.player.start_roll(
@@ -287,7 +277,6 @@ class Game:
         if self.outcome is not None and self.end_delay > 0.8:
             return
         self.time += dt
-        self.fps = self.fps * 0.95 + (1.0 / max(dt, 1e-4)) * 0.05
         self.shake = max(0.0, self.shake - dt * 3.5)
 
         player = self.player

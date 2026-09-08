@@ -21,6 +21,7 @@ import pygame
 
 from coop import CoopClientGame, CoopHostGame
 from game import Game
+from gamepad import GamepadInput
 from level import LEVELS
 from menu import (
     EndScreen,
@@ -86,6 +87,7 @@ def main():
     mp_menu = MultiplayerMenu(sounds, settings)
     transition = None    # LevelCompleteScreen ou EndScreen courant
     game = None
+    menu_gamepad = GamepadInput()
     state = "menu"
     set_mouse_captured(False)
     sounds.play_music("menu")
@@ -96,6 +98,8 @@ def main():
         if game is not None and hasattr(game, "close"):
             game.close()
         game = None
+        if not menu_gamepad.connected:
+            menu_gamepad._open_first()
 
     def toggle_fullscreen():
         """Bascule F11 et redimensionne le rendu de l'état courant."""
@@ -112,6 +116,7 @@ def main():
         """Crée le Game du niveau `index` et passe en état de jeu."""
         nonlocal game, state
         leave_game()
+        menu_gamepad.close()
         game = Game(screen, settings, sounds, index, carry_player=carry,
                     carry_stats=stats)
         state = "game"
@@ -125,6 +130,7 @@ def main():
         """Lance le Déferlement (mode survie par vagues)."""
         nonlocal game, state
         leave_game()
+        menu_gamepad.close()
         game = SurvivalGame(screen, settings, sounds, carry_player=carry)
         state = "game"
         set_mouse_captured(True)
@@ -134,6 +140,7 @@ def main():
         """Héberge ou rejoint une partie coop du Déferlement en LAN."""
         nonlocal game, state
         leave_game()
+        menu_gamepad.close()
         try:
             if host:
                 game = CoopHostGame(screen, settings, sounds)
@@ -141,6 +148,7 @@ def main():
                 game = CoopClientGame(screen, settings, sounds,
                                       settings.last_ip)
         except OSError as error:
+            menu_gamepad._open_first()
             mp_menu.error = f"Erreur réseau : {error}"
             return
         state = "game"
@@ -178,6 +186,8 @@ def main():
         # Événements
         # ------------------------------------------------------------------
         for event in pygame.event.get():
+            if state != "game":
+                menu_gamepad.handle_event(event)
             if event.type == pygame.QUIT:
                 running = False
                 continue
@@ -250,6 +260,7 @@ def main():
         if state == "game":
             for _ in range(simulation_clock.advance(frame_time)):
                 game.update(SIMULATION_STEP)
+            game.fps = clock.get_fps()
             game.draw(screen)
             if getattr(game, "disconnected", False):
                 # Hôte injoignable ou connexion perdue : retour au menu LAN.
@@ -261,6 +272,8 @@ def main():
                 set_mouse_captured(False)
                 sounds.play_music("menu")
             elif game.finished:
+                game.gamepad.close()
+                menu_gamepad._open_first()
                 set_mouse_captured(False)
                 if isinstance(game, (SurvivalGame, CoopClientGame)):
                     end_survival()
@@ -294,6 +307,7 @@ def main():
         pygame.display.flip()
 
     leave_game()
+    menu_gamepad.close()
     settings.save()
     pygame.quit()
     sys.exit(0)

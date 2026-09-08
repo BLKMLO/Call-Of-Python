@@ -1,5 +1,21 @@
 # Changelog
 
+## [Non publié] — 2026-09-08
+
+- Navigation des menus au clavier et à la croix directionnelle SDL,
+  sélection visible, validation A/Entrée, retour B/Échap et réglage gauche/droite.
+- Paramètres à 800×600 : bouton Retour au-dessus du pied de page et libellés
+  ajustés à la largeur des boutons ; collisions polygonales conservées.
+- Pause manette alignée sur clavier/tactile : purge des entrées, gâchettes
+  réarmées après relâchement, B pour revenir au menu, pause hôte distinguée.
+- A permet de passer la caméra de mort après le verrou existant de trois secondes.
+- F3 mesure désormais le rendu réel au lieu de converger vers le pas fixe de 60 Hz.
+- 13 tests supplémentaires couvrent navigation, réglages, saisies, focus,
+  pause solo/coop, gâchettes, verrou de mort, résolution et boucle principale.
+- Aucun changement du format de configuration, des sauvegardes, du protocole
+  LAN, des ressources PNG ni de l'équilibrage. Retour arrière : réversion du
+  commit de cette passe, sans migration de données.
+
 ## [Non publié] — 2026-08-15
 
 ### Corrections

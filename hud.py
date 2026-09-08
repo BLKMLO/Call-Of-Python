@@ -876,11 +876,16 @@ class HUD:
                 center=(self.width // 2, rect.bottom - 27),
             ))
 
-    def draw_pause(self, screen):
+    def draw_pause(self, screen, host_paused=False):
         """Voile + texte de pause par-dessus la scène figée."""
         self._dark_veil.set_alpha(150)
         screen.blit(self._dark_veil, (0, 0))
-        title = self.big_font.render("PAUSE", True, (240, 240, 240))
-        hint = self.font.render("Échap : reprendre    M : menu principal", True, (200, 200, 200))
+        title = self.big_font.render("PAUSE HÔTE" if host_paused else "PAUSE",
+                                     True, (240, 240, 240))
+        resume = "L'hôte reprendra la partie" if host_paused else "Échap / Start : reprendre"
+        hint = self.font.render(resume, True, (200, 200, 200))
+        back = self.font.render("M / B (Rond) : menu principal", True, (200, 200, 200))
         screen.blit(title, ((self.width - title.get_width()) // 2, self.height // 2 - 60))
         screen.blit(hint, ((self.width - hint.get_width()) // 2, self.height // 2 + 10))
+        screen.blit(back, ((self.width - back.get_width()) // 2,
+                           self.height // 2 + 14 + hint.get_height()))

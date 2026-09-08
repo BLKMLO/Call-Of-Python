@@ -29,6 +29,39 @@ Repo GitHub : `BLKMLO/Call-Of-Python` (renommé depuis `BLKMLO/TempGPT`).
 La branche par défaut est `main` ; les évolutions partent d'une branche
 `agent/<description>` et reviennent par pull request.
 
+## Navigation et entrées (8 septembre 2026)
+
+- Branche `agent/menu-controls-render-fps`, base `main` au commit `cb48a335`.
+  Les PR #26 et #27 sont déjà intégrées : ne pas réappliquer leur contenu.
+- Menus : sélection par identifiant dans `MenuBase`, navigation haut/bas,
+  réglage gauche/droite, Entrée/Espace/A pour valider et Échap/B pour revenir.
+  Les séparateurs sont exclus. B ne ferme pas l'application depuis le menu
+  principal. La collision polygonale reste la référence pour la souris.
+- Le remappage clavier ignore les boutons manette sauf B pour annuler ; la
+  saisie IP accepte A/B pour valider/annuler mais reste au clavier. Ne jamais
+  injecter des touches manette dans `Settings.bind_key`.
+- Les listes compactes sont bornées au-dessus du pied de page : Retour reste
+  visible à 800×600. `_row_font` est partagé entre dessin et calcul des chevrons.
+- `reset_gameplay_input` (`gamepad.py`) centralise la purge souris/tactile,
+  des boutons manette et des tirs clients en attente. Les gâchettes doivent
+  être relâchées après pause/reprise/perte de focus/ouverture de contrôleur.
+  Un client ne peut pas lever `host_paused`; la réception réseau continue.
+- `main.py` possède le contrôleur des menus et le ferme avant d'ouvrir celui
+  de la partie. Les transitions de fin et retours au menu le rouvrent.
+- A passe la caméra de mort seulement après `DEATH_SKIP_LOCK`; Start/B
+  permettent de reprendre/quitter la pause. Le HUD distingue « PAUSE HÔTE ».
+- F3 affiche `Clock.get_fps()` de la boucle principale. Ne plus calculer les
+  FPS depuis le `dt` fixe dans `Game.update` ou `CoopClientGame.update`.
+- `tests/test_menu_controls.py` ajoute 13 tests (113 au total). Ses fixtures
+  vident `_FONT_CACHE` avant de fermer SDL pour ne pas transmettre des polices
+  natives invalides aux autres suites. Tests SDL factices et coop loopback ;
+  une manette physique et un LAN multi-machines restent à valider manuellement.
+- Pas de dépendance, migration, changement réseau ou équilibrage. Les
+  sauvegardes restent hors périmètre. Rollback : réversion du commit de cette
+  passe ; aucun changement de données utilisateur à annuler.
+- README, CHANGELOG et architecture actualisés à la demande de l'utilisateur.
+  Les fichiers de redirection AGENTS/CLAUDE/GPT restent des redirections.
+
 ## Modernisation 0.4.0 (11 aout 2026)
 
 - Simulation a pas fixe 60 Hz via `runtime.FixedStepClock`; rendu jusqu'a
@@ -43,7 +76,7 @@ La branche par défaut est `main` ; les évolutions partent d'une branche
 - `gamepad.py` fournit les mappings SDL Xbox/PlayStation, zone morte,
   branchement a chaud et vibration.
 - `pyproject.toml`, licence MIT, wheel, PyInstaller et workflow d'artefacts.
-- Ruff complet, couverture minimale de 70 % et 100 tests.
+- Ruff complet, couverture minimale de 70 % et 113 tests.
 
 ## Passe bugs et performances (15 aout 2026)
 
@@ -96,7 +129,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 ```
 
 Le workflow `.github/workflows/ci.yml` rejoue compilation, Ruff complet,
-100 tests, couverture et construction du wheel sous Python 3.12 sur Ubuntu et
+113 tests, couverture et construction du wheel sous Python 3.12 sur Ubuntu et
 Windows.
 
 ## Architecture
@@ -336,7 +369,7 @@ d'implémentation et les décisions techniques non triviales.
     billboards fusionnées, boîtes opaques et habillage tactile mémoïsés :
     -11 à -18 % sur le rendu du monde, frames de mort/roulade deux fois plus
     rapides, rendu identique au pixel près. Onze tests portent la suite à
-    100 tests.
+    113 tests.
 
 ## Dette / manques à connaître
 
@@ -800,7 +833,7 @@ branche de travail `agent/p0-p2-modernization`.
 
 ## Validation disponible
 
-La suite contient 100 tests. `tests/test_requested_changes.py` conserve les
+La suite contient 113 tests. `tests/test_requested_changes.py` conserve les
 22 non-régressions graphiques et de gameplay : marges de la
 voiture, conception et échelle du siège, topologie des portes et blancheur des
 murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
@@ -877,7 +910,7 @@ Détails complets dans `CHANGELOG.md`. Points à connaître pour la suite :
   (`game.py` + `coop.py`).
 - Sous Windows, la socket hôte utilise `SO_EXCLUSIVEADDRUSE` (jamais
   `SO_REUSEADDR`, qui y autorise un double bind UDP silencieux) ; ailleurs,
-  `SO_REUSEADDR` est conservé.
+  `SO_REUSEADDR` est désormais désactivé (modernisation v3).
 - Nouveaux caches à respecter : `_sysfont` (menu.py, durée de vie process),
   `HUD._text_cache` (borné à `HUD.TEXT_CACHE_LIMIT` = 512, libellés statiques
   ET compteurs bornés, vidé dans `resize()` avec les polices),
@@ -934,7 +967,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-100 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
+113 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
 gameplay/graphiques ; `test_cleanup.py` : 15 contrôles robustesse/réseau/UI ;
 `test_smoke.py` : 8 tests de fumée généraux ;
 `test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
@@ -988,8 +1021,9 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
   Dimensions physiques = boîte opaque via `_height_for_visible_width` (ne pas
   compenser les marges transparentes).
 - **Portes** : uniquement dans des murs de hauteur 1.0.
-- **Textures** : PNG d'`assets/` refaits en art détaillé — ne JAMAIS relancer
-  `python assets.py` (écraserait tout par le procédural). Vérifier composantes
+- **Textures** : PNG d'`assets/` refaits en art détaillé — `python assets.py`
+  complète uniquement les fichiers absents ; seul `--force-procedural` écrase
+  les visuels existants. Vérifier composantes
   connexes et marges avant de committer un décor.
 - **Colosse** : phases par ratios 66/33 %, pas par PV absolus ; chaque seuil
   vivant produit exactement un pack dynamique placé hors de la ligne de tir.
@@ -1046,7 +1080,7 @@ menus, coop loopback UDP réel hôte↔client, réglages, sons).
   Animations de props = locales, jamais dans les instantanés coop.
 - **Réseau** : UDP non fiable même en LAN — valider AVANT d'indexer (pas de
   NaN/inf, positions/dégâts/i-frames/cadence décidés par le client). Protocole
-  v2 : session, `iq`/`sq`, événements `rev` contigus acquittés par `ea`,
+  v3 strict : session, `iq`/`sq`, événements `rev` contigus acquittés par `ea`,
   compression `Z1` bornée. Nouveaux champs ajoutés EN FIN de ligne, tolérance
   aux instantanés plus courts. Tirs : ≤32 déclenchements/paquet, instances
   `Weapon` hôte, vieux `[angle, dégâts]` refusés. Réapparition = santé +
