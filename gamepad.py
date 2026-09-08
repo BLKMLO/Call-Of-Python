@@ -40,6 +40,15 @@ class GamepadInput:
         self._actions = []
         self._fire_was_held = False
         self._open_first()
+        self.reset_controls()
+
+    def reset_controls(self):
+        """Exige un relâchement des gâchettes après une transition d'interface."""
+        self._actions.clear()
+        self._buttons = {button: self._button(button) for button in ACTION_BUTTONS}
+        self._fire_was_held = False
+        self._fire_blocked = True
+        self._aim_blocked = True
 
     @property
     def connected(self):
@@ -57,7 +66,7 @@ class GamepadInput:
             for index in range(sdl_controller.get_count()):
                 if sdl_controller.is_controller(index):
                     self.controller = sdl_controller.Controller(index)
-                    self._buttons.clear()
+                    self.reset_controls()
                     return
         except pygame.error:
             self.controller = None
@@ -92,6 +101,11 @@ class GamepadInput:
         self._actions.clear()
         if not self.connected:
             return
+        if getattr(self, "_fire_blocked", False) and not self._raw_fire_held():
+            self._fire_blocked = False
+        if (getattr(self, "_aim_blocked", False)
+                and self._axis(pygame.CONTROLLER_AXIS_TRIGGERLEFT) <= 0.2):
+            self._aim_blocked = False
         for button, action in ACTION_BUTTONS.items():
             pressed = self._button(button)
             if pressed and not self._buttons.get(button, False):
@@ -128,6 +142,9 @@ class GamepadInput:
 
     @property
     def fire_held(self):
+        return not getattr(self, "_fire_blocked", False) and self._raw_fire_held()
+
+    def _raw_fire_held(self):
         return (
             self._button(pygame.CONTROLLER_BUTTON_RIGHTSHOULDER)
             or self._axis(pygame.CONTROLLER_AXIS_TRIGGERRIGHT) > 0.2
@@ -135,7 +152,8 @@ class GamepadInput:
 
     @property
     def aim_held(self):
-        return self._axis(pygame.CONTROLLER_AXIS_TRIGGERLEFT) > 0.2
+        return (not getattr(self, "_aim_blocked", False)
+                and self._axis(pygame.CONTROLLER_AXIS_TRIGGERLEFT) > 0.2)
 
     def rumble(self, low=0.35, high=0.55, duration_ms=90):
         if not self.connected:
@@ -154,3 +172,19 @@ class GamepadInput:
         self.controller = None
         self._buttons.clear()
         self._actions.clear()
+        self._fire_was_held = False
+
+
+def reset_gameplay_input(game):
+    """Même purge en solo/coop, clavier/tactile/manette et perte de focus."""
+    game.player.aiming = False
+    game._mouse_fire_held = False
+    game._mouse_aim_held = False
+    for name, method in (("touch", "reset"), ("gamepad", "reset_controls")):
+        device = getattr(game, name, None)
+        if device is not None:
+            getattr(device, method)()
+    pending = getattr(game, "pending_fires", None)
+    if pending is not None:
+        pending.clear()
+    pygame.mouse.get_rel()

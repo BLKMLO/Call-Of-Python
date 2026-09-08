@@ -43,6 +43,19 @@ Les touches clavier sont remappables. Les manettes Xbox, PlayStation et
 compatibles passent par les mappings SDL, avec zone morte et vibration courte
 sur les degats. Les commandes tactiles multi-doigts restent disponibles.
 
+Dans les menus : flèches haut/bas ou croix directionnelle pour sélectionner,
+Entrée/Espace ou A (Croix) pour valider, Échap ou B (Rond) pour revenir.
+Les flèches gauche/droite règlent l'option sélectionnée. La souris reste
+utilisable ; déplacer le pointeur lui redonne la sélection visuelle.
+La saisie d'une nouvelle adresse IP et le remappage des touches nécessitent
+encore un clavier ; B annule leur saisie sans quitter le sous-menu.
+
+En pause : Start reprend, B (Rond) retourne au menu. Une pause imposée par
+l'hôte est indiquée « PAUSE HÔTE » et seul l'hôte peut la lever. Après une
+pause ou un changement de partie, relâcher les gâchettes avant de tirer ou
+viser à nouveau. A (Croix) passe la caméra de mort après son verrou de trois
+secondes. F3 affiche les FPS du rendu, indépendamment de la simulation à 60 Hz.
+
 Les Parametres exposent aussi : volumes separes, sensibilite, FOV 60–90 degres,
 secousses de camera 0/50/100 %, ADS en maintien ou bascule et trois difficultes.
 
@@ -76,7 +89,7 @@ roulades, cadence, chargeurs et degats.
   avec limites de taille/temps et limite par adresse source ;
 - protocole sequence, evenements fiables acquittes et inventaire autoritaire ;
 - ressources resolues en mode source, wheel et PyInstaller ;
-- 100 tests et couverture globale superieure au seuil CI de 70 %.
+- 113 tests et seuil de couverture CI de 70 %.
 
 Des fichiers audio `menu`, `survival`, `reload` et `1` a `5` peuvent etre
 places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.

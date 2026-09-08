@@ -58,6 +58,8 @@ class MenuBase:
 
     def __init__(self, sounds):
         self.sounds = sounds
+        self.selected = None
+        self.keyboard_focus = False
 
     def items(self):
         """Liste de (identifiant, libellé) ; surchargée par chaque menu."""
@@ -78,13 +80,32 @@ class MenuBase:
         button_w = min(int(w * 0.36), 560)
         button_h = (font.get_height() + 4 if compact
                     else max(font.get_height() + 12, line_h - 7))
+        if compact:
+            panel = self._panel_rect(screen)
+            button_w = panel.width - 32
+            title_font = self._title_font(h, self.title, panel.width - 28)
+            top = h // 8 + title_font.get_height() // 2 + 12
+            bottom = h - max(42, h // 11) - 8
+            line_h = min(line_h, (bottom - top) // len(items))
+            button_h = min(button_h, line_h - 2)
+            start_y = top + button_h // 2
         for i, (ident, label) in enumerate(items):
             rect = pygame.Rect(0, 0, button_w, button_h)
             rect.center = (self._content_center_x(screen),
                            start_y + i * line_h)
-            split_x = self._bracket_split(font, label, rect)
+            row_font = self._row_font(h, label, rect, compact)
+            split_x = self._bracket_split(row_font, label, rect)
             rows.append((ident, label, rect, split_x))
         return rows
+
+    def _row_font(self, height, label, rect, compact):
+        font = self._font(height, small=compact)
+        available = rect.right - self._button_text_left(rect) - self._button_skew(rect)
+        size = font.get_height()
+        while font.size(label)[0] > available and size > 10:
+            size -= 1
+            font = _sysfont("bahnschrift,dejavusans,arial,liberationsans", size, bold=True)
+        return font
 
     @classmethod
     def _bracket_split(cls, font, label, rect):
@@ -328,9 +349,47 @@ class MenuBase:
 
     # ------------------------------------------------------------------
     def handle_event(self, event, screen):
+        rows = [row for row in self._layout(screen) if row[0] is not None]
+        if not rows:
+            return None
+        if self.selected not in [row[0] for row in rows]:
+            self.selected = rows[0][0]
+        key = None
+        if event.type == pygame.KEYDOWN:
+            key = event.key
+        elif event.type == pygame.CONTROLLERBUTTONDOWN:
+            key = {
+                pygame.CONTROLLER_BUTTON_DPAD_UP: pygame.K_UP,
+                pygame.CONTROLLER_BUTTON_DPAD_DOWN: pygame.K_DOWN,
+                pygame.CONTROLLER_BUTTON_DPAD_LEFT: pygame.K_LEFT,
+                pygame.CONTROLLER_BUTTON_DPAD_RIGHT: pygame.K_RIGHT,
+                pygame.CONTROLLER_BUTTON_A: pygame.K_RETURN,
+                pygame.CONTROLLER_BUTTON_B: pygame.K_ESCAPE,
+            }.get(event.button)
+        if key is not None:
+            self.keyboard_focus = True
+            index = next(i for i, row in enumerate(rows) if row[0] == self.selected)
+            if key in (pygame.K_UP, pygame.K_DOWN):
+                index = (index + (1 if key == pygame.K_DOWN else -1)) % len(rows)
+                self.selected = rows[index][0]
+                return None
+            if key == pygame.K_ESCAPE:
+                return next((ident for ident in ("back", "menu")
+                             if any(row[0] == ident for row in rows)), None)
+            ident, label, rect, split_x = rows[index]
+            adjust = key in (pygame.K_LEFT, pygame.K_RIGHT) and "<" in label
+            if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE) or adjust:
+                direction = -1 if key == pygame.K_LEFT else 1
+                self.sounds.play("click", volume_scale=0.5)
+                return self.on_click(ident, (split_x + direction, rect.centery),
+                                     rect, split_x)
+        if event.type == pygame.MOUSEMOTION and any(event.rel):
+            self.keyboard_focus = False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            for ident, _label, rect, split_x in self._layout(screen):
+            self.keyboard_focus = False
+            for ident, _label, rect, split_x in rows:
                 if ident is not None and self._button_contains(rect, event.pos):
+                    self.selected = ident
                     self.sounds.play("click", volume_scale=0.5)
                     return self.on_click(ident, event.pos, rect, split_x)
         return None
@@ -349,10 +408,12 @@ class MenuBase:
 
         mouse = pygame.mouse.get_pos()
         rows = self._layout(screen)
-        font = self._font(h, small=len(rows) > 8)
         for ident, label, rect, _split_x in rows:
+            font = self._row_font(h, label, rect, len(rows) > 8)
             hovered = (ident is not None
-                       and self._button_contains(rect, mouse))
+                       and ((self.keyboard_focus and ident == self.selected)
+                            or (not self.keyboard_focus
+                                and self._button_contains(rect, mouse))))
             if ident is not None:
                 screen.blit(self._button_surface(rect.size, hovered), rect)
             color = HOVER_COLOR if hovered else TEXT_COLOR
@@ -504,6 +565,10 @@ class SettingsMenu(MenuBase):
 
     def handle_event(self, event, screen):
         # Mode capture d'une nouvelle touche.
+        if self.waiting_action is not None and event.type == pygame.CONTROLLERBUTTONDOWN:
+            if event.button == pygame.CONTROLLER_BUTTON_B:
+                self.waiting_action = None
+            return None
         if self.waiting_action is not None and event.type == pygame.KEYDOWN:
             if event.key != pygame.K_ESCAPE:  # Échap annule le re-mappage
                 self.settings.bind_key(self.waiting_action, event.key)
@@ -640,6 +705,12 @@ class MultiplayerMenu(MenuBase):
         ]
 
     def handle_event(self, event, screen):
+        if self.editing and event.type == pygame.CONTROLLERBUTTONDOWN:
+            if event.button not in (pygame.CONTROLLER_BUTTON_A, pygame.CONTROLLER_BUTTON_B):
+                return None
+            event = pygame.event.Event(pygame.KEYDOWN, key=(
+                pygame.K_RETURN if event.button == pygame.CONTROLLER_BUTTON_A
+                else pygame.K_ESCAPE), unicode="")
         if self.editing and event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.editing = False

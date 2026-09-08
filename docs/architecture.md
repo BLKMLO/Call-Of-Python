@@ -4,6 +4,24 @@
 le temps de rendu en pas constants de 1/60 s. Le rendu reste libre et ne
 modifie pas l'etat de jeu.
 
+Le compteur `game.fps` est alimenté par `pygame.time.Clock.get_fps()` dans
+la boucle de rendu, jamais par `1 / dt` dans la simulation fixe. Il vaut zéro
+avant les premiers échantillons SDL et inclut la limitation de rendu à 120 Hz.
+
+`MenuBase` conserve une sélection par identifiant, ignore les séparateurs et
+réutilise `on_click` pour les actions clavier/manette. Aucun faux événement
+clavier n'est envoyé au remappage depuis la manette. La saisie IP reste au
+clavier, avec validation/annulation accessibles à la manette.
+
+`main.py` ouvre le contrôleur des menus, le ferme avant la création d'une
+partie et le rouvre au retour ou à la transition de fin. Les contrôleurs de
+partie gardent leur cycle de vie existant. `reset_gameplay_input` purge
+souris, tactile, actions manette et tirs clients en attente lors des pauses,
+reprises et pertes de focus. Les gâchettes doivent revenir au repos pour
+être réarmées. Le client purge aussi lors de la levée d'une pause hôte.
+La simulation réseau continue pendant la pause locale ; le protocole v3,
+les séquences et la validation autoritaire ne changent pas.
+
 Responsabilites principales :
 
 - `game.py` orchestre une mission ;
