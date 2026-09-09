@@ -3,10 +3,21 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étape 1 validée : moteur `objectives.py` et recette réutilisable ajoutés. Étapes 2–10
-restent à réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une
-étape validée sans tests et recette. Les nouveaux objectifs ne sont pas encore
-activés sur une carte. Rollback : réversion du commit de l'étape concernée.
+Étapes 1 et 2 validées ; Entrepôt jouable en solo. Étapes 3–10 restent à
+réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
+validée sans tests et recette. Rollback : réversion du commit de l'étape.
+
+Entrepôt : manifeste (25,5 ; 18,5), alarme (24,5 ; 3,5), extraction au spawn
+(1,5 ; 1,5), rayon 1,4 et maintien de 8 s consécutives. `Game.mission` impose
+cette victoire ; tous les autres niveaux utilisent encore l'élimination.
+Interaction E/remappable, LB, tactile ACT. Portée/ligne de vue/vie/roulade
+contrôlées ; pause et outcome bloquent l'action. HUD à y=160 pour éviter la
+minimap à 800×600 ; `mission_marker.py` dessine une balise sans modifier les PNG.
+La recette de fin de mission place le joueur aux objectifs pour isoler les
+contrats ; elle ne remplace pas un parcours humain ni un test matériel tactile.
+Recette étape 2 : 119 tests, Ruff OK, fin de mission en solo, coop Déferlement
+loopback et captures aux deux résolutions. 24 ennemis : médiane/p95 6,494/9,681 ms
+et 10,881/14,419 ms ; datagrammes <=530 octets, mêmes conditions que l'étape 1.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms

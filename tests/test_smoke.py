@@ -95,7 +95,8 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(game.finished)
 
     def test_campaign_victory_when_all_enemies_down(self):
-        game = Game(self.screen, self.settings, self.sounds, 0)
+        # Les niveaux sans objectifs conservent leur condition historique.
+        game = Game(self.screen, self.settings, self.sounds, 1)
         for enemy in game.enemies:
             enemy.health = 0
         _run_frames(game, self.screen, 10)
@@ -112,6 +113,32 @@ class SmokeTests(unittest.TestCase):
         info = game.survival_info()
         self.assertEqual(info["final"], FINAL_WAVE)
         self.assertGreaterEqual(info["remaining"], 0)
+
+    def test_warehouse_objectives_gate_victory_and_freeze_when_paused(self):
+        game = Game(self.screen, self.settings, self.sounds, 0)
+        self.addCleanup(game.close)
+        for enemy in game.enemies:
+            enemy.health = 0
+        game.update(1 / 60)
+        self.assertIsNone(game.outcome)
+        self.assertFalse(game._interact())
+        for _ in range(2):
+            step = game.mission.current
+            self.assertFalse(game.level.is_wall(step.x, step.y))
+            game.player.x, game.player.y = step.x, step.y
+            self.assertTrue(game._interact())
+        step = game.mission.current
+        game.player.x, game.player.y = step.x, step.y
+        game.paused = True
+        for _ in range(60):
+            game.update(1 / 60)
+        self.assertEqual(game.mission.elapsed, 0)
+        game.paused = False
+        for _ in range(479):
+            game.update(1 / 60)
+        self.assertIsNone(game.outcome)
+        game.update(1 / 60)
+        self.assertEqual(game.outcome, "victory")
 
     def test_menus_draw_and_click_at_extreme_resolutions(self):
         menus = [

@@ -17,8 +17,10 @@ from entities import ENEMY_TYPES, Pickup, Player, Prop
 from gamepad import GamepadInput, reset_gameplay_input
 from hud import HUD
 from level import Level
+from mission_marker import MissionMarker
+from objectives import Mission
 from particles import ParticleSystem
-from raycaster import Raycaster, cast_ray, rotate_zoom_screen, zoom_screen
+from raycaster import Raycaster, cast_ray, has_line_of_sight, rotate_zoom_screen, zoom_screen
 from touch_controls import FINGER_EVENTS, TouchControls
 
 MEDKIT_HEAL = 35
@@ -48,6 +50,8 @@ class Game:
         self.settings = settings
         self.sounds = sounds
         self.level = Level(level_index, config=level_config)
+        self.mission = Mission(self.level.config.get("objectives", ()))
+        self.mission_marker = MissionMarker()
         self.level_index = level_index
         self.difficulty = get_difficulty(
             getattr(settings, "difficulty", "soldier"),
@@ -155,6 +159,8 @@ class Game:
                 return "menu"
             elif event.key == pygame.K_F3:
                 self.show_fps = not self.show_fps
+            elif event.key == self.settings.keys.get("interagir", pygame.K_e):
+                self._interact()
             elif (not self.paused and self.outcome is None
                   and self.player.alive
                   and (event.key == self.settings.keys["roulade"]
@@ -220,6 +226,8 @@ class Game:
             return None
         if action == "fire_down":
             self._player_fire()
+        elif action == "interact":
+            self._interact()
         elif action in ("aim_down", "aim_up"):
             self.player.aiming = (
                 not self.player.rolling
@@ -263,6 +271,8 @@ class Game:
                     self.player.cycle_weapon(1)
                 elif action == "fire":
                     self._player_fire()
+                elif action == "interact":
+                    self._interact()
         # Mort : on fige le gameplay mais on laisse tourner la caméra de
         # mort (chute + fondu) et les particules, même si une pause avait été
         # activée juste avant le coup fatal.
@@ -374,6 +384,8 @@ class Game:
 
         # Conditions de fin (avec un léger délai pour "encaisser" la scène).
         if self.outcome is None:
+            self.mission.update(dt, self._all_players(), self._objective_visible,
+                                any(enemy.alive for enemy in self.enemies))
             self._check_outcome()
         else:
             self.end_delay += dt
@@ -382,9 +394,21 @@ class Game:
         """Fin de partie standard ; surchargé par le mode survie."""
         if not self.player.alive:
             self.outcome = "dead"
-        elif all(not enemy.alive for enemy in self.enemies):
+        elif (self.mission.complete if self.mission.steps else
+              all(not enemy.alive for enemy in self.enemies)):
             self.outcome = "victory"
             self.sounds.play("level_complete")
+
+    def _objective_visible(self, x0, y0, x1, y1):
+        return has_line_of_sight(self.level, x0, y0, x1, y1)
+
+    def _interact(self, actor=None):
+        if self.paused or self.outcome is not None:
+            return False
+        changed = self.mission.interact(actor or self.player, self._objective_visible)
+        if changed:
+            self.sounds.play("click", volume_scale=0.6)
+        return changed
 
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
                     possessed=False):
@@ -785,6 +809,7 @@ class Game:
     def draw(self, screen):
         # Billboards : décors, cadavres, ennemis, coéquipiers, objets.
         sprites = list(self.enemies) + self._extra_sprites() + self.props
+        sprites += self.mission_marker.sprites(self.mission)
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -827,6 +852,9 @@ class Game:
         self.hud.draw(screen, self.player, self.enemies, self.level,
                       self.pickups, fps=self.fps if self.show_fps else None,
                       survival=self.survival_info(), stats=self.stats)
+        self.hud.draw_objective(screen, self.player, self.mission,
+                                pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
+                                self._objective_visible)
         if self.paused:
             self.hud.draw_pause(screen)
         self.touch.draw(screen, paused=self.paused)

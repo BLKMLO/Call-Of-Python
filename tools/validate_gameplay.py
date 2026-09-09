@@ -50,6 +50,24 @@ def validate(stage, output):
     try:
         for size in ((800, 600), (1280, 720)):
             screen = pygame.display.set_mode(size)
+            if stage >= 2:
+                mission_game = Game(screen, settings, sounds)
+                try:
+                    mission_game.draw(screen)
+                    pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-mission.png")
+                    for enemy in mission_game.enemies:
+                        enemy.health = 0
+                    for _ in range(2):
+                        step = mission_game.mission.current
+                        mission_game.player.x, mission_game.player.y = step.x, step.y
+                        assert mission_game._interact()
+                    step = mission_game.mission.current
+                    mission_game.player.x, mission_game.player.y = step.x, step.y
+                    for _ in range(480):
+                        mission_game.update(1 / 60)
+                    assert mission_game.outcome == "victory"
+                finally:
+                    mission_game.close()
             game = Game(screen, settings, sounds, level_config=SURVIVAL_LEVEL)
             try:
                 positions = [(x + 0.5, y + 0.5)

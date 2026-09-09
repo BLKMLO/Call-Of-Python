@@ -299,6 +299,28 @@ class HUD:
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
+    def draw_objective(self, screen, player, mission, key, visible):
+        step = mission.current
+        if step is None:
+            return
+        distance = math.hypot(step.x - player.x, step.y - player.y)
+        bearing = (math.atan2(step.y - player.y, step.x - player.x)
+                   - player.angle + math.pi) % (2 * math.pi) - math.pi
+        direction = "DEVANT" if abs(bearing) < 0.35 else ("DROITE" if bearing > 0 else "GAUCHE")
+        detail = f"{direction} · {distance:.0f} m"
+        if mission.in_range(player, step, visible):
+            detail = (f"[{key.upper()} / LB / ACT.] Interagir" if step.kind == "interact"
+                      else f"Rester dans la zone : {mission.elapsed:.1f} / {step.duration:.0f} s")
+        width = min(460, screen.get_width() - 32)
+        panel = pygame.Rect((screen.get_width() - width) // 2, 160, width, 54)
+        pygame.draw.rect(screen, (10, 22, 29), panel, border_radius=4)
+        title = f"{mission.index + 1}/{len(mission.steps)} · {step.label}"
+        for line, content in enumerate((title, detail)):
+            text = self.small_font.render(content, True, HUD_GREEN if line else HUD_TEXT)
+            if text.get_width() > width - 16:
+                text = pygame.transform.smoothscale(text, (width - 16, text.get_height()))
+            screen.blit(text, (panel.centerx - text.get_width() // 2, panel.y + 4 + line * 25))
+
     def draw(self, screen, player, enemies, level, pickups=(), fps=None,
              survival=None, stats=None):
         if self.flash > 0.0 and player.ads < 0.5:

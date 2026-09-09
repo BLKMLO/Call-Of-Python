@@ -19,6 +19,7 @@ ACTION_BUTTONS = {
     pygame.CONTROLLER_BUTTON_X: "reload",
     pygame.CONTROLLER_BUTTON_Y: "weapon",
     pygame.CONTROLLER_BUTTON_START: "pause",
+    pygame.CONTROLLER_BUTTON_LEFTSHOULDER: "interact",
 }
 
 

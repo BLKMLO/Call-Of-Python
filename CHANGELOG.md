@@ -1,5 +1,13 @@
 # Changelog
 
+## Gameplay — étape 2 (2026-09-08)
+
+- Entrepôt : manifeste, alarme, extraction de 8 secondes ; balise et guide HUD.
+- Action Interagir remappable, LB et tactile ; portée, visibilité, état de vie
+  et roulade contrôlés. Pause sans progression, extraction interrompue si sortie.
+- Les autres niveaux et le Déferlement conservent leurs conditions de victoire.
+- Recette automatisée de la mission, contrôles graphiques aux deux résolutions.
+
 ## Gameplay — étape 1 (2026-09-08)
 
 - Moteur d'objectifs pur et borné, interactions avec distance/visibilité,

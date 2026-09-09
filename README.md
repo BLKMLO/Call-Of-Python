@@ -98,7 +98,12 @@ places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.
 
 Évolution gameplay en cours : le moteur déclaratif `objectives.py` fournit
 interaction, déplacement vers une zone, défense chronométrée et élimination.
-La conversion jouable d'un niveau et sa réplication constituent les étapes suivantes.
+L'Entrepôt demande de récupérer le manifeste, désactiver l'alarme du bureau,
+puis tenir l'extraction pendant 8 secondes consécutives. Les balises vertes
+et le HUD guident le parcours. Interagir : **E** (remappable), **LB** ou bouton
+tactile **ACT.** ; la roulade bloque l'interaction. Quitter la zone remet le
+compteur à zéro, la pause le fige. Les autres niveaux gardent leur victoire
+par élimination. La réplication de cette mission est l'étape suivante.
 
 | Fichier | Role |
 |---|---|

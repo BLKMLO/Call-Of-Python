@@ -4,6 +4,12 @@
 mission. Aucune dépendance SDL ni réseau : seul le simulateur autoritaire
 appelle `interact/update`, les clients liront les instantanés validés.
 
+`Level.config.objectives` déclare la séquence de l'Entrepôt. `Game` vérifie la
+portée et la ligne de vue, avance les timers au pas fixe et choisit la victoire
+par mission si elle existe. Les cartes sans objectifs gardent l'élimination.
+`MissionMarker` produit une surface réutilisée pour la balise ; le HUD rend
+la direction, la distance et l'action sans modifier l'état de mission.
+
 `main.py` pilote les ecrans et le rendu. En partie, `FixedStepClock` transforme
 le temps de rendu en pas constants de 1/60 s. Le rendu reste libre et ne
 modifie pas l'etat de jeu.

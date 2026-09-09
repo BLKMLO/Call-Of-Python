@@ -218,6 +218,14 @@ SURVIVAL_LEVEL = {
 LEVELS = [
     {
         "name": "Entrepôt",
+        "objectives": [
+            {"id": "manifest", "label": "Récupérer le manifeste", "kind": "interact",
+             "x": 25.5, "y": 18.5},
+            {"id": "alarm", "label": "Désactiver l'alarme du bureau", "kind": "interact",
+             "x": 24.5, "y": 3.5},
+            {"id": "extraction", "label": "Tenir la zone d'extraction", "kind": "defend",
+             "x": 1.5, "y": 1.5, "radius": 1.4, "duration": 8.0},
+        ],
         "grid": MAP_WAREHOUSE,
         "theme": {"1": "wall_brick", "2": "wall_crate", "3": "wall_metal",
                   "4": "wall_shelf"},
