@@ -218,6 +218,7 @@ SURVIVAL_LEVEL = {
 LEVELS = [
     {
         "name": "Entrepôt",
+        "elites": {1: "bulwark", 5: "hunter"},
         "objectives": [
             {"id": "manifest", "label": "Récupérer le manifeste", "kind": "interact",
              "x": 25.5, "y": 18.5},
@@ -233,7 +234,7 @@ LEVELS = [
         "sun": {"hour": 8, "az": -0.7, "el": 0.44, "color": (255, 214, 150)},
         "sky": ((30, 32, 48), (66, 60, 70)),      # dégradé haut -> horizon
         "floor": ((60, 54, 48), (34, 32, 30)),    # dégradé horizon -> bas
-        "enemies": ["grunt"],
+        "enemies": ["grunt"] * 7 + ["commander"],
         "weapons": ["shotgun"],
         "enemy_health_mult": 1.0,
         "enemy_damage_mult": 1.0,

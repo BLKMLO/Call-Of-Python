@@ -1,5 +1,12 @@
 # Changelog
 
+## Gameplay — étape 7 (2026-09-08)
+
+- Deux variantes élites et un Commandant de soutien, dans l'Entrepôt et le
+  Déferlement. Aura de cadence avec distance/visibilité, suppression immédiate.
+- Variantes graphiques en cache borné, PNG inchangés ; réplication append-only.
+- Plafonds de trois élites et un Commandant ; 134 tests, UDP observé <=653 octets.
+
 ## Gameplay — étape 6 (2026-09-08)
 
 - Secours coop : 20 s à terre, réanimation canalisée de 3 s, interruption sur

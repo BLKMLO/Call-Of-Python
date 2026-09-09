@@ -14,6 +14,7 @@ import assets
 from ai import EnemyAI
 from coop_support import Pings
 from difficulty import get_difficulty
+from elites import apply_elite, update_command
 from entities import ENEMY_TYPES, Pickup, Player, Prop
 from gamepad import GamepadInput, reset_gameplay_input
 from hud import HUD
@@ -85,6 +86,9 @@ class Game:
         )
         self.enemies = [ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
                         for x, y, kind in self.level.enemy_spawns]
+        for index, elite in self.level.config.get("elites", {}).items():
+            if 0 <= index < len(self.enemies):
+                apply_elite(self.enemies[index], elite)
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
         self.pickups = [Pickup(x, y, kind, level_index)
                         for x, y, kind in self.level.pickup_spawns]
@@ -369,6 +373,7 @@ class Game:
             self._check_pickups()
 
         # IA des ennemis → événements convertis en sons/effets/alertes.
+        update_command(self.enemies, self._objective_visible)
         # Chaque ennemi vise le joueur le plus proche (un seul en solo,
         # plusieurs en coopération LAN).
         for ai in self.ais:
@@ -454,6 +459,8 @@ class Game:
 
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
                     possessed=False):
+        if kind == "commander" and any(e.alive and e.KIND == kind for e in self.enemies):
+            kind = "soldier"
         """Ajoute un ennemi en cours de partie (vagues du Déferlement)."""
         enemy = ENEMY_TYPES[kind](
             x, y,

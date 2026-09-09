@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 6 validées ; Entrepôt jouable en solo et en LAN. Étapes 7–10 restent à
+Étapes 1 à 7 validées ; Entrepôt jouable en solo et en LAN. Étapes 8–10 restent à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -73,6 +73,18 @@ Portée 12 m calculée par l'hôte, 5 s, délai 2 s, quatre marqueurs maximum.
 Benchmark 24 ennemis : médiane/p95 5,745/6,162 ms et 10,907/20,968 ms ; mesures
 indicatives avec autres contrôles actifs. UDP observé <=597 octets. Pas de
 sauvegarde. Les captures ont conduit à déplacer le détail secours sous le titre.
+
+Étape 7 : `elites.py`, Résistant bulwark (+35 % HP, vitesse ×0,9), Traqueur
+hunter (vitesse ×1,15, délai de tir ×0,9). Maximum trois élites vivants ; boss
+et Commandant exclus. Commandant : 220 HP, aura portée 5 avec visibilité,
+délai de tir allié ×0,8 sans cumul, retrait immédiat à sa mort. Un maximum
+vivant ; un second spawn demandé devient soldat. Entrepôt : deux ennemis
+existants élites et dernier ennemi Commandant, aucun ajout au compte initial.
+Déferlement : deux candidats élites dès 4, Commandant à 5/15/25. File désormais
+`(kind,wave,mutator,elite)`. Champs `en[13:15]` visuels, santé max autoritaire.
+`Enemy.sprite_kind` évite de demander des PNG inexistants pour le Commandant.
+134 tests et Ruff OK, recette solo/loopback 24 ennemis dont 3 élites et un
+Commandant : médiane/p95 5,960/9,632 ms et 10,621/15,526 ms, UDP <=653 octets.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms

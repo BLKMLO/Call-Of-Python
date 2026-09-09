@@ -1,5 +1,11 @@
 # Architecture
 
+`elites.py` applique une fois les variantes et recalcule l'aura booléenne du
+Commandant. L'IA multiplie uniquement le délai du prochain tir ; dégâts, seuils
+du boss et délais existants de sniper/roulade sont conservés. `sprite_kind`
+sépare l'archétype réseau des PNG réutilisés (Commandant = silhouette soldat).
+Les variantes dérivées occupent un cache LRU de 128 surfaces maximum.
+
 `coop_support.Rescue` gère les timers à terre et les secours. Les joueurs à
 0 PV restent inactifs ; le résultat du moteur restaure 40 PV sur place ou
 60 PV au spawn. Une seule progression est comptée par victime ; les helpers

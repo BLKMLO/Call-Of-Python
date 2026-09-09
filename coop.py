@@ -23,6 +23,7 @@ from collections import deque
 import pygame
 
 from coop_support import Pings, Rescue, validated_rows
+from elites import ELITES
 from entities import (
     ENEMY_TYPES,
     Pickup,
@@ -616,7 +617,8 @@ class CoopHostGame(SurvivalGame):
         enemies = [[e.net_id, e.KIND, round(e.x, 2), round(e.y, 2),
                     round(e.angle, 3), e.health, int(e.moving),
                     int(e.flash_timer > 0), int(e.aiming), int(e.rolling),
-                    round(e.roll_timer, 2), e.max_health, int(e.possessed)]
+                    round(e.roll_timer, 2), e.max_health, int(e.possessed),
+                    e.elite, int(e.commanded)]
                    for e in self.enemies if e.net_id is not None]
         static_pickups = [p for p in self.pickups if not p.dynamic]
         dynamic_pickups = [
@@ -1519,6 +1521,9 @@ class CoopClientGame:
                                      pos=(x, y), listener=self.player)
             ghost.net_x, ghost.net_y = x, y
             ghost.angle = angle
+            elite = data[13] if len(data) > 13 else ""
+            ghost.elite = elite if isinstance(elite, str) and elite in ELITES else ""
+            ghost.commanded = len(data) > 14 and type(data[14]) is int and data[14] == 1
             ghost.set_possessed(possessed)
             if max_health is not None:
                 ghost.max_health = round(max_health)

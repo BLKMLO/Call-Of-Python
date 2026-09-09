@@ -23,6 +23,7 @@ import random
 from collections import deque
 
 from difficulty import ThreatDirector
+from elites import apply_elite
 from game import Game
 from level import SURVIVAL_LEVEL
 from mutators import apply_mutator, composition, mutator_for_wave
@@ -176,8 +177,13 @@ class SurvivalGame(Game):
         self.wave_timer = 0.0
         self.intermission = 0.0
         self.mutator = mutator_for_wave(number)
-        self.spawn_queue.extend((kind, number, self.mutator)
-                                for kind in composition(wave_composition(number), self.mutator))
+        kinds = composition(wave_composition(number), self.mutator)
+        if number % 10 == 5:
+            kinds[0] = "commander"
+        self.spawn_queue.extend((kind, number, self.mutator,
+                                 ("bulwark" if i == 1 else "hunter")
+                                 if number >= 4 and i in (1, 3) else "")
+                                for i, kind in enumerate(kinds))
         self.sounds.play("wave", volume_scale=0.9)
         self.hud.announce(f"VAGUE {number}")
         self._refresh_pickups(number)
@@ -207,11 +213,14 @@ class SurvivalGame(Game):
                 or sum(e.alive for e in self.enemies) >= MAX_ALIVE):
             return
         entry = self.spawn_queue.popleft()
-        kind, wave, mutator = entry if isinstance(entry, tuple) else (entry, self.wave, "")
+        kind, wave, mutator, elite = (entry if isinstance(entry, tuple)
+                                      else (entry, self.wave, "", ""))
         x, y = self._pick_spawn_point()
         hp_mult, dmg_mult = wave_multipliers(wave)
         enemy = self.spawn_enemy(kind, x, y, hp_mult, dmg_mult)
         apply_mutator(enemy, mutator)
+        if sum(e.alive and bool(e.elite) for e in self.enemies) < 3:
+            apply_elite(enemy, elite)
         # Il surgit en chasse, pas en patrouille.
         self.ais[-1].alert((self.player.x, self.player.y))
         self.particles.spawn_portal(enemy.x, enemy.y)

@@ -10,6 +10,7 @@ import math
 import pygame
 
 import assets
+from elites import variant_sprite
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
 
@@ -332,12 +333,15 @@ class Enemy(Entity):
         # haut de leur toile. La taille physique porte sur le personnage
         # visible, pas sur les marges transparentes du PNG.
         target_height = type(self).SPRITE_HEIGHT
+        self.sprite_kind = getattr(type(self), "SPRITE_KIND", self.KIND)
+        self.elite = ""
+        self.commanded = False
         self.SPRITE_HEIGHT = _height_for_visible_height(
-            f"enemy_{self.KIND}_idle", target_height,
+            f"enemy_{self.sprite_kind}_idle", target_height,
         )
         # Le générateur historique occupait 75 % de la toile des cadavres.
         self._dead_sprite_height = _height_for_visible_height(
-            f"enemy_{self.KIND}_dead", type(self).DEAD_HEIGHT * 0.75,
+            f"enemy_{self.sprite_kind}_dead", type(self).DEAD_HEIGHT * 0.75,
         )
         self.damage_mult = damage_mult
         self.flash_timer = 0.0   # affiche la pose "tir" du sprite
@@ -390,13 +394,13 @@ class Enemy(Entity):
         joueur (le profil opposé est obtenu par miroir). La marche est un
         cycle à deux frames ; un ennemi qui encaisse flashe en blanc."""
         if not self.alive:
-            return assets.get(f"enemy_{self.KIND}_dead")
+            return assets.get(f"enemy_{self.sprite_kind}_dead")
         if self.rolling and self.KIND == "soldier":
             frame = min(2, int(self.roll_progress * 3))
             return self._visual_sprite(f"enemy_soldier_roll_{frame}")
         if self.flash_timer > 0.0:
             # Quand il tire, il fait face au joueur : pose de face armée.
-            return self._visual_sprite(f"enemy_{self.KIND}_fire")
+            return self._visual_sprite(f"enemy_{self.sprite_kind}_fire")
         if self.aiming and self.KIND == "sniper":
             # Le sniper avertit clairement son tir en posant un genou à terre.
             return self._visual_sprite("enemy_sniper_aim")
@@ -415,17 +419,21 @@ class Enemy(Entity):
             elif abs(diff) > math.pi / 4:
                 suffix = "_side"            # profil (miroir selon le côté)
                 flipped = diff > 0
-        name = f"enemy_{self.KIND}_{pose}{suffix}"
+        name = f"enemy_{self.sprite_kind}_{pose}{suffix}"
         return self._visual_sprite(name, flipped)
 
     def _visual_sprite(self, name, flipped=False):
         """Applique les variantes visuelles sans changer la géométrie."""
         hurt = self.hurt_timer > 0.0
         if self.possessed:
-            return assets.get_possessed(name, flipped, hurt=hurt)
-        if hurt:
+            sprite = assets.get_possessed(name, flipped, hurt=hurt)
+        elif hurt:
             return assets.get_tinted(name, flipped)
-        return assets.get(name, flipped)
+        else:
+            sprite = assets.get(name, flipped)
+        variant = ("commander" if self.KIND == "commander" else self.elite
+                   or ("commanded" if self.commanded else ""))
+        return variant_sprite(sprite, variant)
 
     def set_possessed(self, enabled=True):
         """Active la variante du Déferlement et ses règles de mobilité.
@@ -585,6 +593,17 @@ class Sniper(Enemy):
     AIM_DELAY = 0.5625     # -25 % : télégraphie lisible sans attente poussive
 
 
+class Commander(Soldier):
+    """Officier de soutien : aura de cadence proche, silhouette dorée."""
+    KIND = "commander"
+    SPRITE_KIND = "soldier"
+    CAN_ROLL = False
+    MAX_HEALTH = 220
+    SPEED = 1.6
+    FIRE_DELAY = 1.1
+    DAMAGE = (6, 10)
+
+
 class Boss(Enemy):
     """Le Colosse : boss en trois phases, plus agressif à mesure qu'il cède."""
     KIND = "boss"
@@ -693,7 +712,7 @@ class RemotePlayer(Enemy):
 
 
 ENEMY_TYPES = {"grunt": Grunt, "soldier": Soldier, "heavy": Heavy,
-               "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss}
+               "kamikaze": Kamikaze, "sniper": Sniper, "boss": Boss, "commander": Commander}
 
 
 # `get_bounding_rect` parcourt tous les pixels du PNG : mesuré une fois par

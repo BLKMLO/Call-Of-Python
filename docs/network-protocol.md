@@ -32,6 +32,11 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+La ligne `en` ajoute aux 13 champs antérieurs l'identifiant élite (`""`,
+`bulwark`, `hunter`) puis le booléen entier d'aura. `commander` est un type
+ennemi connu. Le client utilise ces champs pour le rendu, et la santé maximale
+répliquée ; il ne réapplique pas les multiplicateurs de santé.
+
 Secours : `snap.rr` contient au plus quatre lignes `[pid, secondes_avant_respawn,
 progression_secours, pid_secouriste]` (secouriste -1 si absent). La fenêtre de
 secours correspond aux 20 premières secondes du délai total de 26 s. `ix`

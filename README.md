@@ -81,6 +81,13 @@ roulades, cadence, chargeurs et degats.
 
 ## Points techniques
 
+Bestiaire : Résistant (bleu : +35 % vie, -10 % vitesse), Traqueur (rouge :
++15 % vitesse, délai entre tirs -10 %), Commandant (doré : cadence des alliés
+à moins de 5 m accélérée de 25 % avec ligne de vue). Éliminez le Commandant
+pour supprimer son aura. Trois élites et un Commandant vivants au maximum.
+Ils apparaissent dans l'Entrepôt ; en Déferlement, élites dès la vague 4 et
+Commandant aux vagues 5/15/25. Les boss ne reçoivent ni aura ni variante élite.
+
 Secours coop : un joueur à terre peut être réanimé pendant 20 s. Approchez à
 1,4 m puis Interagir (E/LB/ACT.) pour commencer un secours de 3 s ; rester près
 de lui. Dégâts, roulade, perte de vue ou nouvel appui annulent le secours. Le

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pygame
 
 from coop import CoopClientGame, CoopHostGame
+from elites import apply_elite
 from game import Game
 from level import SURVIVAL_LEVEL
 from settings import Settings
@@ -50,6 +51,21 @@ def validate(stage, output):
     try:
         for size in ((800, 600), (1280, 720)):
             screen = pygame.display.set_mode(size)
+            if stage >= 7:
+                gallery = Game(screen, settings, sounds)
+                try:
+                    gallery.enemies.clear()
+                    gallery.ais.clear()
+                    gallery.player.x, gallery.player.y, gallery.player.angle = 1.5, 2.5, 0
+                    for kind, y, elite in (("commander", 2.5, ""),
+                                           ("grunt", 1.2, "bulwark"),
+                                           ("soldier", 3.8, "hunter")):
+                        target = gallery.spawn_enemy(kind, 5.5, y)
+                        apply_elite(target, elite)
+                    gallery.draw(screen)
+                    pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-elites.png")
+                finally:
+                    gallery.close()
             if stage >= 2:
                 mission_game = Game(screen, settings, sounds)
                 try:
@@ -77,7 +93,11 @@ def validate(stage, output):
                              for x in range(2, game.level.width - 2, 2)
                              if not game.level.is_wall(x + 0.5, y + 0.5)]
                 for index, (x, y) in enumerate(positions[:24]):
-                    game.spawn_enemy(("grunt", "soldier", "heavy")[index % 3], x, y)
+                    kind = "commander" if stage >= 7 and index == 0 else (
+                        "grunt", "soldier", "heavy")[index % 3]
+                    enemy = game.spawn_enemy(kind, x, y)
+                    if stage >= 7 and index in (1, 2, 3):
+                        apply_elite(enemy, "bulwark" if index == 1 else "hunter")
                 assert len(game.enemies) == 24
                 times = []
                 for frame in range(80):
@@ -122,14 +142,20 @@ def validate(stage, output):
             client.peer.sock = MeasuredSocket(client.peer.sock)
             try:
                 host.intermission = 1000
-                for x, y in positions[:24]:
-                    host.spawn_enemy("grunt", x, y)
+                for index, (x, y) in enumerate(positions[:24]):
+                    enemy = host.spawn_enemy("commander" if stage >= 7 and index == 0
+                                             else "grunt", x, y)
+                    if stage >= 7 and index in (1, 2, 3):
+                        apply_elite(enemy, "bulwark" if index == 1 else "hunter")
                 if stage >= 5:
                     host._start_wave(4)
                 for _ in range(120):
                     host.update(1 / 60)
                     client.update(1 / 60)
                 assert client.synced and len(client.ghosts) == 24
+                if stage >= 7:
+                    assert sum(bool(e.elite) for e in client.ghosts.values()) == 3
+                    assert sum(e.KIND == "commander" for e in client.ghosts.values()) == 1
                 if stage >= 5:
                     assert client.wave_info["mutator"] == host.mutator
                 if stage >= 6:
