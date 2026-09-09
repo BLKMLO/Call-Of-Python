@@ -174,6 +174,12 @@ class SmokeTests(unittest.TestCase):
             ticks(12)
             self.assertEqual(host.mission.index, expected)
             self.assertEqual(client.mission.index, expected)
+            chosen = client.upgrades.offers[1]
+            previous = client.upgrades.levels.get(chosen, 0)
+            client._choose_upgrade(1)
+            ticks(12)
+            self.assertEqual(client.upgrades.levels[chosen], previous + 1)
+            self.assertEqual(client.upgrades.levels, host.clients[client.pid]["upgrades"].levels)
             client.pending_interaction = request  # retransmission après perte d'ACK
             ticks(12)
             self.assertEqual(host.mission.index, expected)

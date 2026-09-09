@@ -53,6 +53,8 @@ def validate(stage, output):
             if stage >= 2:
                 mission_game = Game(screen, settings, sounds)
                 try:
+                    if stage >= 4:
+                        mission_game._award_upgrades("qa")
                     mission_game.draw(screen)
                     pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-mission.png")
                     for enemy in mission_game.enemies:
@@ -103,6 +105,12 @@ def validate(stage, output):
                         mission_host.update(1 / 60)
                         mission_client.update(1 / 60)
                     assert mission_client.synced and mission_client.mission_mode
+                    if stage >= 4:
+                        mission_host._award_upgrades("qa")
+                        for _ in range(8):
+                            mission_host.update(1 / 60)
+                            mission_client.update(1 / 60)
+                        assert len(mission_client.upgrades.offers) == 3
                     mission_client.draw(screen)
                     pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-mission-coop.png")
                 finally:

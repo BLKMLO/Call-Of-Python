@@ -190,4 +190,6 @@ def reset_gameplay_input(game):
         pending.clear()
     if hasattr(game, "pending_interaction"):
         game.pending_interaction = None
+    if hasattr(game, "pending_upgrade"):
+        game.pending_upgrade = None
     pygame.mouse.get_rel()

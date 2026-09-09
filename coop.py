@@ -41,6 +41,8 @@ from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
 from survival import SurvivalGame
 from touch_controls import FINGER_EVENTS, TouchControls
+from upgrade_ui import choice_event, draw_choices
+from upgrades import SessionUpgrades
 from version import PROTOCOL_VERSION
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
@@ -139,6 +141,17 @@ class CoopHostGame(SurvivalGame):
 
     def survival_info(self):
         return None if self.mission_mode else super().survival_info()
+
+    def _award_upgrades(self, token):
+        super()._award_upgrades(token)
+        for client in self.clients.values():
+            client["upgrades"].award(token)
+
+    def _update_upgrades(self, dt):
+        super()._update_upgrades(dt)
+        for client in self.clients.values():
+            client["upgrades"].update(dt)
+            client["upgrades"].apply(client["weapons"].values())
 
     # -- hooks du Game de base -----------------------------------------
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
@@ -297,6 +310,7 @@ class CoopHostGame(SurvivalGame):
             "addr": addr,
             "player": RemotePlayer(pid, x + random.uniform(-0.3, 0.3), y),
             "last_seen": self.net_time,
+            "upgrades": SessionUpgrades(101 + pid),
             "protocol": protocol,
             "last_input_sequence": -1,
             "last_reload_sequence": 0,
@@ -431,6 +445,12 @@ class CoopHostGame(SurvivalGame):
 
         if interact:
             self._interact(remote)
+
+        choice = message.get("uc")
+        if isinstance(choice, list) and len(choice) == 2:
+            build = client["upgrades"]
+            if build.choose(*choice):
+                build.apply(client["weapons"].values())
 
         weapon_id = message.get("wid")
         if weapon_id in client["weapons"]:
@@ -609,6 +629,9 @@ class CoopHostGame(SurvivalGame):
                 payload["sid"] = self.session_id
                 payload["sq"] = self.snapshot_sequence
                 payload["ia"] = client.get("last_interaction", 0)
+                build = client.get("upgrades")
+                if build is not None:
+                    payload["ub"] = build.snapshot()
                 ack = client.get("event_ack", 0)
                 floor = (
                     self.event_journal[0][0] - 1
@@ -672,6 +695,8 @@ class CoopClientGame:
         self.level = Level(4, config=SURVIVAL_LEVEL)
         self.level_index = 4
         self.mission_mode = False
+        self.upgrades = SessionUpgrades()
+        self.pending_upgrade = None
         self.mission = Mission()
         self.mission_marker = MissionMarker()
         self.interaction_sequence = 0
@@ -765,6 +790,9 @@ class CoopClientGame:
         self.interaction_sequence += 1
         self.pending_interaction = [self.interaction_sequence, self.mission.index]
 
+    def _choose_upgrade(self, index):
+        self.pending_upgrade = [self.upgrades.offer_id, index]
+
     def _configure_mode(self, mode):
         mission_mode = mode == "warehouse"
         if mission_mode == self.mission_mode:
@@ -787,6 +815,12 @@ class CoopClientGame:
 
     # -- événements -------------------------------------------------------
     def handle_event(self, event):
+        if not self.controls_paused and self.outcome is None and self.player.alive:
+            choice = choice_event(event, (self.raycaster.width, self.raycaster.height),
+                                  self.upgrades)
+            if choice is not None:
+                self._choose_upgrade(choice)
+                return None
         self.gamepad.handle_event(event)
         if (event.type == pygame.CONTROLLERBUTTONDOWN and self.controls_paused
                 and event.button == pygame.CONTROLLER_BUTTON_B):
@@ -1086,6 +1120,7 @@ class CoopClientGame:
             "rs": self.player.roll_sequence,
             "rl": self.reload_sequence,
             "ix": self.pending_interaction,
+            "uc": self.pending_upgrade,
             "wid": self.player.weapon.spec.id,
             "fx": self.pending_fires,
         }, self.host_addr)
@@ -1113,6 +1148,8 @@ class CoopClientGame:
                             or not 0 <= event_sequence <= 2 ** 63 - 1):
                         continue
                     if session_id != self.host_session:
+                        self.upgrades = SessionUpgrades()
+                        self.pending_upgrade = None
                         self._configure_mode(mode)
                         self.mission = Mission(self.level.config.get("objectives", ()))
                         self.pending_interaction = None
@@ -1155,6 +1192,12 @@ class CoopClientGame:
         self._set_host_paused(bool(paused))
         if "ms" in snap and not self.mission.apply_snapshot(snap["ms"]):
             return False
+        if "ub" in snap and not self.upgrades.apply_snapshot(snap["ub"]):
+            return False
+        if (self.pending_upgrade is not None
+                and (not self.upgrades.offers
+                     or self.pending_upgrade[0] != self.upgrades.offer_id)):
+            self.pending_upgrade = None
         interaction_ack = snap.get("ia")
         if (type(interaction_ack) is int and self.pending_interaction is not None
                 and interaction_ack == self.pending_interaction[0]):
@@ -1171,6 +1214,7 @@ class CoopClientGame:
                              and event[2] in (0, 1)))):
                 impact_ids.add(event[1])
         self._apply_players(players)
+        self.upgrades.apply(self.player.weapons)
         self._apply_enemies(enemies, impact_ids)
         if isinstance(pickups, list):
             self._apply_pickups(pickups)
@@ -1626,6 +1670,7 @@ class CoopClientGame:
         self.hud.draw_objective(screen, self.player, self.mission,
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
                                 lambda *points: Game._objective_visible(self, *points))
+        draw_choices(screen, self.hud, self.upgrades)
         if self.pid is None:
             self.hud.show_message("Connexion à l'hôte...")
         if not self.player.alive and self.outcome is None:

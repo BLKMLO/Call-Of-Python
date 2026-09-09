@@ -81,6 +81,14 @@ roulades, cadence, chargeurs et degats.
 
 ## Points techniques
 
+Améliorations de partie : après les deux interactions de l'Entrepôt, ou chaque
+troisième vague nettoyée, choisir une des trois cartes avec F5–F7, gauche/haut/
+droite sur la croix manette, clic ou tactile. Après 12 s, le premier choix est
+retenu. Impact, recharge, capacité, précision et cadence ont deux niveaux au
+maximum ; six choix par partie. Aucun bonus n'est enregistré dans les sauvegardes.
+La capacité supplémentaire se remplit au prochain rechargement. La pause de
+l'hôte fige le délai ; une pause locale d'un client ne suspend pas la partie.
+
 - simulation a pas fixe de 60 Hz, rendu decouple jusqu'a 120 Hz ;
 - raycasting multi-couches, murs variables, portes, z-buffer et billboards ;
 - IA avec perception, BFS, couverture, contournement et esquives ;

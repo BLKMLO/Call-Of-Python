@@ -32,6 +32,14 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+Les améliorations v4 utilisent `snap.ub = [id_offre, niveaux, propositions,
+secondes_restantes, crédits_en_attente]`, individuel par client. `in.uc` vaut
+`null` ou `[id_offre, index_choix]`. Les doublons ne peuvent choisir une offre
+suivante. Le serveur reconstruit les armes depuis son catalogue ; le client
+reçoit les effets, sans déclarer un bonus ni une valeur de dégâts. Une offre
+expirée choisit son premier élément sur l'hôte. Les nouveaux arrivants gagnent
+les récompenses futures, pas celles déjà acquises avant leur connexion.
+
 - datagramme maximal : 1 200 octets ;
 - compression zlib `Z1` a partir de 900 octets si utile ;
 - fragmentation applicative `F1` apres compression ;

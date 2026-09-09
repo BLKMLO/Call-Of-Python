@@ -22,6 +22,8 @@ from objectives import Mission
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, has_line_of_sight, rotate_zoom_screen, zoom_screen
 from touch_controls import FINGER_EVENTS, TouchControls
+from upgrade_ui import choice_event, draw_choices
+from upgrades import SessionUpgrades
 
 MEDKIT_HEAL = 35
 PICKUP_RADIUS = 0.55         # distance de ramassage
@@ -61,6 +63,8 @@ class Game:
         # Le joueur repart du spawn ; s'il vient du niveau précédent, il
         # garde son arsenal et récupère un peu de vie.
         self.player = Player(*self.level.player_spawn)
+        self.upgrades = getattr(carry_player, "session_upgrades", None) or SessionUpgrades()
+        self.player.session_upgrades = self.upgrades
         if carry_player is not None:
             self.player.weapons = carry_player.weapons
             self.player.weapon_index = carry_player.weapon_index
@@ -112,6 +116,12 @@ class Game:
     # Événements ponctuels (clics, touches, molette)
     # ------------------------------------------------------------------
     def handle_event(self, event):
+        if self.outcome is None and not self.paused and self.player.alive:
+            choice = choice_event(event, (self.raycaster.width, self.raycaster.height),
+                                  self.upgrades)
+            if choice is not None:
+                self._choose_upgrade(choice)
+                return None
         """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
         gamepad = getattr(self, "gamepad", None)
         if gamepad is not None:
@@ -287,6 +297,7 @@ class Game:
         if self.outcome is not None and self.end_delay > 0.8:
             return
         self.time += dt
+        self._update_upgrades(dt)
         self.shake = max(0.0, self.shake - dt * 3.5)
 
         player = self.player
@@ -408,7 +419,19 @@ class Game:
         changed = self.mission.interact(actor or self.player, self._objective_visible)
         if changed:
             self.sounds.play("click", volume_scale=0.6)
+            self._award_upgrades(f"mission:{self.level_index}:{self.mission.index}")
         return changed
+
+    def _award_upgrades(self, token):
+        self.upgrades.award(token)
+
+    def _choose_upgrade(self, index):
+        self.upgrades.choose(self.upgrades.offer_id, index)
+        self.upgrades.apply(self.player.weapons)
+
+    def _update_upgrades(self, dt):
+        self.upgrades.update(dt)
+        self.upgrades.apply(self.player.weapons)
 
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
                     possessed=False):
@@ -855,6 +878,7 @@ class Game:
         self.hud.draw_objective(screen, self.player, self.mission,
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
                                 self._objective_visible)
+        draw_choices(screen, self.hud, self.upgrades)
         if self.paused:
             self.hud.draw_pause(screen)
         self.touch.draw(screen, paused=self.paused)

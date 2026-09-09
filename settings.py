@@ -41,7 +41,7 @@ KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "roulade", "recharger",
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 MAX_SETTINGS_BYTES = 64 * 1024
-RESERVED_KEYS = {pygame.K_ESCAPE, pygame.K_F11}
+RESERVED_KEYS = {pygame.K_ESCAPE, pygame.K_F11, pygame.K_F5, pygame.K_F6, pygame.K_F7}
 
 
 def valid_ipv4(value):

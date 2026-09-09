@@ -235,7 +235,11 @@ class PriorityFixTests(unittest.TestCase):
         self.assertEqual(len(host.event_journal), 0)
 
     def test_snapshot_session_sequence_and_reliable_event_order(self):
+        from upgrades import SessionUpgrades
+
         client = CoopClientGame.__new__(CoopClientGame)
+        client.upgrades = SessionUpgrades()
+        client.pending_upgrade = None
         client.host_session = "session-a"
         client.last_snapshot_sequence = -1
         client.last_event_sequence = 0

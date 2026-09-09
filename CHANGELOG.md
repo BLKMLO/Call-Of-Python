@@ -1,5 +1,15 @@
 # Changelog
 
+## Gameplay — étape 4 (2026-09-08)
+
+- Améliorations temporaires individuelles : cinq bonus, trois cartes proposées,
+  six choix par partie et deux niveaux maximum par bonus.
+- Tirages isolés reproductibles ; délai autoritaire de 12 s, choix 1 par défaut.
+- Clavier F5–F7 (désormais réservées), croix manette, clic et tactile.
+- Réplication des propositions et des effets ; ni recharge offerte, ni remise
+  à zéro d'une recharge en cours, ni modification des statistiques de base.
+- 124 tests ; benchmark/loopback et inspection du HUD aux deux résolutions.
+
 ## Gameplay — étape 3 (2026-09-08)
 
 - Hébergement LAN de l'Entrepôt ; carte choisie par le handshake, victoire

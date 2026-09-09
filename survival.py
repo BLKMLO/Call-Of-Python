@@ -162,6 +162,8 @@ class SurvivalGame(Game):
                 self.player.health = min(self.player.max_health,
                                          self.player.health + CLEAR_HEAL)
                 self.intermission = INTERMISSION
+                if self.wave % 3 == 0:
+                    self._award_upgrades(f"wave:{self.wave}")
                 self.sounds.play("heal", volume_scale=0.7)
         elif self.wave_timer >= wave_timeout(self.wave) and self.wave < FINAL_WAVE:
             # Submersion : la vague suivante déferle par-dessus.

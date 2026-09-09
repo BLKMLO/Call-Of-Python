@@ -1,5 +1,12 @@
 # Architecture
 
+`SessionUpgrades` détient uniquement l'état de partie : récompenses dédupliquées,
+tirages isolés par graine, propositions, délai fixe, niveaux plafonnés. Les effets
+reconstruisent les specs d'armes depuis `WEAPON_SPECS` sans les muter ; une signature
+évite de reconstruire à chaque tick. Les munitions et le ratio de recharge sont
+préservés. Le joueur transféré entre niveaux porte ce contexte temporaire.
+`upgrade_ui.py` partage rectangles de choix et affichage pour souris/tactile.
+
 `objectives.py` contient les définitions immuables et la progression d'une
 mission. Aucune dépendance SDL ni réseau : seul le simulateur autoritaire
 appelle `interact/update`, les clients lisent les instantanés validés.

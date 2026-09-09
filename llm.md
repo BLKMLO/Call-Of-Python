@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 3 validées ; Entrepôt jouable en solo et en LAN. Étapes 4–10 restent à
+Étapes 1 à 4 validées ; Entrepôt jouable en solo et en LAN. Étapes 5–10 restent à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -31,6 +31,21 @@ distants. La purge des entrées annule les demandes d'interaction non acquittée
 Recette étape 3 : 120 tests, Ruff OK, solo et coop des deux modes, retransmission
 et arrivée tardive ; captures client aux deux tailles. Benchmark 24 ennemis :
 médiane/p95 5,979/8,607 ms et 10,246/11,649 ms ; UDP observé <=538 octets.
+
+Étape 4 : `upgrades.py` / `upgrade_ui.py`. Six récompenses max, deux niveaux
+par bonus (dégâts +10 %, recharge -15 %, capacité +20 %, dispersion -20 %,
+cadence +8 % par niveau ; arrondis entiers sur dégâts/capacité). Récompenses
+après interactions Entrepôt et vagues multiples de 3 nettoyées, dédupliquées
+par token ; choix en file si une proposition est déjà ouverte. Graine isolée
+101 en solo, 101+pid pour clients. Délai 12 s, choix 1 par défaut, figé par
+pause hôte. F5/F6/F7 sont réservées ; manette croix gauche/haut/droite, clic,
+tactile. `uc` et `ub` portent les choix autoritaires (voir doc réseau).
+Ne pas modifier WEAPON_SPECS ni offrir de munitions via un bonus : les specs
+par arme sont dérivées idempotemment et conservent le ratio de rechargement.
+Le contexte survit au transfert du joueur entre niveaux, jamais à une nouvelle
+partie ; pas de persistance. 124 tests OK et Ruff OK. Recette étape 4, 24 ennemis,
+deux résolutions, choix coop répliqué : médiane/p95 6,044/11,856 ms et
+10,294/11,254 ms ; UDP observé <=550 octets. Captures des cartes inspectées.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms
