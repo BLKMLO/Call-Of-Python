@@ -206,7 +206,10 @@ class PriorityFixTests(unittest.TestCase):
         self.assertEqual(remote.angle, 0.0)
 
     def test_host_retransmits_events_until_client_acknowledges(self):
+        from objectives import Mission
+
         host, _remote = self._host_with_v2_remote()
+        host.mission = Mission()
         host.snapshot_sequence = 0
         host.peer = Mock()
         host.hud = Mock(flash=0)

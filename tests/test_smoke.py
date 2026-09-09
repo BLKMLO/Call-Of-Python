@@ -140,6 +140,55 @@ class SmokeTests(unittest.TestCase):
         game.update(1 / 60)
         self.assertEqual(game.outcome, "victory")
 
+    def test_warehouse_coop_authority_retry_late_join_and_extraction(self):
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0,
+                            mission_mode=True)
+        self.addCleanup(host.close)
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+
+        def ticks(count):
+            for _ in range(count):
+                host.update(1 / 60)
+                client.update(1 / 60)
+
+        ticks(12)
+        self.assertTrue(client.synced)
+        self.assertTrue(client.mission_mode)
+        self.assertEqual(len(client.ghosts), 8)
+        self.assertEqual([w.spec.id for w in client.player.weapons], ["pistol"])
+        client._request_interaction()
+        ticks(12)
+        self.assertEqual(host.mission.index, 0)  # rejet hors portée, acquitté
+        self.assertIsNone(client.pending_interaction)
+        for enemy in host.enemies:
+            enemy.health = 0
+        remote = host.clients[client.pid]["player"]
+        for expected in (1, 2):
+            step = host.mission.current
+            remote.x = client.player.x = step.x
+            remote.y = client.player.y = step.y
+            client._request_interaction()
+            request = list(client.pending_interaction)
+            ticks(12)
+            self.assertEqual(host.mission.index, expected)
+            self.assertEqual(client.mission.index, expected)
+            client.pending_interaction = request  # retransmission après perte d'ACK
+            ticks(12)
+            self.assertEqual(host.mission.index, expected)
+        late = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                              port=host.peer.sock.getsockname()[1])
+        self.addCleanup(late.close)
+        for _ in range(12):
+            ticks(1)
+            late.update(1 / 60)
+        self.assertEqual(late.mission.index, 2)
+        self.assertTrue(late.mission_mode)
+        ticks(500)  # l'hôte attend déjà dans la zone d'extraction
+        self.assertEqual(host.outcome, "victory")
+        self.assertEqual(client.outcome, "victory")
+
     def test_menus_draw_and_click_at_extreme_resolutions(self):
         menus = [
             MainMenu(self.sounds, self.settings),

@@ -75,7 +75,7 @@ ajuste legerement la cadence d'apparition selon la sante du joueur et la
 pression deja presente ; il ne modifie jamais les degats, la composition ou
 le nombre d'ennemis prevu.
 
-Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v3 refuse
+Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v4 refuse
 explicitement toute autre version. L'hote valide deplacements, collisions,
 roulades, cadence, chargeurs et degats.
 
@@ -103,7 +103,10 @@ puis tenir l'extraction pendant 8 secondes consécutives. Les balises vertes
 et le HUD guident le parcours. Interagir : **E** (remappable), **LB** ou bouton
 tactile **ACT.** ; la roulade bloque l'interaction. Quitter la zone remet le
 compteur à zéro, la pause le fige. Les autres niveaux gardent leur victoire
-par élimination. La réplication de cette mission est l'étape suivante.
+par élimination. Dans le menu LAN, **Héberger (Mission Entrepôt en coop)**
+permet de jouer cette mission à quatre ; rejoindre charge automatiquement
+la bonne carte. La progression est commune, même en arrivant en cours de partie.
+Tous les participants doivent utiliser le protocole v4 de cette version.
 
 | Fichier | Role |
 |---|---|

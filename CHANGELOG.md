@@ -1,5 +1,15 @@
 # Changelog
 
+## Gameplay — étape 3 (2026-09-08)
+
+- Hébergement LAN de l'Entrepôt ; carte choisie par le handshake, victoire
+  partagée et arrivée en cours de mission. Arsenal initial identique au solo.
+- Protocole v4 : demandes d'interaction acquittées, index d'objectif attendu,
+  chrono autoritaire. Anciens clients explicitement refusés.
+- Les portes automatiques prennent en compte les joueurs distants.
+- Fin de mission LAN séparée de la progression de campagne et des records
+  Déferlement. Aucun changement des sauvegardes de partie.
+
 ## Gameplay — étape 2 (2026-09-08)
 
 - Entrepôt : manifeste, alarme, extraction de 8 secondes ; balise et guide HUD.

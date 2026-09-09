@@ -699,6 +699,7 @@ class MultiplayerMenu(MenuBase):
             ip_label = f"Adresse de l'hôte : {self.settings.last_ip}"
         return [
             ("host", "Héberger (Le Déferlement en coop)"),
+            ("host_mission", "Héberger (Mission Entrepôt en coop)"),
             ("ip", ip_label),
             ("join", "Rejoindre cette adresse"),
             ("back", "Retour"),

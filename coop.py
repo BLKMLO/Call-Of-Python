@@ -34,7 +34,9 @@ from game import GUNSHOT_HEARING, SLOT_SCANCODES, Game, new_stats
 from gamepad import GamepadInput, reset_gameplay_input
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
+from mission_marker import MissionMarker
 from network import DEFAULT_PORT, UdpPeer
+from objectives import Mission
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
 from survival import SurvivalGame
@@ -113,8 +115,12 @@ class CoopHostGame(SurvivalGame):
     """Le Déferlement, hébergé : partie locale + service des clients."""
 
     def __init__(self, screen, settings, sounds, carry_player=None,
-                 port=DEFAULT_PORT):
-        super().__init__(screen, settings, sounds, carry_player=carry_player)
+                 port=DEFAULT_PORT, mission_mode=False):
+        self.mission_mode = bool(mission_mode)
+        if self.mission_mode:
+            Game.__init__(self, screen, settings, sounds)
+        else:
+            super().__init__(screen, settings, sounds, carry_player=carry_player)
         self.peer = UdpPeer(port)
         self.clients = {}          # pid -> {"addr", "player", "last_seen"}
         self.respawns = {}         # pid -> compte à rebours de réapparition
@@ -127,10 +133,17 @@ class CoopHostGame(SurvivalGame):
         self.net_time = 0.0        # horloge réseau (avance même en pause)
         self.snap_timer = 0.0
         self._next_enemy_id = 0
+        for enemy in self.enemies:
+            enemy.net_id = self._next_enemy_id
+            self._next_enemy_id += 1
+
+    def survival_info(self):
+        return None if self.mission_mode else super().survival_info()
 
     # -- hooks du Game de base -----------------------------------------
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
-        enemy = super().spawn_enemy(kind, x, y, hp_mult, dmg_mult)
+        enemy = Game.spawn_enemy(self, kind, x, y, hp_mult, dmg_mult,
+                                 possessed=not self.mission_mode)
         enemy.net_id = self._next_enemy_id
         self._next_enemy_id += 1
         return enemy
@@ -153,6 +166,9 @@ class CoopHostGame(SurvivalGame):
         """Défaite seulement quand TOUS les joueurs sont à terre."""
         if all(not p.alive for p in self._all_players()):
             self.outcome = "dead"
+        elif self.mission.complete:
+            self.outcome = "victory"
+            self.sounds.play("level_complete")
 
     def _check_pickups(self):
         super()._check_pickups()   # le joueur hôte
@@ -231,7 +247,10 @@ class CoopHostGame(SurvivalGame):
                 client["player"].update_timers(dt)
                 for weapon in client["weapons"].values():
                     weapon.update(dt)
-        super().update(dt)
+        if self.mission_mode:
+            Game.update(self, dt)
+        else:
+            super().update(dt)
         if not self.paused and self.outcome is None:
             self._update_respawns(dt)
         self._prune_clients()
@@ -263,6 +282,7 @@ class CoopHostGame(SurvivalGame):
                 client["protocol"] = protocol
                 self.peer.send({
                     "t": "welcome", "id": pid,
+                    "mode": "warehouse" if self.mission_mode else "survival",
                     "v": PROTOCOL_VERSION, "sid": self.session_id,
                     "es": getattr(self, "event_sequence", 0),
                 }, addr)
@@ -286,11 +306,13 @@ class CoopHostGame(SurvivalGame):
             "last_roll_sequence": 0,
             "pending_roll_sequence": None,
             "legacy_roll_latched": False,
-            "weapons": _starting_remote_weapons(),
-            "active_weapon": "rifle",
+            "weapons": ({"pistol": Weapon(WEAPON_SPECS["pistol"], 0)}
+                        if self.mission_mode else _starting_remote_weapons()),
+            "active_weapon": "pistol" if self.mission_mode else "rifle",
         }
         self.peer.send({
             "t": "welcome", "id": pid,
+            "mode": "warehouse" if self.mission_mode else "survival",
             "v": PROTOCOL_VERSION, "sid": self.session_id,
             "es": getattr(self, "event_sequence", 0),
         }, addr)
@@ -326,6 +348,14 @@ class CoopHostGame(SurvivalGame):
 
         client["last_seen"] = self.net_time
         remote = client["player"]
+        request = message.get("ix")
+        interact = False
+        if (isinstance(request, list) and len(request) == 2
+                and type(request[0]) is int and type(request[1]) is int
+                and client.get("last_interaction", 0) < request[0] < 2 ** 31
+                and 0 <= request[1] < 16):
+            client["last_interaction"] = request[0]
+            interact = request[1] == self.mission.index
         if (not remote.alive or self.paused
                 or self.outcome is not None):
             return
@@ -398,6 +428,9 @@ class CoopHostGame(SurvivalGame):
         else:
             remote.moving = False
             client["move_credit"] = move_credit
+
+        if interact:
+            self._interact(remote)
 
         weapon_id = message.get("wid")
         if weapon_id in client["weapons"]:
@@ -563,6 +596,7 @@ class CoopHostGame(SurvivalGame):
             # un ancien client les ignore naturellement après son zip statique.
             "pk": [int(p.taken) for p in static_pickups] + dynamic_pickups,
             "wv": self.survival_info(),
+            "ms": self.mission.snapshot(),
             "ov": self.outcome or "",
             "pa": int(self.paused),
             "ev": self.net_events,
@@ -574,6 +608,7 @@ class CoopHostGame(SurvivalGame):
                 payload = dict(snapshot)
                 payload["sid"] = self.session_id
                 payload["sq"] = self.snapshot_sequence
+                payload["ia"] = client.get("last_interaction", 0)
                 ack = client.get("event_ack", 0)
                 floor = (
                     self.event_journal[0][0] - 1
@@ -636,6 +671,11 @@ class CoopClientGame:
         self.sounds = sounds
         self.level = Level(4, config=SURVIVAL_LEVEL)
         self.level_index = 4
+        self.mission_mode = False
+        self.mission = Mission()
+        self.mission_marker = MissionMarker()
+        self.interaction_sequence = 0
+        self.pending_interaction = None
         self.player = Player(*self.level.player_spawn)
         self.player.add_weapon("shotgun", 1)
         self.player.add_weapon("rifle", 1)
@@ -716,7 +756,34 @@ class CoopClientGame:
         self.touch.resize(size)
 
     def survival_info(self):
-        return self.wave_info
+        return None if self.mission_mode else self.wave_info
+
+    def _request_interaction(self):
+        if (self.controls_paused or self.outcome is not None or not self.player.alive
+                or self.pending_interaction is not None or self.mission.current is None):
+            return
+        self.interaction_sequence += 1
+        self.pending_interaction = [self.interaction_sequence, self.mission.index]
+
+    def _configure_mode(self, mode):
+        mission_mode = mode == "warehouse"
+        if mission_mode == self.mission_mode:
+            return
+        self.mission_mode = mission_mode
+        self.level_index = 0 if mission_mode else 4
+        self.level = Level(0) if mission_mode else Level(4, config=SURVIVAL_LEVEL)
+        self.mission = Mission(self.level.config.get("objectives", ()))
+        self.player = Player(*self.level.player_spawn)
+        self.pickups = [Pickup(x, y, kind, 0 if mission_mode else 1)
+                        for x, y, kind in self.level.pickup_spawns]
+        self.base_pickup_count = len(self.pickups)
+        self.dynamic_pickups.clear()
+        self.props = [Prop(x, y, kind) for x, y, kind in self.level.prop_spawns]
+        self.ghosts.clear()
+        self.allies.clear()
+        self.raycaster = Raycaster((self.raycaster.width, self.raycaster.height), self.level,
+                                   math.radians(getattr(self.settings, "fov", 70)))
+        reset_gameplay_input(self)
 
     # -- événements -------------------------------------------------------
     def handle_event(self, event):
@@ -745,6 +812,8 @@ class CoopClientGame:
                 return "menu"
             elif event.key == pygame.K_F3:
                 self.show_fps = not self.show_fps
+            elif event.key == self.settings.keys.get("interagir", pygame.K_e):
+                self._request_interaction()
             elif (not self.controls_paused and self.player.alive
                   and self.outcome is None
                   and (event.key == self.settings.keys["roulade"]
@@ -808,6 +877,8 @@ class CoopClientGame:
             return None
         if action == "fire_down":
             self._fire()
+        elif action == "interact":
+            self._request_interaction()
         elif action in ("aim_down", "aim_up"):
             self.player.aiming = (
                 not self.player.rolling
@@ -855,6 +926,8 @@ class CoopClientGame:
                     self.player.cycle_weapon(1)
                 elif action == "fire":
                     self._fire()
+                elif action == "interact":
+                    self._request_interaction()
         self.time += dt
         self.shake = max(0.0, self.shake - dt * 3.5)
         self._net_receive()
@@ -1012,6 +1085,7 @@ class CoopClientGame:
             "rt": round(self.player.roll_timer, 3),
             "rs": self.player.roll_sequence,
             "rl": self.reload_sequence,
+            "ix": self.pending_interaction,
             "wid": self.player.weapon.spec.id,
             "fx": self.pending_fires,
         }, self.host_addr)
@@ -1031,11 +1105,18 @@ class CoopClientGame:
                             or not 1 <= len(session_id) <= 64):
                         continue
                     event_sequence = message.get("es", 0)
+                    mode = message.get("mode", "survival")
+                    if mode not in ("survival", "warehouse"):
+                        continue
                     if (not isinstance(event_sequence, int)
                             or isinstance(event_sequence, bool)
                             or not 0 <= event_sequence <= 2 ** 63 - 1):
                         continue
                     if session_id != self.host_session:
+                        self._configure_mode(mode)
+                        self.mission = Mission(self.level.config.get("objectives", ()))
+                        self.pending_interaction = None
+                        self.interaction_sequence = 0
                         self.last_snapshot_sequence = -1
                         self.last_event_sequence = event_sequence
                         self.input_sequence = 0
@@ -1072,6 +1153,12 @@ class CoopClientGame:
                     and paused in (0, 1))):
             return False
         self._set_host_paused(bool(paused))
+        if "ms" in snap and not self.mission.apply_snapshot(snap["ms"]):
+            return False
+        interaction_ack = snap.get("ia")
+        if (type(interaction_ack) is int and self.pending_interaction is not None
+                and interaction_ack == self.pending_interaction[0]):
+            self.pending_interaction = None
         events = self._snapshot_events(snap)
         impact_ids = set()
         for event in events:
@@ -1514,6 +1601,7 @@ class CoopClientGame:
     def draw(self, screen):
         sprites = (list(self.ghosts.values()) + list(self.allies.values())
                    + self.props)
+        sprites += self.mission_marker.sprites(self.mission)
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -1534,7 +1622,10 @@ class CoopClientGame:
         self.hud.draw(screen, self.player, list(self.ghosts.values()),
                       self.level, self.pickups,
                       fps=self.fps if self.show_fps else None,
-                      survival=self.wave_info, stats=self.stats)
+                      survival=self.survival_info(), stats=self.stats)
+        self.hud.draw_objective(screen, self.player, self.mission,
+                                pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
+                                lambda *points: Game._objective_visible(self, *points))
         if self.pid is None:
             self.hud.show_message("Connexion à l'hôte...")
         if not self.player.alive and self.outcome is None:

@@ -1,13 +1,34 @@
-# Protocole LAN v3
+# Protocole LAN v4
 
 Le transport utilise UDP/IPv4 et des objets JSON compacts. L'hote est
 autoritaire : un client ne declare jamais ses degats, munitions, cadence ou
 invulnerabilite.
 
-`join` doit contenir `v: 3`. Toute autre version recoit `incompatible` sans
+`join` doit contenir `v: 4`. Toute autre version recoit `incompatible` sans
 allocation de joueur. `welcome` fournit l'identifiant, le `session_id` et la
 sequence d'evenements. Les entrees portent `iq`, les instantanes `sq`, et les
 evenements fiables sont acquittes par `ea`.
+
+## Missions (v4)
+
+`welcome.mode` vaut `survival` ou `warehouse`. Le client charge uniquement une
+carte locale connue ; aucune carte ni définition exécutable ne traverse le LAN.
+Les joueurs doivent mettre le jeu à jour ensemble ; les hôtes v4 refusent v3.
+
+`in.ix` vaut `null` ou `[numéro_action, index_objectif]`. Le client répète la
+même demande jusqu'à `snap.ia` (dernier numéro consommé), sans prédire la
+progression. L'hôte consomme une seule fois chaque numéro strictement croissant,
+borné à 31 bits, puis contrôle l'objectif courant, la position acceptée,
+la ligne de vue, la vie, la roulade et la pause. Même une demande hors portée
+est acquittée : se déplacer ensuite ne la transforme pas en interaction.
+Le numéro d'objectif empêche une ancienne demande de valider le suivant.
+
+`snap.ms = [index_objectif, secondes_défense]` transmet l'état autoritaire,
+y compris aux nouveaux arrivants. Le client rejette les index régressifs et
+les timers non finis ou hors durée. Les objectifs terminés et la victoire
+sont répétés dans les instantanés ; le chronomètre avance seulement sur l'hôte.
+Une pause locale purge les interactions encore en attente côté client ; un
+datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 

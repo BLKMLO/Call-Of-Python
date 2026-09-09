@@ -375,7 +375,7 @@ class Game:
         self._emit_lifepack_sparkles(dt)
 
         # Portes automatiques : s'ouvrent pour le joueur ET les ennemis.
-        movers = [player] + [e for e in self.enemies if e.alive]
+        movers = self._all_players() + [e for e in self.enemies if e.alive]
         for door_pos in self.level.update_doors(dt, movers):
             self.sounds.play("door", volume_scale=0.7,
                              pos=door_pos, listener=player)

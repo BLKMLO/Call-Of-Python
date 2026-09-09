@@ -188,4 +188,6 @@ def reset_gameplay_input(game):
     pending = getattr(game, "pending_fires", None)
     if pending is not None:
         pending.clear()
+    if hasattr(game, "pending_interaction"):
+        game.pending_interaction = None
     pygame.mouse.get_rel()

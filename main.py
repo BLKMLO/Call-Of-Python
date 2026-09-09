@@ -136,14 +136,14 @@ def main():
         set_mouse_captured(True)
         sounds.play_music("survival")
 
-    def start_multiplayer(host):
+    def start_multiplayer(host, mission_mode=False):
         """Héberge ou rejoint une partie coop du Déferlement en LAN."""
         nonlocal game, state
         leave_game()
         menu_gamepad.close()
         try:
             if host:
-                game = CoopHostGame(screen, settings, sounds)
+                game = CoopHostGame(screen, settings, sounds, mission_mode=mission_mode)
             else:
                 game = CoopClientGame(screen, settings, sounds,
                                       settings.last_ip)
@@ -222,6 +222,8 @@ def main():
                 action = mp_menu.handle_event(event, screen)
                 if action == "host":
                     start_multiplayer(host=True)
+                elif action == "host_mission":
+                    start_multiplayer(host=True, mission_mode=True)
                 elif action == "join":
                     settings.save()
                     start_multiplayer(host=False)
@@ -275,7 +277,13 @@ def main():
                 game.gamepad.close()
                 menu_gamepad._open_first()
                 set_mouse_captured(False)
-                if isinstance(game, (SurvivalGame, CoopClientGame)):
+                if getattr(game, "mission_mode", False):
+                    transition = EndScreen(sounds, victory=game.outcome == "victory",
+                                           title="EXTRACTION" if game.outcome == "victory"
+                                           else "MISSION ÉCHOUÉE", stats=game.stats)
+                    state = "end"
+                    sounds.play_music("menu")
+                elif isinstance(game, (SurvivalGame, CoopClientGame)):
                     end_survival()
                 elif game.outcome == "dead":
                     transition = EndScreen(sounds, victory=False,

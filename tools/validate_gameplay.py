@@ -92,6 +92,22 @@ def validate(stage, output):
             finally:
                 game.close()
             host = CoopHostGame(screen, settings, sounds, port=0)
+            if stage >= 3:
+                mission_host = CoopHostGame(screen, settings, sounds, port=0, mission_mode=True)
+                mission_client = CoopClientGame(screen, settings, sounds, "127.0.0.1",
+                                                port=mission_host.peer.sock.getsockname()[1])
+                mission_host.peer.sock = MeasuredSocket(mission_host.peer.sock)
+                mission_client.peer.sock = MeasuredSocket(mission_client.peer.sock)
+                try:
+                    for _ in range(15):
+                        mission_host.update(1 / 60)
+                        mission_client.update(1 / 60)
+                    assert mission_client.synced and mission_client.mission_mode
+                    mission_client.draw(screen)
+                    pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-mission-coop.png")
+                finally:
+                    mission_client.close()
+                    mission_host.close()
             client = CoopClientGame(screen, settings, sounds, "127.0.0.1",
                                     port=host.peer.sock.getsockname()[1])
             host.peer.sock = MeasuredSocket(host.peer.sock)

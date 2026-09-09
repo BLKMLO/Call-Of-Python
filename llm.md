@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 et 2 validées ; Entrepôt jouable en solo. Étapes 3–10 restent à
+Étapes 1 à 3 validées ; Entrepôt jouable en solo et en LAN. Étapes 4–10 restent à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -18,6 +18,19 @@ contrats ; elle ne remplace pas un parcours humain ni un test matériel tactile.
 Recette étape 2 : 119 tests, Ruff OK, fin de mission en solo, coop Déferlement
 loopback et captures aux deux résolutions. 24 ennemis : médiane/p95 6,494/9,681 ms
 et 10,881/14,419 ms ; datagrammes <=530 octets, mêmes conditions que l'étape 1.
+
+Étape 3 : `CoopHostGame(mission_mode=True)` utilise `Game.update` pour
+l'Entrepôt ; sinon `SurvivalGame.update` demeure le pilote du Déferlement.
+Le menu LAN distingue les deux hébergements ; `welcome.mode` configure le
+monde local du client. Les ennemis initiaux reçoivent un ID réseau ; arsenal
+initial Entrepôt limité au pistolet. Fin LAN distincte des records de vagues.
+Protocole courant **v4** (remplace toutes les mentions historiques v3 ci-dessous).
+`ix=[séquence,index]`, `ia` et `ms` : voir `docs/network-protocol.md`.
+Ne jamais simuler les objectifs sur le client. Les portes incluent les joueurs
+distants. La purge des entrées annule les demandes d'interaction non acquittées.
+Recette étape 3 : 120 tests, Ruff OK, solo et coop des deux modes, retransmission
+et arrivée tardive ; captures client aux deux tailles. Benchmark 24 ennemis :
+médiane/p95 5,979/8,607 ms et 10,246/11,649 ms ; UDP observé <=538 octets.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms
