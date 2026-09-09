@@ -10,6 +10,7 @@ import math
 import pygame
 
 import assets
+from boss_patterns import BossPattern
 from elites import variant_sprite
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
@@ -627,6 +628,7 @@ class Boss(Enemy):
     def __init__(self, x, y, health_mult=1.0, damage_mult=1.0):
         super().__init__(x, y, health_mult, damage_mult)
         self.phase = 1
+        self.pattern = BossPattern()
         self._pending_phase_events = []
         self._apply_phase_stats()
 

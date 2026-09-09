@@ -32,6 +32,11 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+`en[15]` est `null` ou `[état,attaque,x_cible,y_cible,temps]` pour un Colosse.
+États connus : idle/warn/charge/recover ; attaques charge/slam. Coordonnées et
+timer (0–10 s) sont bornés. Les impacts passent par la santé autoritaire ;
+l'effet de frappe utilise l'événement d'explosion fiable existant `ex`.
+
 La ligne `en` ajoute aux 13 champs antérieurs l'identifiant élite (`""`,
 `bulwark`, `hunter`) puis le booléen entier d'aura. `commander` est un type
 ennemi connu. Le client utilise ces champs pour le rendu, et la santé maximale

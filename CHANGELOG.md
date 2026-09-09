@@ -1,5 +1,13 @@
 # Changelog
 
+## Gameplay — étape 8 (2026-09-09)
+
+- Colosse : charge et frappe de zone annoncées, cible verrouillée,
+  récupération exploitable ; comportement à pas fixe répliqué.
+- Tracé au sol avec caméra/z-buffer du monde, collisions de charge sous-échantillonnées.
+- Un impact maximum par attaque et par joueur ; seuils/packs de phase conservés.
+- 137 tests, deux résolutions, loopback et benchmark 24 ennemis dont Colosse.
+
 ## Gameplay — étape 7 (2026-09-08)
 
 - Deux variantes élites et un Commandant de soutien, dans l'Entrepôt et le

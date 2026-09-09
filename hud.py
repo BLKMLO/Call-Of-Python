@@ -772,7 +772,11 @@ class HUD:
         panel = self._panel((bar_w + 28, 52), HUD_AMBER)
         screen.blit(panel, (x - 14, y - 25))
         phase = max(1, min(3, int(getattr(boss, "phase", 1))))
-        name = self._text(self.font, f"LE COLOSSE — PHASE {phase}", HUD_AMBER)
+        state = getattr(getattr(boss, "pattern", None), "state", "idle")
+        label = {"warn": "ATTAQUE IMMINENTE", "charge": "CHARGE", "recover": "RÉCUPÉRATION"}
+        name = self._text(self.font, label.get(state, f"LE COLOSSE — PHASE {phase}"), HUD_AMBER)
+        if name.get_width() > bar_w:
+            name = pygame.transform.smoothscale(name, (bar_w, name.get_height()))
         screen.blit(name, ((self.width - name.get_width()) // 2, y - 21))
         pygame.draw.rect(screen, (40, 18, 17), (x, y, bar_w, bar_h))
         phase_colors = ((226, 91, 45), (238, 142, 46), (92, 226, 124))

@@ -1,5 +1,12 @@
 # Architecture
 
+`BossPattern` produit les transitions annonce/charge/frappe/récupération.
+`Game._tick_boss` remplace l'IA standard seulement pendant une séquence active ;
+l'IA et les stats de phase existantes restent actives entre ces séquences.
+La charge découpe ses déplacements en pas <=0,1 m et les impacts sont dédupliqués
+par victime. `hazards.py` projette le tracé au sol avant l'ADS et vérifie le
+z-buffer. Les clients n'avancent pas les patterns ; ils affichent leur instantané.
+
 `elites.py` applique une fois les variantes et recalcule l'aura booléenne du
 Commandant. L'IA multiplie uniquement le délai du prochain tir ; dégâts, seuils
 du boss et délais existants de sniper/roulade sont conservés. `sprite_kind`

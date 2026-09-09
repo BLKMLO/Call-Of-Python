@@ -15,8 +15,9 @@ from ai import EnemyAI
 from coop_support import Pings
 from difficulty import get_difficulty
 from elites import apply_elite, update_command
-from entities import ENEMY_TYPES, Pickup, Player, Prop
+from entities import ENEMY_TYPES, Pickup, Player, Prop, move_with_entity_collisions
 from gamepad import GamepadInput, reset_gameplay_input
+from hazards import draw_boss_warnings
 from hud import HUD
 from level import Level
 from mission_marker import MissionMarker
@@ -378,6 +379,8 @@ class Game:
         # plusieurs en coopération LAN).
         for ai in self.ais:
             target = self._ai_target(ai.enemy)
+            if ai.enemy.IS_BOSS and self._tick_boss(ai.enemy, dt, target):
+                continue
             for event, data in ai.update(dt, target, self.level):
                 if event == "enemy_shot":
                     self.sounds.play("enemy_shot", volume_scale=0.9,
@@ -427,6 +430,51 @@ class Game:
 
     def _objective_visible(self, x0, y0, x1, y1):
         return has_line_of_sight(self.level, x0, y0, x1, y1)
+
+    def _tick_boss(self, boss, dt, target):
+        blocked, events = boss.pattern.step(dt, boss, target, self._objective_visible)
+        if blocked:
+            boss.update_timers(dt)
+            boss.moving = boss.aiming = False
+        for event in events:
+            if event == "warn":
+                label = "CHARGE" if boss.pattern.kind == "charge" else "FRAPPE"
+                self.hud.announce("COLOSSE : " + label)
+            elif event == "move":
+                dx = math.cos(boss.pattern.angle) * 5.5 * dt
+                dy = math.sin(boss.pattern.angle) * 5.5 * dt
+                old = boss.x, boss.y
+                steps = max(1, math.ceil(math.hypot(dx, dy) / .1))
+                for _ in range(steps):
+                    boss.x, boss.y = move_with_entity_collisions(
+                        self.level, boss.x, boss.y, dx / steps, dy / steps,
+                        boss.RADIUS, self._all_players())
+                boss.moving = (boss.x, boss.y) != old
+                if not boss.moving:
+                    boss.pattern.state, boss.pattern.timer = "recover", 1.2
+                self._boss_area_damage(boss, boss.x, boss.y, 1.0, 24)
+            elif event == "slam":
+                self._boss_area_damage(boss, boss.pattern.x, boss.pattern.y, 1.8, 28)
+                self._explosion_effect(boss.pattern.x, boss.pattern.y)
+        return blocked
+
+    def _boss_area_damage(self, boss, x, y, radius, damage):
+        for victim in self._all_players():
+            if (victim.alive and id(victim) not in boss.pattern.hits
+                    and math.hypot(victim.x - x, victim.y - y) <= radius
+                    and self._objective_visible(x, y, victim.x, victim.y)):
+                boss.pattern.hits.add(id(victim))
+                before = victim.health
+                victim.take_damage(round(damage * boss.damage_mult))
+                if victim.health < before:
+                    self._on_player_hit(boss, victim)
+
+    def _explosion_effect(self, x, y):
+        self.particles.spawn_explosion(x, y)
+        self.sounds.play("explosion", pos=(x, y), listener=self.player)
+        queue = getattr(self, "_queue_net_event", None)
+        if queue is not None:
+            queue(["ex", round(x, 2), round(y, 2)])
 
     def _ping(self, actor=None, pid=0):
         actor = actor or self.player
@@ -885,6 +933,7 @@ class Game:
 
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+        draw_boss_warnings(screen, self.player, self.raycaster, self.enemies)
 
         if dead:
             self._death_cam_roll(screen, fall)

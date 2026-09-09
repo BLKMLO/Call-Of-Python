@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 7 validées ; Entrepôt jouable en solo et en LAN. Étapes 8–10 restent à
+Étapes 1 à 8 validées ; Entrepôt jouable en solo et en LAN. Étapes 9–10 restent à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -85,6 +85,18 @@ Déferlement : deux candidats élites dès 4, Commandant à 5/15/25. File désor
 `Enemy.sprite_kind` évite de demander des PNG inexistants pour le Commandant.
 134 tests et Ruff OK, recette solo/loopback 24 ennemis dont 3 élites et un
 Commandant : médiane/p95 5,960/9,632 ms et 10,621/15,526 ms, UDP <=653 octets.
+
+Étape 8 : `boss_patterns.py` état idle/warn/charge/recover. Annonce 1,2 s,
+charge 0,65 s à 5,5 m/s, récupération 1,2 s, attente 4,5−0,5×phase. Cible
+verrouillée à l'annonce ; phase >=2 alterne charge et frappe de rayon 1,8 m.
+Dégâts 24 charge/28 frappe avant difficulté, une fois par victime. Murs et
+collisions arrêtent la charge, pas de dégâts de zone à travers les murs.
+L'IA standard ne tourne pas pendant les patterns ; les timers d'entité avancent.
+Ne pas casser les packs de seuils 2/3 et 1/3. Réplication `en[15]`, aucune
+simulation du pattern côté client. `hazards.py` projette un tracé au sol
+avec z-buffer, avant ADS ; remplace une première balise billboard trop grande.
+137 tests/Ruff OK. Recette étape 8 avec 24 ennemis, boss, élites et Commandant :
+médiane/p95 6,280/8,422 ms et 10,731/22,444 ms ; UDP observé <=697 octets.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms

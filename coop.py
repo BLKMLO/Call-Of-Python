@@ -34,6 +34,7 @@ from entities import (
 )
 from game import GUNSHOT_HEARING, SLOT_SCANCODES, Game, new_stats
 from gamepad import GamepadInput, reset_gameplay_input
+from hazards import draw_boss_warnings
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
 from mission_marker import MissionMarker
@@ -618,7 +619,7 @@ class CoopHostGame(SurvivalGame):
                     round(e.angle, 3), e.health, int(e.moving),
                     int(e.flash_timer > 0), int(e.aiming), int(e.rolling),
                     round(e.roll_timer, 2), e.max_health, int(e.possessed),
-                    e.elite, int(e.commanded)]
+                    e.elite, int(e.commanded), e.pattern.snapshot() if e.IS_BOSS else None]
                    for e in self.enemies if e.net_id is not None]
         static_pickups = [p for p in self.pickups if not p.dynamic]
         dynamic_pickups = [
@@ -1524,6 +1525,8 @@ class CoopClientGame:
             elite = data[13] if len(data) > 13 else ""
             ghost.elite = elite if isinstance(elite, str) and elite in ELITES else ""
             ghost.commanded = len(data) > 14 and type(data[14]) is int and data[14] == 1
+            if ghost.IS_BOSS and len(data) > 15 and data[15] is not None:
+                ghost.pattern.apply_snapshot(data[15])
             ghost.set_possessed(possessed)
             if max_health is not None:
                 ghost.max_health = round(max_health)
@@ -1724,6 +1727,7 @@ class CoopClientGame:
                             * shake_scale)
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+        draw_boss_warnings(screen, self.player, self.raycaster, self.ghosts.values())
         if self.player.rolling:
             Game._player_roll_camera(self, screen)
         if self.player.ads > 0.01:

@@ -64,6 +64,13 @@ def validate(stage, output):
                         apply_elite(target, elite)
                     gallery.draw(screen)
                     pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-elites.png")
+                    if stage >= 8:
+                        gallery.enemies.clear()
+                        gallery.ais.clear()
+                        boss = gallery.spawn_enemy("boss", 6.5, 2.5)
+                        boss.pattern.apply_snapshot(["warn", "slam", 3.5, 2.5, 1.2])
+                        gallery.draw(screen)
+                        pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-boss.png")
                 finally:
                     gallery.close()
             if stage >= 2:
@@ -95,6 +102,8 @@ def validate(stage, output):
                 for index, (x, y) in enumerate(positions[:24]):
                     kind = "commander" if stage >= 7 and index == 0 else (
                         "grunt", "soldier", "heavy")[index % 3]
+                    if stage >= 8 and index == 4:
+                        kind = "boss"
                     enemy = game.spawn_enemy(kind, x, y)
                     if stage >= 7 and index in (1, 2, 3):
                         apply_elite(enemy, "bulwark" if index == 1 else "hunter")
@@ -144,6 +153,7 @@ def validate(stage, output):
                 host.intermission = 1000
                 for index, (x, y) in enumerate(positions[:24]):
                     enemy = host.spawn_enemy("commander" if stage >= 7 and index == 0
+                                             else "boss" if stage >= 8 and index == 4
                                              else "grunt", x, y)
                     if stage >= 7 and index in (1, 2, 3):
                         apply_elite(enemy, "bulwark" if index == 1 else "hunter")
@@ -165,6 +175,14 @@ def validate(stage, output):
                         host.update(1 / 60)
                         client.update(1 / 60)
                     assert client.rescue_rows and client.pings.markers
+                if stage >= 8:
+                    boss = next(e for e in host.enemies if e.IS_BOSS)
+                    boss.pattern.apply_snapshot(["warn", "slam", host.player.x,
+                                                  host.player.y - 3, 1.2])
+                    host._broadcast()
+                    client._net_receive()
+                    ghost = next(e for e in client.ghosts.values() if e.IS_BOSS)
+                    assert ghost.pattern.state == "warn"
                 host.draw(screen)
                 client.draw(screen)
                 pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-coop.png")

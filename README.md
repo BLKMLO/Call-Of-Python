@@ -81,6 +81,12 @@ roulades, cadence, chargeurs et degats.
 
 ## Points techniques
 
+Colosse : annonce de 1,2 s avant une charge rectiligne, puis 1,2 s de
+récupération. Dès la phase 2, il alterne avec une frappe sur une zone verrouillée
+de rayon 1,8 m. Sortez du tracé au sol ou utilisez la fenêtre d'invulnérabilité
+de roulade. Murs et obstacles arrêtent la charge ; chaque attaque ne touche
+qu'une fois chaque joueur. Les deux packs de changement de phase sont conservés.
+
 Bestiaire : Résistant (bleu : +35 % vie, -10 % vitesse), Traqueur (rouge :
 +15 % vitesse, délai entre tirs -10 %), Commandant (doré : cadence des alliés
 à moins de 5 m accélérée de 25 % avec ligne de vue). Éliminez le Commandant
