@@ -42,8 +42,10 @@ def format_stats(stats):
         return None
     accuracy = (100.0 * stats["hits"] / stats["shots"]) if stats["shots"] else 0.0
     minutes, seconds = divmod(int(stats["time"]), 60)
-    return (f"Éliminations : {stats['kills']}   "
-            f"Précision : {accuracy:.0f} %   "
+    score = (f"Score : {stats['score']} · Grade {stats.get('grade', 'D')} · "
+             if "score" in stats else "")
+    return (score + f"Éliminations : {stats['kills']} · "
+            f"Précision : {accuracy:.0f} % · "
             f"Temps : {minutes} min {seconds:02d} s")
 
 
@@ -650,10 +652,11 @@ class EndScreen(MenuBase):
     menu_vertical_offset = 0.13
 
     def __init__(self, sounds, victory, title=None, subtitle=None,
-                 survival=False, stats=None):
+                 survival=False, stats=None, coop_mission=False):
         super().__init__(sounds)
         self.victory = victory
         self.survival = survival
+        self.coop_mission = coop_mission
         self.stats_line = format_stats(stats)
         self.title = title or ("VICTOIRE !" if victory else "GAME OVER")
         if subtitle is not None:
@@ -664,6 +667,8 @@ class EndScreen(MenuBase):
             self.subtitle = "Vous avez été abattu — vous repartez de zéro."
 
     def items(self):
+        if self.coop_mission:
+            return [("multiplayer", "Retour au menu LAN"), ("menu", "Menu principal")]
         if self.survival:
             label = "Rejouer le Déferlement"
             action = "survival"
@@ -699,6 +704,7 @@ class MultiplayerMenu(MenuBase):
             ip_label = f"Adresse de l'hôte : {self.settings.last_ip}"
         return [
             ("host", "Héberger (Le Déferlement en coop)"),
+            ("host_mission", "Héberger (Mission Entrepôt en coop)"),
             ("ip", ip_label),
             ("join", "Rejoindre cette adresse"),
             ("back", "Retour"),

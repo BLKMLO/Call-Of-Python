@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "call-of-python"
-version = "0.4.0"
+version = "0.5.0"
 description = "FPS retro en raycasting Python/pygame, jouable en solo et en cooperation LAN"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -36,7 +36,8 @@ py-modules = [
   "ai", "assets", "coop", "difficulty", "entities", "game", "gamepad",
   "hud", "level", "main", "menu", "network", "particles", "raycaster",
   "resources", "runtime", "settings", "sounds", "survival", "touch_controls", "version",
-  "weapons",
+  "weapons", "objectives", "mission_marker", "upgrades", "upgrade_ui", "mutators",
+  "coop_support", "support_ui", "elites", "boss_patterns", "hazards", "grenades", "scoring",
 ]
 
 [tool.setuptools.data-files]

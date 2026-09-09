@@ -54,7 +54,13 @@ class PriorityFixTests(unittest.TestCase):
         pygame.quit()
 
     def _host_with_v2_remote(self):
+        from coop_support import Pings, Rescue
+
         host = CoopHostGame.__new__(CoopHostGame)
+        host.rescue, host.pings = Rescue(), Pings()
+        host.grenades = []
+        from scoring import ScoreBook
+        host.score = ScoreBook()
         host.level = Level(4, config=SURVIVAL_LEVEL)
         host.net_time = 0.0
         host.paused = False
@@ -206,7 +212,10 @@ class PriorityFixTests(unittest.TestCase):
         self.assertEqual(remote.angle, 0.0)
 
     def test_host_retransmits_events_until_client_acknowledges(self):
+        from objectives import Mission
+
         host, _remote = self._host_with_v2_remote()
+        host.mission = Mission()
         host.snapshot_sequence = 0
         host.peer = Mock()
         host.hud = Mock(flash=0)
@@ -232,7 +241,11 @@ class PriorityFixTests(unittest.TestCase):
         self.assertEqual(len(host.event_journal), 0)
 
     def test_snapshot_session_sequence_and_reliable_event_order(self):
+        from upgrades import SessionUpgrades
+
         client = CoopClientGame.__new__(CoopClientGame)
+        client.upgrades = SessionUpgrades()
+        client.pending_upgrade = None
         client.host_session = "session-a"
         client.last_snapshot_sequence = -1
         client.last_event_sequence = 0

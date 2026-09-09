@@ -447,7 +447,9 @@ class EnemyAI:
             if enemy.aim_timer > 0.0:
                 return []
             enemy.cancel_aim()
-        enemy.fire_cooldown = enemy.FIRE_DELAY * random.uniform(0.85, 1.3)
+        enemy.fire_cooldown = (enemy.FIRE_DELAY * random.uniform(0.85, 1.3)
+                              * (.8 if enemy.commanded else 1)
+                              * (.9 if enemy.elite == "hunter" else 1))
         enemy.flash_timer = 0.12
         events = [("enemy_shot", enemy)]
         # Précision propre au type d'ennemi, décroissante avec la distance

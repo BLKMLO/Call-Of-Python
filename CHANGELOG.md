@@ -1,5 +1,92 @@
 # Changelog
 
+## 0.5.0 — Gameplay, étape 10 (2026-09-09)
+
+- Suivi de validation distante : correction du groupe de concurrence du workflow
+  Executables ; `matrix.os` n’est pas disponible au niveau global.
+
+- Score autoritaire partagé, crédits uniques, grades par niveau, résultats responsifs.
+- Bonus de secours plafonné et pénalité de mise à terre ; ravitaillement de grenades
+  indépendant du plafond des six améliorations.
+- Fin de mission LAN : retour au menu LAN ; types réseau malformés rejetés.
+- Recette finale ajoutée à la CI Windows/Ubuntu, règles et bilan documentés.
+- 145 tests réussis, couverture 78 %, wheel construit et démarrage installé vérifié.
+- 24 ennemis : médianes 6,324/10,761 ms aux deux résolutions, UDP <=718 octets.
+- Dix étapes conservées en commits distincts ; sauvegardes de progression inchangées.
+
+## Gameplay — étape 9 (2026-09-09)
+
+- Grenade à fusée fixe, rebonds, souffle avec ligne de vue et inventaire autoritaire.
+- Lancers acquittés/dédupliqués, huit projectiles maximum, alliés protégés du souffle direct.
+- 141 tests : inventaire/retransmission, mur, tir allié et packs du Colosse.
+- Deux résolutions, loopback, 24 ennemis ; UDP observé <=705 octets.
+
+## Gameplay — étape 8 (2026-09-09)
+
+- Colosse : charge et frappe de zone annoncées, cible verrouillée,
+  récupération exploitable ; comportement à pas fixe répliqué.
+- Tracé au sol avec caméra/z-buffer du monde, collisions de charge suréchantillonnées.
+- Un impact maximum par attaque et par joueur ; seuils/packs de phase conservés.
+- 137 tests, deux résolutions, loopback et benchmark 24 ennemis dont Colosse.
+
+## Gameplay — étape 7 (2026-09-08)
+
+- Deux variantes élites et un Commandant de soutien, dans l'Entrepôt et le
+  Déferlement. Aura de cadence avec distance/visibilité, suppression immédiate.
+- Variantes graphiques en cache borné, PNG inchangés ; réplication append-only.
+- Plafonds de trois élites et un Commandant ; 134 tests, UDP observé <=653 octets.
+
+## Gameplay — étape 6 (2026-09-08)
+
+- Secours coop : 20 s à terre, réanimation canalisée de 3 s, interruption sur
+  dégâts/roulade/éloignement/perte de vue, tir bloqué, retour à 40 PV.
+- Réapparition conservée après 20+6 s ; défaite si toute l'équipe tombe.
+- Ping borné, répliqué, position calculée par l'hôte ; clavier/manette/tactile.
+- Timers de secours/signaux, demandes et instantanés validés ; 132 tests.
+- HUD à terre vérifié aux deux résolutions ; temps de secours sous le titre.
+
+## Gameplay — étape 5 (2026-09-08)
+
+- Trois mutateurs Déferlement annoncés et répliqués, à partir de la vague 4.
+- Rotation reproductible, vagues de Colosse neutres, compte et dégâts préservés.
+- La file conserve vague et mutateur d'origine lors d'une submersion.
+- 127 tests, deux résolutions, loopback, 24 ennemis, UDP observé <=567 octets.
+
+## Gameplay — étape 4 (2026-09-08)
+
+- Améliorations temporaires individuelles : cinq bonus, trois cartes proposées,
+  six choix par partie et deux niveaux maximum par bonus.
+- Tirages isolés reproductibles ; délai autoritaire de 12 s, choix 1 par défaut.
+- Clavier F5–F7 (désormais réservées), croix manette, clic et tactile.
+- Réplication des propositions et des effets ; ni recharge offerte, ni remise
+  à zéro d'une recharge en cours, ni modification des statistiques de base.
+- 124 tests ; benchmark/loopback et inspection du HUD aux deux résolutions.
+
+## Gameplay — étape 3 (2026-09-08)
+
+- Hébergement LAN de l'Entrepôt ; carte choisie par le handshake, victoire
+  partagée et arrivée en cours de mission. Arsenal initial identique au solo.
+- Protocole v4 : demandes d'interaction acquittées, index d'objectif attendu,
+  chrono autoritaire. Anciens clients explicitement refusés.
+- Les portes automatiques prennent en compte les joueurs distants.
+- Fin de mission LAN séparée de la progression de campagne et des records
+  Déferlement. Aucun changement des sauvegardes de partie.
+
+## Gameplay — étape 2 (2026-09-08)
+
+- Entrepôt : manifeste, alarme, extraction de 8 secondes ; balise et guide HUD.
+- Action Interagir remappable, LB et tactile ; portée, visibilité, état de vie
+  et roulade contrôlés. Pause sans progression, extraction interrompue si sortie.
+- Les autres niveaux et le Déferlement conservent leurs conditions de victoire.
+- Recette automatisée de la mission, contrôles graphiques aux deux résolutions.
+
+## Gameplay — étape 1 (2026-09-08)
+
+- Moteur d'objectifs pur et borné, interactions avec distance/visibilité,
+  défense en temps de simulation, instantanés validés atomiquement.
+- Aucun changement des règles de victoire à cette étape ; anciennes parties conservées.
+- Recette `tools/validate_gameplay.py` : deux résolutions, 24 ennemis, loopback et MTU.
+
 ## [Non publié] — 2026-09-08
 
 - Navigation des menus au clavier et à la croix directionnelle SDL,

@@ -95,7 +95,8 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(game.finished)
 
     def test_campaign_victory_when_all_enemies_down(self):
-        game = Game(self.screen, self.settings, self.sounds, 0)
+        # Les niveaux sans objectifs conservent leur condition historique.
+        game = Game(self.screen, self.settings, self.sounds, 1)
         for enemy in game.enemies:
             enemy.health = 0
         _run_frames(game, self.screen, 10)
@@ -112,6 +113,207 @@ class SmokeTests(unittest.TestCase):
         info = game.survival_info()
         self.assertEqual(info["final"], FINAL_WAVE)
         self.assertGreaterEqual(info["remaining"], 0)
+
+    def test_submersion_preserves_queued_wave_and_mutator(self):
+        game = SurvivalGame(self.screen, self.settings, self.sounds)
+        self.addCleanup(game.close)
+        game._start_wave(4)
+        first = game.spawn_queue[0]
+        game._start_wave(7)
+        self.assertEqual(game.spawn_queue[0], first)
+        game._process_spawn_queue(1 / 60)
+        self.assertEqual(game.enemies[0].mutator, first[2])
+        self.assertEqual(first[1], 4)
+
+    def test_warehouse_objectives_gate_victory_and_freeze_when_paused(self):
+        game = Game(self.screen, self.settings, self.sounds, 0)
+        self.addCleanup(game.close)
+        for enemy in game.enemies:
+            enemy.health = 0
+        game.update(1 / 60)
+        self.assertIsNone(game.outcome)
+        self.assertFalse(game._interact())
+        for _ in range(2):
+            step = game.mission.current
+            self.assertFalse(game.level.is_wall(step.x, step.y))
+            game.player.x, game.player.y = step.x, step.y
+            self.assertTrue(game._interact())
+        step = game.mission.current
+        game.player.x, game.player.y = step.x, step.y
+        game.paused = True
+        for _ in range(60):
+            game.update(1 / 60)
+        self.assertEqual(game.mission.elapsed, 0)
+        game.paused = False
+        for _ in range(479):
+            game.update(1 / 60)
+        self.assertIsNone(game.outcome)
+        game.update(1 / 60)
+        self.assertEqual(game.outcome, "victory")
+
+    def test_warehouse_coop_authority_retry_late_join_and_extraction(self):
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0,
+                            mission_mode=True)
+        self.addCleanup(host.close)
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+
+        def ticks(count):
+            for _ in range(count):
+                host.update(1 / 60)
+                client.update(1 / 60)
+
+        ticks(12)
+        self.assertTrue(client.synced)
+        self.assertTrue(client.mission_mode)
+        self.assertEqual(len(client.ghosts), 8)
+        self.assertEqual([w.spec.id for w in client.player.weapons], ["pistol"])
+        client._request_interaction()
+        ticks(12)
+        self.assertEqual(host.mission.index, 0)  # rejet hors portée, acquitté
+        self.assertIsNone(client.pending_interaction)
+        for enemy in host.enemies:
+            enemy.health = 0
+        remote = host.clients[client.pid]["player"]
+        for expected in (1, 2):
+            step = host.mission.current
+            remote.x = client.player.x = step.x
+            remote.y = client.player.y = step.y
+            client._request_interaction()
+            request = list(client.pending_interaction)
+            ticks(12)
+            self.assertEqual(host.mission.index, expected)
+            self.assertEqual(client.mission.index, expected)
+            chosen = client.upgrades.offers[1]
+            previous = client.upgrades.levels.get(chosen, 0)
+            client._choose_upgrade(1)
+            ticks(12)
+            self.assertEqual(client.upgrades.levels[chosen], previous + 1)
+            self.assertEqual(client.upgrades.levels, host.clients[client.pid]["upgrades"].levels)
+            client.pending_interaction = request  # retransmission après perte d'ACK
+            ticks(12)
+            self.assertEqual(host.mission.index, expected)
+        late = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                              port=host.peer.sock.getsockname()[1])
+        self.addCleanup(late.close)
+        for _ in range(12):
+            ticks(1)
+            late.update(1 / 60)
+        self.assertEqual(late.mission.index, 2)
+        self.assertTrue(late.mission_mode)
+        ticks(500)  # l'hôte attend déjà dans la zone d'extraction
+        self.assertEqual(host.outcome, "victory")
+        self.assertEqual(client.outcome, "victory")
+
+    def test_coop_rescue_and_ping_are_host_authoritative(self):
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0)
+        self.addCleanup(host.close)
+        host.intermission = 1000
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+
+        def ticks(count):
+            for _ in range(count):
+                host.update(1 / 60)
+                client.update(1 / 60)
+
+        ticks(12)
+        host.player.health = 0
+        remote = host.clients[client.pid]["player"]
+        remote.x = client.player.x = host.player.x + .5
+        remote.y = client.player.y = host.player.y
+        ticks(12)
+        self.assertTrue(client.rescue_rows)
+        client._request_interaction()
+        ticks(190)
+        self.assertEqual(host.player.health, 40)
+        self.assertTrue(client.allies[0].alive)
+        self.assertFalse(client.rescue_rows)
+        client._ping()
+        ticks(12)
+        self.assertIn(client.pid, host.pings.markers)
+        self.assertEqual(set(client.pings.markers), set(host.pings.markers))
+        self.assertIsNone(client.pending_ping)
+
+    def test_grenade_respects_walls_and_boss_phase_packs(self):
+        from grenades import Grenade
+
+        game = Game(self.screen, self.settings, self.sounds)
+        self.addCleanup(game.close)
+        game.enemies.clear()
+        game.ais.clear()
+        enemy = game.spawn_enemy("grunt", 3.5, 2.5)
+        game.level.grid[2][2] = "1"
+        game._detonate_grenade(Grenade(0, 0, 1.5, 2.5))
+        self.assertEqual(enemy.health, enemy.max_health)
+        game.level.grid[2][2] = "."
+        boss = game.spawn_enemy("boss", 5.5, 2.5)
+        boss.health = boss.max_health * 2 / 3 + 1
+        game._detonate_grenade(Grenade(1, 0, 5.5, 2.5))
+        self.assertEqual(boss.phase, 2)
+        self.assertEqual(sum(p.dynamic for p in game.pickups), 1)
+
+    def test_coop_grenade_retry_inventory_and_no_direct_friendly_fire(self):
+        from grenades import Grenade
+
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0)
+        self.addCleanup(host.close)
+        host.intermission = 1000
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+
+        def ticks(count):
+            for _ in range(count):
+                host.update(1 / 60)
+                client.update(1 / 60)
+
+        ticks(12)
+        client._throw_grenade()
+        request = client.pending_grenade
+        ticks(12)
+        self.assertEqual(client.grenade_ammo, 1)
+        self.assertTrue(client.grenades)
+        ticks(60)
+        client.pending_grenade = request
+        ticks(12)
+        self.assertEqual(host.clients[client.pid]["grenade_ammo"], 1)
+        remote = host.clients[client.pid]["player"]
+        host.player.shield = remote.shield = 0
+        remote.health = 100
+        remote.x, remote.y = host.player.x, host.player.y
+        before = host.player.health
+        host._detonate_grenade(Grenade(99, client.pid, remote.x, remote.y))
+        self.assertEqual(host.player.health, before)
+        self.assertEqual(remote.health, 40)
+
+    def test_malformed_gameplay_requests_do_not_crash_or_spend_inventory(self):
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0)
+        self.addCleanup(host.close)
+        host.intermission = 1000
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+        for _ in range(12):
+            host.update(1 / 60)
+            client.update(1 / 60)
+        record = host.clients[client.pid]
+        before = record["weapons"]["rifle"].ammo
+        sequence = client.input_sequence
+        for extra in ({"wid": []}, {"fx": [[{}, []]]}, {"uc": [[], 0]},
+                      {"ix": [True, 0]}, {"gr": {}}, {"pg": []}):
+            sequence += 1
+            message = dict(t="in", id=client.pid, sid=host.session_id, iq=sequence,
+                           x=client.player.x, y=client.player.y, a=0)
+            message.update(extra)
+            client.peer.send(message, client.host_addr)
+            host._net_receive()
+        self.assertEqual(record["weapons"]["rifle"].ammo, before)
+        self.assertEqual(record["grenade_ammo"], 2)
+        client._apply_enemies([[0, [], 1, 1, 0, 100, 0, 0]])
+        client._apply_authoritative_inventory([[[], 0]], "rifle")
 
     def test_menus_draw_and_click_at_extreme_resolutions(self):
         menus = [

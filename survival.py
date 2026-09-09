@@ -23,8 +23,10 @@ import random
 from collections import deque
 
 from difficulty import ThreatDirector
+from elites import apply_elite
 from game import Game
 from level import SURVIVAL_LEVEL
+from mutators import apply_mutator, composition, mutator_for_wave
 
 FINAL_WAVE = 30                # dernière vague
 WAVE_TIMEOUT_BASE = 30.0       # délai de submersion de la 1ère vague (s)
@@ -99,6 +101,7 @@ class SurvivalGame(Game):
                 pickup.level_index = 1
 
         self.wave = 0
+        self.mutator = ""
         self.wave_timer = 0.0          # chrono de submersion de la vague
         self.intermission = INTERMISSION
         self.spawn_queue = deque()     # types d'ennemis en attente
@@ -154,6 +157,7 @@ class SurvivalGame(Game):
         cleared = not self.spawn_queue and all(
             not e.alive for e in self.enemies)
         if cleared:
+            self.score.award(f"wave:{self.wave}", 200)
             if self.wave >= FINAL_WAVE:
                 self.outcome = "victory"     # le Déferlement est brisé
                 self.sounds.play("level_complete")
@@ -162,6 +166,8 @@ class SurvivalGame(Game):
                 self.player.health = min(self.player.max_health,
                                          self.player.health + CLEAR_HEAL)
                 self.intermission = INTERMISSION
+                if self.wave % 3 == 0:
+                    self._award_upgrades(f"wave:{self.wave}")
                 self.sounds.play("heal", volume_scale=0.7)
         elif self.wave_timer >= wave_timeout(self.wave) and self.wave < FINAL_WAVE:
             # Submersion : la vague suivante déferle par-dessus.
@@ -171,7 +177,14 @@ class SurvivalGame(Game):
         self.wave = number
         self.wave_timer = 0.0
         self.intermission = 0.0
-        self.spawn_queue.extend(wave_composition(number))
+        self.mutator = mutator_for_wave(number)
+        kinds = composition(wave_composition(number), self.mutator)
+        if number % 10 == 5:
+            kinds[0] = "commander"
+        self.spawn_queue.extend((kind, number, self.mutator,
+                                 ("bulwark" if i == 1 else "hunter")
+                                 if number >= 4 and i in (1, 3) else "")
+                                for i, kind in enumerate(kinds))
         self.sounds.play("wave", volume_scale=0.9)
         self.hud.announce(f"VAGUE {number}")
         self._refresh_pickups(number)
@@ -200,10 +213,15 @@ class SurvivalGame(Game):
         if (not self.spawn_queue or self.spawn_cooldown > 0.0
                 or sum(e.alive for e in self.enemies) >= MAX_ALIVE):
             return
-        kind = self.spawn_queue.popleft()
+        entry = self.spawn_queue.popleft()
+        kind, wave, mutator, elite = (entry if isinstance(entry, tuple)
+                                      else (entry, self.wave, "", ""))
         x, y = self._pick_spawn_point()
-        hp_mult, dmg_mult = wave_multipliers(self.wave)
+        hp_mult, dmg_mult = wave_multipliers(wave)
         enemy = self.spawn_enemy(kind, x, y, hp_mult, dmg_mult)
+        apply_mutator(enemy, mutator)
+        if sum(e.alive and bool(e.elite) for e in self.enemies) < 3:
+            apply_elite(enemy, elite)
         # Il surgit en chasse, pas en patrouille.
         self.ais[-1].alert((self.player.x, self.player.y))
         self.particles.spawn_portal(enemy.x, enemy.y)
@@ -246,6 +264,7 @@ class SurvivalGame(Game):
                      + len(self.spawn_queue))
         return {
             "wave": self.wave,
+            "mutator": self.mutator,
             "final": FINAL_WAVE,
             "remaining": remaining,
             "next_in": (self.intermission if self.intermission > 0.0

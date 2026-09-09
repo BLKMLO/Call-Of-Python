@@ -12,6 +12,7 @@ import random
 import pygame
 
 import assets
+from mutators import MUTATORS
 from weapons import WEAPON_ORDER
 
 HUD_GREEN = (82, 220, 153)
@@ -299,6 +300,33 @@ class HUD:
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
+    def draw_objective(self, screen, player, mission, key, visible):
+        step = mission.current
+        if step is None:
+            return
+        distance = math.hypot(step.x - player.x, step.y - player.y)
+        bearing = (math.atan2(step.y - player.y, step.x - player.x)
+                   - player.angle + math.pi) % (2 * math.pi) - math.pi
+        direction = "DEVANT" if abs(bearing) < 0.35 else ("DROITE" if bearing > 0 else "GAUCHE")
+        detail = f"{direction} · {distance:.0f} m"
+        if mission.in_range(player, step, visible):
+            detail = (f"[{key.upper()} / LB / ACT.] Interagir" if step.kind == "interact"
+                      else f"Rester dans la zone : {mission.elapsed:.1f} / {step.duration:.0f} s")
+        width = min(460, screen.get_width() - 32)
+        panel = pygame.Rect((screen.get_width() - width) // 2, 160, width, 54)
+        pygame.draw.rect(screen, (10, 22, 29), panel, border_radius=4)
+        title = f"{mission.index + 1}/{len(mission.steps)} · {step.label}"
+        for line, content in enumerate((title, detail)):
+            text = self.small_font.render(content, True, HUD_GREEN if line else HUD_TEXT)
+            if text.get_width() > width - 16:
+                text = pygame.transform.smoothscale(text, (width - 16, text.get_height()))
+            screen.blit(text, (panel.centerx - text.get_width() // 2, panel.y + 4 + line * 25))
+
+    def draw_grenade_count(self, screen, count):
+        text = self.small_font.render(f"FRAG. {count}/2", True, HUD_AMBER)
+        screen.blit(text, (screen.get_width() // 2 - text.get_width() // 2,
+                           screen.get_height() - 135))
+
     def draw(self, screen, player, enemies, level, pickups=(), fps=None,
              survival=None, stats=None):
         if self.flash > 0.0 and player.ads < 0.5:
@@ -330,6 +358,10 @@ class HUD:
         if fps is not None:
             self._draw_fps(screen, fps)
         self._draw_hurt_flash(screen, player)
+        if stats and "score" in stats:
+            score_text = self.small_font.render(f"SCORE {stats['score']}", True, HUD_TEXT)
+            screen.blit(score_text, (screen.get_width() // 2 - score_text.get_width() // 2,
+                                      screen.get_height() - 155))
 
     def _panel(self, size, accent=HUD_GREEN):
         """Plaque tactique translucide, construite une fois par variante."""
@@ -698,8 +730,11 @@ class HUD:
         screen.blit(label, (x + 14, 14))
 
     def _draw_survival(self, screen, info, boss_active=False):
-        """Sous le titre : vague courante, et compte à rebours (répit ou
-        submersion imminente)."""
+        """Vague courante, délai et variation annoncée."""
+        mutator = info.get("mutator", "")
+        if mutator in MUTATORS:
+            text = self.small_font.render(MUTATORS[mutator], True, HUD_AMBER)
+            screen.blit(text, (screen.get_width() // 2 - text.get_width() // 2, 195))
         if info["wave"] <= 0:
             text = f"La horde arrive dans {math.ceil(info['next_in'])} s..."
             color = (240, 200, 160)
@@ -713,10 +748,14 @@ class HUD:
             # le compte à rebours vire au rouge quand la submersion menace
             color = (230, 90, 70) if info["next_in"] < 15 else (220, 220, 160)
         label = self.font.render(text, True, color)
-        if boss_active:
-            y = 160 if self.width < 1000 else 105
+        if self.width < 1000:
+            y = 160
+        elif boss_active:
+            y = 105
         else:
             y = 50
+        if label.get_width() > self.width - 32:
+            label = pygame.transform.smoothscale(label, (self.width - 32, label.get_height()))
         screen.blit(label, ((self.width - label.get_width()) // 2, y))
 
     def _draw_announce(self, screen):
@@ -742,7 +781,11 @@ class HUD:
         panel = self._panel((bar_w + 28, 52), HUD_AMBER)
         screen.blit(panel, (x - 14, y - 25))
         phase = max(1, min(3, int(getattr(boss, "phase", 1))))
-        name = self._text(self.font, f"LE COLOSSE — PHASE {phase}", HUD_AMBER)
+        state = getattr(getattr(boss, "pattern", None), "state", "idle")
+        label = {"warn": "ATTAQUE IMMINENTE", "charge": "CHARGE", "recover": "RÉCUPÉRATION"}
+        name = self._text(self.font, label.get(state, f"LE COLOSSE — PHASE {phase}"), HUD_AMBER)
+        if name.get_width() > bar_w:
+            name = pygame.transform.smoothscale(name, (bar_w, name.get_height()))
         screen.blit(name, ((self.width - name.get_width()) // 2, y - 21))
         pygame.draw.rect(screen, (40, 18, 17), (x, y, bar_w, bar_h))
         phase_colors = ((226, 91, 45), (238, 142, 46), (92, 226, 124))
@@ -830,7 +873,7 @@ class HUD:
         self._red_veil.set_alpha(110)
         screen.blit(self._red_veil, (0, 0))
         title = self.big_font.render("VOUS ÊTES À TERRE", True, (240, 200, 190))
-        hint = self.font.render("Réapparition dans quelques secondes...",
+        hint = self.font.render("Un allié peut vous porter secours.",
                                 True, (220, 200, 200))
         screen.blit(title, ((self.width - title.get_width()) // 2,
                             self.height // 2 - 60))

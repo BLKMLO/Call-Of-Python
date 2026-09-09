@@ -12,14 +12,26 @@ import pygame
 
 import assets
 from ai import EnemyAI
+from coop_support import Pings
 from difficulty import get_difficulty
-from entities import ENEMY_TYPES, Pickup, Player, Prop
+from elites import apply_elite, update_command
+from entities import ENEMY_TYPES, Pickup, Player, Prop, move_with_entity_collisions
 from gamepad import GamepadInput, reset_gameplay_input
+from grenades import DAMAGE as GRENADE_DAMAGE
+from grenades import RADIUS as GRENADE_RADIUS
+from grenades import Grenade
+from hazards import draw_boss_warnings
 from hud import HUD
 from level import Level
+from mission_marker import MissionMarker
+from objectives import Mission
 from particles import ParticleSystem
-from raycaster import Raycaster, cast_ray, rotate_zoom_screen, zoom_screen
+from raycaster import Raycaster, cast_ray, has_line_of_sight, rotate_zoom_screen, zoom_screen
+from scoring import ScoreBook, enemy_points
+from support_ui import draw_support, ping_sprites
 from touch_controls import FINGER_EVENTS, TouchControls
+from upgrade_ui import choice_event, draw_choices
+from upgrades import SessionUpgrades
 
 MEDKIT_HEAL = 35
 PICKUP_RADIUS = 0.55         # distance de ramassage
@@ -48,6 +60,14 @@ class Game:
         self.settings = settings
         self.sounds = sounds
         self.level = Level(level_index, config=level_config)
+        self.mission = Mission(self.level.config.get("objectives", ()))
+        self.mission_marker = MissionMarker()
+        self.pings = Pings()
+        self.grenades = []
+        self.grenade_ammo = 2
+        self.grenade_cooldown = 0.0
+        self._next_grenade_id = 0
+        self._supply_tokens = set()
         self.level_index = level_index
         self.difficulty = get_difficulty(
             getattr(settings, "difficulty", "soldier"),
@@ -57,6 +77,8 @@ class Game:
         # Le joueur repart du spawn ; s'il vient du niveau précédent, il
         # garde son arsenal et récupère un peu de vie.
         self.player = Player(*self.level.player_spawn)
+        self.upgrades = getattr(carry_player, "session_upgrades", None) or SessionUpgrades()
+        self.player.session_upgrades = self.upgrades
         if carry_player is not None:
             self.player.weapons = carry_player.weapons
             self.player.weapon_index = carry_player.weapon_index
@@ -74,6 +96,13 @@ class Game:
         )
         self.enemies = [ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
                         for x, y, kind in self.level.enemy_spawns]
+        for index, elite in self.level.config.get("elites", {}).items():
+            if 0 <= index < len(self.enemies):
+                apply_elite(self.enemies[index], elite)
+        target_score = (20000 if self.level.is_survival else
+                        sum(enemy_points(e) for e in self.enemies)
+                        + 500 * len(self.mission.steps) + 500)
+        self.score = ScoreBook(self.stats.get("score", 0), target_score)
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
         self.pickups = [Pickup(x, y, kind, level_index)
                         for x, y, kind in self.level.pickup_spawns]
@@ -108,7 +137,13 @@ class Game:
     # Événements ponctuels (clics, touches, molette)
     # ------------------------------------------------------------------
     def handle_event(self, event):
-        """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
+        """Retourne menu si le joueur demande à quitter la partie, sinon None."""
+        if self.outcome is None and not self.paused and self.player.alive:
+            choice = choice_event(event, (self.raycaster.width, self.raycaster.height),
+                                  self.upgrades)
+            if choice is not None:
+                self._choose_upgrade(choice)
+                return None
         gamepad = getattr(self, "gamepad", None)
         if gamepad is not None:
             gamepad.handle_event(event)
@@ -155,6 +190,12 @@ class Game:
                 return "menu"
             elif event.key == pygame.K_F3:
                 self.show_fps = not self.show_fps
+            elif event.key == self.settings.keys.get("interagir", pygame.K_e):
+                self._interact()
+            elif event.key == self.settings.keys.get("signal", pygame.K_c):
+                self._ping()
+            elif event.key == self.settings.keys.get("grenade", pygame.K_g):
+                self._throw_grenade()
             elif (not self.paused and self.outcome is None
                   and self.player.alive
                   and (event.key == self.settings.keys["roulade"]
@@ -220,6 +261,12 @@ class Game:
             return None
         if action == "fire_down":
             self._player_fire()
+        elif action == "interact":
+            self._interact()
+        elif action == "ping":
+            self._ping()
+        elif action == "grenade":
+            self._throw_grenade()
         elif action in ("aim_down", "aim_up"):
             self.player.aiming = (
                 not self.player.rolling
@@ -263,6 +310,12 @@ class Game:
                     self.player.cycle_weapon(1)
                 elif action == "fire":
                     self._player_fire()
+                elif action == "interact":
+                    self._interact()
+                elif action == "ping":
+                    self._ping()
+                elif action == "grenade":
+                    self._throw_grenade()
         # Mort : on fige le gameplay mais on laisse tourner la caméra de
         # mort (chute + fondu) et les particules, même si une pause avait été
         # activée juste avant le coup fatal.
@@ -277,6 +330,9 @@ class Game:
         if self.outcome is not None and self.end_delay > 0.8:
             return
         self.time += dt
+        self._update_upgrades(dt)
+        self.pings.update(dt)
+        self._update_grenades(dt)
         self.shake = max(0.0, self.shake - dt * 3.5)
 
         player = self.player
@@ -338,10 +394,13 @@ class Game:
             self._check_pickups()
 
         # IA des ennemis → événements convertis en sons/effets/alertes.
+        update_command(self.enemies, self._objective_visible)
         # Chaque ennemi vise le joueur le plus proche (un seul en solo,
         # plusieurs en coopération LAN).
         for ai in self.ais:
             target = self._ai_target(ai.enemy)
+            if ai.enemy.IS_BOSS and self._tick_boss(ai.enemy, dt, target):
+                continue
             for event, data in ai.update(dt, target, self.level):
                 if event == "enemy_shot":
                     self.sounds.play("enemy_shot", volume_scale=0.9,
@@ -365,7 +424,7 @@ class Game:
         self._emit_lifepack_sparkles(dt)
 
         # Portes automatiques : s'ouvrent pour le joueur ET les ennemis.
-        movers = [player] + [e for e in self.enemies if e.alive]
+        movers = self._all_players() + [e for e in self.enemies if e.alive]
         for door_pos in self.level.update_doors(dt, movers):
             self.sounds.play("door", volume_scale=0.7,
                              pos=door_pos, listener=player)
@@ -374,20 +433,166 @@ class Game:
 
         # Conditions de fin (avec un léger délai pour "encaisser" la scène).
         if self.outcome is None:
+            self.mission.update(dt, self._all_players(), self._objective_visible,
+                                any(enemy.alive for enemy in self.enemies))
             self._check_outcome()
         else:
             self.end_delay += dt
+        self.score.observe(self.enemies, self.mission.index,
+                           self._score_players(),
+                           self.outcome)
+        self.stats.update(score=self.score.total, grade=self.score.grade)
 
     def _check_outcome(self):
         """Fin de partie standard ; surchargé par le mode survie."""
         if not self.player.alive:
             self.outcome = "dead"
-        elif all(not enemy.alive for enemy in self.enemies):
+        elif (self.mission.complete if self.mission.steps else
+              all(not enemy.alive for enemy in self.enemies)):
             self.outcome = "victory"
             self.sounds.play("level_complete")
 
+    def _objective_visible(self, x0, y0, x1, y1):
+        return has_line_of_sight(self.level, x0, y0, x1, y1)
+
+    def _tick_boss(self, boss, dt, target):
+        blocked, events = boss.pattern.step(dt, boss, target, self._objective_visible)
+        if blocked:
+            boss.update_timers(dt)
+            boss.moving = boss.aiming = False
+        for event in events:
+            if event == "warn":
+                label = "CHARGE" if boss.pattern.kind == "charge" else "FRAPPE"
+                self.hud.announce("COLOSSE : " + label)
+            elif event == "move":
+                dx = math.cos(boss.pattern.angle) * 5.5 * dt
+                dy = math.sin(boss.pattern.angle) * 5.5 * dt
+                old = boss.x, boss.y
+                steps = max(1, math.ceil(math.hypot(dx, dy) / .1))
+                for _ in range(steps):
+                    boss.x, boss.y = move_with_entity_collisions(
+                        self.level, boss.x, boss.y, dx / steps, dy / steps,
+                        boss.RADIUS, self._all_players())
+                boss.moving = (boss.x, boss.y) != old
+                if not boss.moving:
+                    boss.pattern.state, boss.pattern.timer = "recover", 1.2
+                self._boss_area_damage(boss, boss.x, boss.y, 1.0, 24)
+            elif event == "slam":
+                self._boss_area_damage(boss, boss.pattern.x, boss.pattern.y, 1.8, 28)
+                self._explosion_effect(boss.pattern.x, boss.pattern.y)
+        return blocked
+
+    def _boss_area_damage(self, boss, x, y, radius, damage):
+        for victim in self._all_players():
+            if (victim.alive and id(victim) not in boss.pattern.hits
+                    and math.hypot(victim.x - x, victim.y - y) <= radius
+                    and self._objective_visible(x, y, victim.x, victim.y)):
+                boss.pattern.hits.add(id(victim))
+                before = victim.health
+                victim.take_damage(round(damage * boss.damage_mult))
+                if victim.health < before:
+                    self._on_player_hit(boss, victim)
+
+    def _explosion_effect(self, x, y):
+        self.particles.spawn_explosion(x, y)
+        self.sounds.play("explosion", pos=(x, y), listener=self.player)
+        queue = getattr(self, "_queue_net_event", None)
+        if queue is not None:
+            queue(["ex", round(x, 2), round(y, 2)])
+
+    def _ping(self, actor=None, pid=0):
+        actor = actor or self.player
+        if self.paused or self.outcome is not None or not actor.alive:
+            return False
+        depth, _, _, _ = cast_ray(self.level, actor.x, actor.y, actor.angle)
+        distance = min(12.0, max(0.0, depth - 0.25))
+        return self.pings.add(pid, actor.x + math.cos(actor.angle) * distance,
+                              actor.y + math.sin(actor.angle) * distance)
+
+    def _interact(self, actor=None):
+        if self.paused or self.outcome is not None:
+            return False
+        changed = self.mission.interact(actor or self.player, self._objective_visible)
+        if changed:
+            self.sounds.play("click", volume_scale=0.6)
+            self._award_upgrades(f"mission:{self.level_index}:{self.mission.index}")
+        return changed
+
+    def _award_upgrades(self, token):
+        self.upgrades.award(token)
+        if token not in self._supply_tokens and len(self._supply_tokens) < 64:
+            self._supply_tokens.add(token)
+            self.grenade_ammo = min(2, self.grenade_ammo + 1)
+
+    def _throw_grenade(self):
+        if self.grenade_ammo > 0 and self.grenade_cooldown <= 0:
+            if self._spawn_grenade(self.player, 0):
+                self.grenade_ammo -= 1
+                self.grenade_cooldown = 1.0
+
+    def _spawn_grenade(self, actor, pid):
+        rescue = getattr(self, "rescue", None)
+        if (self.paused or self.outcome is not None or not actor.alive or actor.rolling
+                or len(self.grenades) >= 8 or (rescue is not None and pid in rescue.requests)):
+            return False
+        self.grenades.append(Grenade(self._next_grenade_id, pid, actor.x, actor.y, actor.angle))
+        self._next_grenade_id += 1
+        return True
+
+    def _update_grenades(self, dt):
+        if self.outcome is not None:
+            return
+        self.grenade_cooldown = max(0.0, self.grenade_cooldown - dt)
+        for grenade in list(self.grenades):
+            if grenade.step(dt, self.level.is_wall):
+                self.grenades.remove(grenade)
+                self._detonate_grenade(grenade)
+
+    def _detonate_grenade(self, grenade):
+        self._explosion_effect(grenade.x, grenade.y)
+        killed = 0
+        for enemy in self.enemies:
+            distance = math.hypot(enemy.x - grenade.x, enemy.y - grenade.y)
+            if (not enemy.alive or distance > GRENADE_RADIUS
+                    or not self._objective_visible(grenade.x, grenade.y, enemy.x, enemy.y)):
+                continue
+            before = enemy.health
+            died = enemy.take_damage(round(GRENADE_DAMAGE * (1 - .65 * distance / GRENADE_RADIUS)))
+            self._handle_boss_phase_events(enemy)
+            if enemy.health < before:
+                self._on_enemy_impact(enemy, fatal=died)
+            if died:
+                killed += 1
+                self.sounds.play("enemy_die", pos=(enemy.x, enemy.y), listener=self.player)
+                if enemy.EXPLODES:
+                    self._explode(enemy)
+        owner = self.player if grenade.owner == 0 else (
+            getattr(self, "clients", {}).get(grenade.owner, {}).get("player"))
+        if owner is not None and owner.alive:
+            distance = math.hypot(owner.x - grenade.x, owner.y - grenade.y)
+            if (distance <= GRENADE_RADIUS
+                    and self._objective_visible(grenade.x, grenade.y, owner.x, owner.y)):
+                before = owner.health
+                owner.take_damage(round(60 * (1 - .65 * distance / GRENADE_RADIUS)))
+                if owner.health < before:
+                    self._on_player_hit(grenade, owner)
+        if grenade.owner == 0:
+            self.stats["kills"] += killed
+        elif killed:
+            self._queue_net_event(["gk", grenade.owner, killed])
+
+    def _choose_upgrade(self, index):
+        self.upgrades.choose(self.upgrades.offer_id, index)
+        self.upgrades.apply(self.player.weapons)
+
+    def _update_upgrades(self, dt):
+        self.upgrades.update(dt)
+        self.upgrades.apply(self.player.weapons)
+
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
                     possessed=False):
+        if kind == "commander" and any(e.alive and e.KIND == kind for e in self.enemies):
+            kind = "soldier"
         """Ajoute un ennemi en cours de partie (vagues du Déferlement)."""
         enemy = ENEMY_TYPES[kind](
             x, y,
@@ -409,6 +614,9 @@ class Game:
     def _all_players(self):
         """Tous les joueurs à blesser (explosions...) ; un seul en solo."""
         return [self.player]
+
+    def _score_players(self):
+        return {0: self.player.alive}
 
     def _extra_sprites(self):
         """Billboards supplémentaires (coéquipiers en coop)."""
@@ -785,6 +993,9 @@ class Game:
     def draw(self, screen):
         # Billboards : décors, cadavres, ennemis, coéquipiers, objets.
         sprites = list(self.enemies) + self._extra_sprites() + self.props
+        sprites += self.mission_marker.sprites(self.mission)
+        sprites += ping_sprites(self)
+        sprites += self.grenades
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -810,6 +1021,7 @@ class Game:
 
         self.raycaster.render(screen, self.player, self.level, sprites,
                               self.particles, pitch_px)
+        draw_boss_warnings(screen, self.player, self.raycaster, self.enemies)
 
         if dead:
             self._death_cam_roll(screen, fall)
@@ -827,6 +1039,13 @@ class Game:
         self.hud.draw(screen, self.player, self.enemies, self.level,
                       self.pickups, fps=self.fps if self.show_fps else None,
                       survival=self.survival_info(), stats=self.stats)
+        self.hud.draw_objective(screen, self.player, self.mission,
+                                pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
+                                self._objective_visible)
+        draw_choices(screen, self.hud, self.upgrades)
+        self.hud.draw_grenade_count(screen, self.grenade_ammo)
+        if not hasattr(self, "rescue"):
+            draw_support(screen, self.hud, self.player, self.pings)
         if self.paused:
             self.hud.draw_pause(screen)
         self.touch.draw(screen, paused=self.paused)

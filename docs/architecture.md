@@ -1,5 +1,72 @@
 # Architecture
 
+Le workflow Executables utilise un groupe de concurrence par référence Git,
+indépendant de la matrice des jobs : les deux OS se construisent en parallèle
+et une nouvelle exécution de la même référence remplace l’ancienne.
+
+`scoring.ScoreBook` observe les morts créditées une fois, transitions de vie,
+objectifs et victoire. L’hôte détient le score commun ; les clients lisent `sc`.
+Les PID stables évitent une pénalité erronée lors d’une déconnexion. Le cumul
+suit les niveaux, mais le segment et sa cible sont réinitialisés pour le grade.
+Les récompenses de grenades utilisent des tokens séparés des six choix de bonus,
+avec déduplication bornée ; aucun état de partie supplémentaire n’est persisté.
+Voir [règles](gameplay.md) et [recette](gameplay-validation.md).
+
+`grenades.py` gère frottement, rebonds et fusée. Déplacements découpés en pas
+<=0,08 m, contrôle du rayon sur deux axes. `Game` retire le projectile avant
+résolution du souffle et réutilise les hooks de dégâts et packs du Colosse.
+Le client affiche seulement les projectiles reçus de l'hôte.
+
+`BossPattern` produit les transitions annonce/charge/frappe/récupération.
+`Game._tick_boss` remplace l'IA standard seulement pendant une séquence active ;
+l'IA et les stats de phase existantes restent actives entre ces séquences.
+La charge découpe ses déplacements en pas <=0,1 m et les impacts sont dédupliqués
+par victime. `hazards.py` projette le tracé au sol avant l'ADS et vérifie le
+z-buffer. Les clients n'avancent pas les patterns ; ils affichent leur instantané.
+
+`elites.py` applique une fois les variantes et recalcule l'aura booléenne du
+Commandant. L'IA multiplie uniquement le délai du prochain tir ; dégâts, seuils
+du boss, anticipation du sniper et délais de base sont conservés ; les nouveaux
+modificateurs annoncés affectent le délai du prochain tir, pas la roulade. `sprite_kind`
+sépare l'archétype réseau des PNG réutilisés (Commandant = silhouette soldat).
+Les variantes dérivées occupent un cache LRU de 128 surfaces maximum.
+
+`coop_support.Rescue` gère les timers à terre et les secours. Les joueurs à
+0 PV restent inactifs ; le résultat du moteur restaure 40 PV sur place ou
+60 PV au spawn. Une seule progression est comptée par victime ; les helpers
+ne multiplient pas la vitesse. L'hôte annule un secours client si sa dernière
+entrée date de plus de 350 ms. `Pings` limite débit, durée et cardinalité des
+marqueurs. `support_ui.py` rend ces états et recycle au plus quatre billboards.
+
+`mutators.py` choisit une variation bornée avec un générateur isolé. La file
+Déferlement stocke `(type, vague_origine, mutateur, elite)` ; les multiplicateurs sont
+appliqués une fois au spawn. Une submersion ne rééquilibre pas la file ancienne.
+Le boss est exclu des effets. Le client reçoit l'identifiant pour l'annonce,
+les positions et la vie maximale résultantes pour le rendu.
+
+`SessionUpgrades` détient uniquement l'état de partie : récompenses dédupliquées,
+tirages isolés par graine, propositions, délai fixe, niveaux plafonnés. Les effets
+reconstruisent les specs d'armes depuis `WEAPON_SPECS` sans les muter ; une signature
+évite de reconstruire à chaque tick. Les munitions et le ratio de recharge sont
+préservés. Le joueur transféré entre niveaux porte ce contexte temporaire.
+`upgrade_ui.py` partage rectangles de choix et affichage pour souris/tactile.
+
+`objectives.py` contient les définitions immuables et la progression d'une
+mission. Aucune dépendance SDL ni réseau : seul le simulateur autoritaire
+appelle `interact/update`, les clients lisent les instantanés validés.
+
+`Level.config.objectives` déclare la séquence de l'Entrepôt. `Game` vérifie la
+portée et la ligne de vue, avance les timers au pas fixe et choisit la victoire
+par mission si elle existe. Les cartes sans objectifs gardent l'élimination.
+`MissionMarker` produit une surface réutilisée pour la balise ; le HUD rend
+la direction, la distance et l'action sans modifier l'état de mission.
+
+L'hôte LAN peut exécuter la mission Entrepôt (`mission_mode=True`) via
+`Game.update`, ou les vagues via `SurvivalGame.update`. Le client charge le
+monde local correspondant au mode connu du handshake. Le protocole v4 porte
+les interactions acquittées et les instantanés de mission ; aucun client
+ne décide de la progression. Les transitions LAN ne débloquent pas la campagne.
+
 `main.py` pilote les ecrans et le rendu. En partie, `FixedStepClock` transforme
 le temps de rendu en pas constants de 1/60 s. Le rendu reste libre et ne
 modifie pas l'etat de jeu.
@@ -19,7 +86,7 @@ partie gardent leur cycle de vie existant. `reset_gameplay_input` purge
 souris, tactile, actions manette et tirs clients en attente lors des pauses,
 reprises et pertes de focus. Les gâchettes doivent revenir au repos pour
 être réarmées. Le client purge aussi lors de la levée d'une pause hôte.
-La simulation réseau continue pendant la pause locale ; le protocole v3,
+La simulation réseau continue pendant la pause locale ; le protocole v4,
 les séquences et la validation autoritaire ne changent pas.
 
 Responsabilites principales :

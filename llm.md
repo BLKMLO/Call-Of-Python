@@ -1,5 +1,144 @@
 # llm.md — Contexte projet unique (source de vérité)
 
+## Évolution gameplay — état de réalisation
+
+Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
+Étapes 1 à 10 implémentées et validées localement ; Entrepôt solo et LAN.
+Version jeu 0.5.0, protocole v4. PR brouillon #29 ; CI à consulter sur GitHub.
+Suivi distant : workflow release préexistant invalide (`matrix.os` au niveau
+global). Groupe corrigé en `executables-${{ github.ref }}` ; matrice de jobs
+inchangée. Correctif de publication séparé après les dix étapes gameplay. Pas de changement de sauvegardes. Ne jamais annoncer une étape
+validée sans tests et recette. Rollback : réversion du commit de l'étape.
+
+Étape 10 : `scoring.py`, score commun autoritaire et grade par segment de niveau.
+Ennemi crédité une fois, objectif +500, vague nettoyée +200, victoire +500,
+mise à terre -150 par transition, secours +250 limité aux quatre premiers.
+Cible campagne = budget initial des ennemis + objectifs + victoire ; cible
+Déferlement 20 000. D/C/B à 0/25/50 %, A/S à 75/90 % avec victoire obligatoire.
+Le cumul suit la campagne, jamais une nouvelle partie ; grade segment local.
+`sc` réplique les cinq champs validés ; PID stables pour les transitions de vie.
+Grenades : tokens de ravitaillement séparés des six récompenses d’amélioration,
+pour continuer une charge chaque troisième vague nettoyée (déduplication bornée).
+Fin Entrepôt LAN : bouton retour LAN, pas de lancement de campagne solo.
+145 tests, couverture de branches incluse 78 %, Ruff OK, wheel 0.5.0 installé
+et démarré hors du clone. Recette 24 ennemis, deux résolutions, loopback réel,
+choix/timers déterministes : médiane/p95 6,324/7,579 ms et 10,761/15,582 ms ;
+UDP maximal observé 718 octets. Budget 1 200 contrôlé sur chaque envoi mesuré.
+`tools/validate_gameplay.py --stage 10` est aussi exécuté en CI sur les deux OS.
+Voir `docs/gameplay.md` et `docs/gameplay-validation.md` pour règles, preuves
+et limites : SDL dummy ne valide ni le ressenti humain ni le LAN multi-machine.
+Conserver toutes les gates demandées par l’utilisateur et mettre à jour README,
+CHANGELOG, architecture, réseau si nécessaire et ce contexte à chaque étape.
+
+Entrepôt : manifeste (25,5 ; 18,5), alarme (24,5 ; 3,5), extraction au spawn
+(1,5 ; 1,5), rayon 1,4 et maintien de 8 s consécutives. `Game.mission` impose
+cette victoire ; tous les autres niveaux utilisent encore l'élimination.
+Interaction E/remappable, LB, tactile ACT. Portée/ligne de vue/vie/roulade
+contrôlées ; pause et outcome bloquent l'action. HUD à y=160 pour éviter la
+minimap à 800×600 ; `mission_marker.py` dessine une balise sans modifier les PNG.
+La recette de fin de mission place le joueur aux objectifs pour isoler les
+contrats ; elle ne remplace pas un parcours humain ni un test matériel tactile.
+Recette étape 2 : 119 tests, Ruff OK, fin de mission en solo, coop Déferlement
+loopback et captures aux deux résolutions. 24 ennemis : médiane/p95 6,494/9,681 ms
+et 10,881/14,419 ms ; datagrammes <=530 octets, mêmes conditions que l'étape 1.
+
+Étape 3 : `CoopHostGame(mission_mode=True)` utilise `Game.update` pour
+l'Entrepôt ; sinon `SurvivalGame.update` demeure le pilote du Déferlement.
+Le menu LAN distingue les deux hébergements ; `welcome.mode` configure le
+monde local du client. Les ennemis initiaux reçoivent un ID réseau ; arsenal
+initial Entrepôt limité au pistolet. Fin LAN distincte des records de vagues.
+Protocole courant **v4** (remplace toutes les mentions historiques v3 ci-dessous).
+`ix=[séquence,index]`, `ia` et `ms` : voir `docs/network-protocol.md`.
+Ne jamais simuler les objectifs sur le client. Les portes incluent les joueurs
+distants. La purge des entrées annule les demandes d'interaction non acquittées.
+Recette étape 3 : 120 tests, Ruff OK, solo et coop des deux modes, retransmission
+et arrivée tardive ; captures client aux deux tailles. Benchmark 24 ennemis :
+médiane/p95 5,979/8,607 ms et 10,246/11,649 ms ; UDP observé <=538 octets.
+
+Étape 4 : `upgrades.py` / `upgrade_ui.py`. Six récompenses max, deux niveaux
+par bonus (dégâts +10 %, recharge -15 %, capacité +20 %, dispersion -20 %,
+cadence +8 % par niveau ; arrondis entiers sur dégâts/capacité). Récompenses
+après interactions Entrepôt et vagues multiples de 3 nettoyées, dédupliquées
+par token ; choix en file si une proposition est déjà ouverte. Graine isolée
+101 en solo, 101+pid pour clients. Délai 12 s, choix 1 par défaut, figé par
+pause hôte. F5/F6/F7 sont réservées ; manette croix gauche/haut/droite, clic,
+tactile. `uc` et `ub` portent les choix autoritaires (voir doc réseau).
+Ne pas modifier WEAPON_SPECS ni offrir de munitions via un bonus : les specs
+par arme sont dérivées idempotemment et conservent le ratio de rechargement.
+Le contexte survit au transfert du joueur entre niveaux, jamais à une nouvelle
+partie ; pas de persistance. 124 tests OK et Ruff OK. Recette étape 4, 24 ennemis,
+deux résolutions, choix coop répliqué : médiane/p95 6,044/11,856 ms et
+10,294/11,254 ms ; UDP observé <=550 octets. Captures des cartes inspectées.
+
+Étape 5 : `mutators.py`, trois variations connues (rapid, armored, crossfire).
+Rotation par groupes de trois vagues dès 4, graine isolée 101 ; 10/20/30 neutres.
+Vitesse +15 %, ou vie +20 %/vitesse -10 %, ou remplacement des miliciens à
+indices multiples de 4 par des soldats. Aucun boss modifié ; aucun ennemi ajouté
+par un mutateur. La file stocke `(kind,wave,mutator)` et conserve les effets
+d'origine en cas de submersion. `wv.mutator` répliqué, annonce HUD à y=195 pour
+éviter les panneaux boss. 127 tests et Ruff OK, captures aux deux résolutions.
+Recette étape 5 : 24 ennemis, médiane/p95 5,735/6,413 ms et 10,055/12,456 ms ;
+UDP observé <=567 octets. Pas de sauvegarde ni nouvelle version de protocole.
+Correction visuelle de l'étape 5 : la ligne de vague est placée à y=160 sous
+1000 px de large, sous les panneaux supérieurs ; largeur bornée à l'écran.
+
+Étape 6 : `coop_support.py` et `support_ui.py`. La réapparition automatique
+historique de 6 s est remplacée par 20 s de secours possible, puis 6 s avant
+spawn. Santé nulle = actions bloquées ; tous joueurs à terre = défaite.
+Interagir à <=1,4 m commence un secours de 3 s ; nouvel appui annule. Dégât,
+roulade, perte de vue ou éloignement annulent ; un helper supplémentaire
+n'accélère pas. Tir bloqué pendant le secours, retour 40 PV/2 s bouclier sans
+munitions offertes. Retour automatique 60 PV au spawn. Pause hôte fige tout ;
+pause locale/silence client >350 ms annulent son secours. `rr`, `pg`, `ga`, `lp`
+sont détaillés dans la doc réseau. Ping C/remappable, Back/View, tactile SIG.
+Portée 12 m calculée par l'hôte, 5 s, délai 2 s, quatre marqueurs maximum.
+132 tests OK, Ruff OK, recette solo/loopback et captures à terre 800/1280.
+Benchmark 24 ennemis : médiane/p95 5,745/6,162 ms et 10,907/20,968 ms ; mesures
+indicatives avec autres contrôles actifs. UDP observé <=597 octets. Pas de
+sauvegarde. Les captures ont conduit à déplacer le détail secours sous le titre.
+
+Étape 7 : `elites.py`, Résistant bulwark (+35 % HP, vitesse ×0,9), Traqueur
+hunter (vitesse ×1,15, délai de tir ×0,9). Maximum trois élites vivants ; boss
+et Commandant exclus. Commandant : 220 HP, aura portée 5 avec visibilité,
+délai de tir allié ×0,8 sans cumul, retrait immédiat à sa mort. Un maximum
+vivant ; un second spawn demandé devient soldat. Entrepôt : deux ennemis
+existants élites et dernier ennemi Commandant, aucun ajout au compte initial.
+Déferlement : deux candidats élites dès 4, Commandant à 5/15/25. File désormais
+`(kind,wave,mutator,elite)`. Champs `en[13:15]` visuels, santé max autoritaire.
+`Enemy.sprite_kind` évite de demander des PNG inexistants pour le Commandant.
+134 tests et Ruff OK, recette solo/loopback 24 ennemis dont 3 élites et un
+Commandant : médiane/p95 5,960/9,632 ms et 10,621/15,526 ms, UDP <=653 octets.
+
+Étape 8 : `boss_patterns.py` état idle/warn/charge/recover. Annonce 1,2 s,
+charge 0,65 s à 5,5 m/s, récupération 1,2 s, attente 4,5−0,5×phase. Cible
+verrouillée à l'annonce ; phase >=2 alterne charge et frappe de rayon 1,8 m.
+Dégâts 24 charge/28 frappe avant difficulté, une fois par victime. Murs et
+collisions arrêtent la charge, pas de dégâts de zone à travers les murs.
+L'IA standard ne tourne pas pendant les patterns ; les timers d'entité avancent.
+Ne pas casser les packs de seuils 2/3 et 1/3. Réplication `en[15]`, aucune
+simulation du pattern côté client. `hazards.py` projette un tracé au sol
+avec z-buffer, avant ADS ; remplace une première balise billboard trop grande.
+137 tests/Ruff OK. Recette étape 8 avec 24 ennemis, boss, élites et Commandant :
+médiane/p95 6,280/8,422 ms et 10,731/22,444 ms ; UDP observé <=697 octets.
+
+Étape 9 : grenade (`grenades.py`), G/remappable, clic stick droit, FRAG. tactile.
+Deux charges, cooldown 1 s, fusée 2 s, rayon 2,7, dégâts décroissants 90→31
+sur ennemis et 60→21 sur lanceur, alliés exempts du souffle direct. Les
+explosions de kamikazes restent celles du jeu. Collision en pas <=0,08 m,
+rebond amorti, souffle avec ligne de vue ; aucune explosion simulée côté client.
+Huit projectiles maximum. `gr`/`gm` acquittent le lancer ; un doublon ne dépense
+pas de charge. Pause purge les demandes non acquittées et fige la fusée hôte.
+Retirer un projectile avant détonation ; conserver les hooks des packs de phase.
+141 tests et Ruff OK. Recette étape 9 : 24 ennemis et grenade active,
+médiane/p95 6,133/6,930 ms et 10,387/10,812 ms ; UDP <=705 octets. Captures
+du projectile et du compteur inspectées aux deux tailles.
+
+Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
+résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms
+à 800×600 et 10,501/12,402 ms à 1280×720 (SDL dummy, machine de travail,
+80 frames dont 20 de chauffe ; indicatif, pas une garantie matérielle).
+Datagramme maximal observé : 530 octets. Captures inspectées aux deux tailles.
+
 > **Ce fichier est l'unique source de contexte pour toutes les IA** (Claude,
 > GPT, Kimi, agents, etc.) travaillant sur ce dépôt. Les anciens fichiers
 > (`CLAUDE.md`, `GPT.md`, `AGENTS.md`) ne contiennent plus qu'une redirection

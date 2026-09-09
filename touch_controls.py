@@ -35,6 +35,9 @@ class TouchControls:
         "roll": (0.69, 0.75, 0.068, "ROUL."),
         "reload": (0.90, 0.54, 0.055, "R"),
         "weapon": (0.62, 0.64, 0.055, "ARME"),
+        "interact": (0.51, 0.64, 0.048, "ACT."),
+        "ping": (0.61, 0.52, 0.045, "SIG."),
+        "grenade": (0.76, 0.44, 0.048, "FRAG."),
         "pause": (0.96, 0.33, 0.044, "II"),
         "menu": (0.04, 0.33, 0.044, "M"),
     }
@@ -167,7 +170,8 @@ class TouchControls:
             if action == "aim":
                 self.aim_fingers.add(finger_id)
                 return ("aim_down",)
-            if action in ("roll", "reload", "weapon", "pause", "menu"):
+            if action in ("roll", "reload", "weapon", "interact", "ping", "grenade",
+                          "pause", "menu"):
                 return (action,)
             if x < 0.46 and y > 0.34 and self.move_finger is None:
                 self.move_finger = finger_id

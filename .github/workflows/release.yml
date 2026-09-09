@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: executables-${{ github.ref }}-${{ matrix.os }}
+  group: executables-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
