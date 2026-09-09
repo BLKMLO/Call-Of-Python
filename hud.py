@@ -358,6 +358,10 @@ class HUD:
         if fps is not None:
             self._draw_fps(screen, fps)
         self._draw_hurt_flash(screen, player)
+        if stats and "score" in stats:
+            score_text = self.small_font.render(f"SCORE {stats['score']}", True, HUD_TEXT)
+            screen.blit(score_text, (screen.get_width() // 2 - score_text.get_width() // 2,
+                                      screen.get_height() - 155))
 
     def _panel(self, size, accent=HUD_GREEN):
         """Plaque tactique translucide, construite une fois par variante."""

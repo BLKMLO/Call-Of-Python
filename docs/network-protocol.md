@@ -32,6 +32,13 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+Score : `snap.sc=[total,segment,cible,secours_crédités,grade]`, cinq champs
+validés (entiers 0 à 10^9, cible positive, secours 0 à 4, grade D/C/B/A/S).
+Le client ne propose aucun point. Le total est partagé, les statistiques de
+tirs/éliminations restent individuelles. Les identifiants d’arme et d’ennemi
+sont vérifiés comme chaînes avant toute consultation du catalogue.
+Version du jeu 0.5.0, protocole v4 : mettre à jour tous les participants.
+
 Grenades : `in.gr` est une séquence 31 bits, consommée même si charges/cooldown
 refusent le lancer. `snap.gm=[charges,cooldown,dernière_séquence]` acquitte ;
 `snap.gr` contient au plus huit `[id,propriétaire,x,y,fusée]`. Ni trajectoire

@@ -44,6 +44,7 @@ from network import DEFAULT_PORT, UdpPeer
 from objectives import Mission
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
+from scoring import valid_score
 from support_ui import draw_support, ping_sprites
 from survival import SurvivalGame
 from touch_controls import FINGER_EVENTS, TouchControls
@@ -150,7 +151,9 @@ class CoopHostGame(SurvivalGame):
     def _award_upgrades(self, token):
         super()._award_upgrades(token)
         for client in self.clients.values():
-            if client["upgrades"].award(token):
+            client["upgrades"].award(token)
+            if token not in client["supplies"] and len(client["supplies"]) < 64:
+                client["supplies"].add(token)
                 client["grenade_ammo"] = min(2, client["grenade_ammo"] + 1)
 
     def _interact(self, actor=None):
@@ -182,6 +185,9 @@ class CoopHostGame(SurvivalGame):
 
     def _all_players(self):
         return [self.player] + [c["player"] for c in self.clients.values()]
+
+    def _score_players(self):
+        return {0: self.player.alive, **{pid: c["player"].alive for pid, c in self.clients.items()}}
 
     def _ai_target(self, enemy):
         """Chaque ennemi harcèle le joueur vivant le plus proche."""
@@ -334,6 +340,7 @@ class CoopHostGame(SurvivalGame):
             "grenade_ammo": 2,
             "grenade_cooldown": 0.0,
             "last_grenade": 0,
+            "supplies": set(),
             "protocol": protocol,
             "last_input_sequence": -1,
             "last_reload_sequence": 0,
@@ -492,7 +499,7 @@ class CoopHostGame(SurvivalGame):
                 build.apply(client["weapons"].values())
 
         weapon_id = message.get("wid")
-        if weapon_id in client["weapons"]:
+        if isinstance(weapon_id, str) and weapon_id in client["weapons"]:
             client["active_weapon"] = weapon_id
         active_weapon = client["weapons"][client["active_weapon"]]
 
@@ -514,7 +521,8 @@ class CoopHostGame(SurvivalGame):
             if not isinstance(trigger, (list, tuple)) or len(trigger) != 2:
                 continue
             trigger_weapon_id, raw_angles = trigger
-            weapon = client["weapons"].get(trigger_weapon_id)
+            weapon = (client["weapons"].get(trigger_weapon_id)
+                      if isinstance(trigger_weapon_id, str) else None)
             if (weapon is None
                     or trigger_weapon_id != client["active_weapon"]
                     or not isinstance(raw_angles, list)
@@ -591,6 +599,8 @@ class CoopHostGame(SurvivalGame):
                 self.rescue.requests.pop(pid, None)
         players = {0: self.player, **{pid: c["player"] for pid, c in self.clients.items()}}
         for pid, in_place in self.rescue.update(dt, players, self._objective_visible):
+            if in_place:
+                self.score.rescue()
             entity = players[pid]
             if not in_place:
                 entity.x, entity.y = self.level.player_spawn
@@ -652,6 +662,7 @@ class CoopHostGame(SurvivalGame):
             "rr": self.rescue.snapshot(),
             "pg": self.pings.snapshot(),
             "gr": [grenade.snapshot() for grenade in self.grenades],
+            "sc": self.score.snapshot(),
             "ov": self.outcome or "",
             "pa": int(self.paused),
             "ev": self.net_events,
@@ -1278,6 +1289,10 @@ class CoopClientGame:
                     and paused in (0, 1))):
             return False
         self._set_host_paused(bool(paused))
+        if "sc" in snap:
+            if not valid_score(snap["sc"]):
+                return False
+            self.stats.update(score=snap["sc"][0], grade=snap["sc"][4])
         if "gr" in snap:
             grenades = read_grenades(snap["gr"])
             if grenades is None:
@@ -1492,7 +1507,7 @@ class CoopClientGame:
         validated = {}
         for row in rows[:len(WEAPON_ORDER)]:
             if (not isinstance(row, (list, tuple)) or len(row) != 2
-                    or row[0] not in WEAPON_SPECS):
+                    or not isinstance(row[0], str) or row[0] not in WEAPON_SPECS):
                 continue
             level = _finite_float(row[1], 0.0, 3.0)
             if level is None:
@@ -1539,7 +1554,7 @@ class CoopClientGame:
                 continue
             net_id, kind = data[0], data[1]
             if (isinstance(net_id, bool) or not isinstance(net_id, int)
-                    or kind not in ENEMY_TYPES):
+                    or not isinstance(kind, str) or kind not in ENEMY_TYPES):
                 continue
             x = _finite_float(data[2], 0.0, max_x)
             y = _finite_float(data[3], 0.0, max_y)

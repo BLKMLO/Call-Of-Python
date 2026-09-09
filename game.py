@@ -27,6 +27,7 @@ from mission_marker import MissionMarker
 from objectives import Mission
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, has_line_of_sight, rotate_zoom_screen, zoom_screen
+from scoring import ScoreBook, enemy_points
 from support_ui import draw_support, ping_sprites
 from touch_controls import FINGER_EVENTS, TouchControls
 from upgrade_ui import choice_event, draw_choices
@@ -66,6 +67,7 @@ class Game:
         self.grenade_ammo = 2
         self.grenade_cooldown = 0.0
         self._next_grenade_id = 0
+        self._supply_tokens = set()
         self.level_index = level_index
         self.difficulty = get_difficulty(
             getattr(settings, "difficulty", "soldier"),
@@ -97,6 +99,10 @@ class Game:
         for index, elite in self.level.config.get("elites", {}).items():
             if 0 <= index < len(self.enemies):
                 apply_elite(self.enemies[index], elite)
+        target_score = (20000 if self.level.is_survival else
+                        sum(enemy_points(e) for e in self.enemies)
+                        + 500 * len(self.mission.steps) + 500)
+        self.score = ScoreBook(self.stats.get("score", 0), target_score)
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
         self.pickups = [Pickup(x, y, kind, level_index)
                         for x, y, kind in self.level.pickup_spawns]
@@ -432,6 +438,10 @@ class Game:
             self._check_outcome()
         else:
             self.end_delay += dt
+        self.score.observe(self.enemies, self.mission.index,
+                           self._score_players(),
+                           self.outcome)
+        self.stats.update(score=self.score.total, grade=self.score.grade)
 
     def _check_outcome(self):
         """Fin de partie standard ; surchargé par le mode survie."""
@@ -509,7 +519,9 @@ class Game:
         return changed
 
     def _award_upgrades(self, token):
-        if self.upgrades.award(token):
+        self.upgrades.award(token)
+        if token not in self._supply_tokens and len(self._supply_tokens) < 64:
+            self._supply_tokens.add(token)
             self.grenade_ammo = min(2, self.grenade_ammo + 1)
 
     def _throw_grenade(self):
@@ -602,6 +614,9 @@ class Game:
     def _all_players(self):
         """Tous les joueurs à blesser (explosions...) ; un seul en solo."""
         return [self.player]
+
+    def _score_players(self):
+        return {0: self.player.alive}
 
     def _extra_sprites(self):
         """Billboards supplémentaires (coéquipiers en coop)."""

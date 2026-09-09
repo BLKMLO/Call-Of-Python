@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 — Gameplay, étape 10 (2026-09-09)
+
+- Score autoritaire partagé, crédits uniques, grades par niveau, résultats responsifs.
+- Bonus de secours plafonné et pénalité de mise à terre ; ravitaillement de grenades
+  indépendant du plafond des six améliorations.
+- Fin de mission LAN : retour au menu LAN ; types réseau malformés rejetés.
+- Recette finale ajoutée à la CI Windows/Ubuntu, règles et bilan documentés.
+- 145 tests réussis, couverture 78 %, wheel construit et démarrage installé vérifié.
+- 24 ennemis : médianes 6,324/10,761 ms aux deux résolutions, UDP <=718 octets.
+- Dix étapes conservées en commits distincts ; sauvegardes de progression inchangées.
+
 ## Gameplay — étape 9 (2026-09-09)
 
 - Grenade à fusée fixe, rebonds, souffle avec ligne de vue et inventaire autoritaire.

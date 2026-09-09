@@ -157,6 +157,7 @@ class SurvivalGame(Game):
         cleared = not self.spawn_queue and all(
             not e.alive for e in self.enemies)
         if cleared:
+            self.score.award(f"wave:{self.wave}", 200)
             if self.wave >= FINAL_WAVE:
                 self.outcome = "victory"     # le Déferlement est brisé
                 self.sounds.play("level_complete")

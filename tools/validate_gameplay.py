@@ -25,6 +25,7 @@ from coop import CoopClientGame, CoopHostGame
 from elites import apply_elite
 from game import Game
 from level import SURVIVAL_LEVEL
+from menu import EndScreen
 from settings import Settings
 
 
@@ -196,9 +197,18 @@ def validate(stage, output):
                     host._broadcast()
                     client._net_receive()
                     assert client.grenades
+                if stage >= 10:
+                    assert client.stats["score"] == host.score.total
                 host.draw(screen)
                 client.draw(screen)
                 pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-coop.png")
+                if stage >= 10:
+                    result_screen = EndScreen(sounds, victory=True, coop_mission=True,
+                                              subtitle="Mission coop terminée.",
+                                              stats=dict(shots=42, hits=24, kills=8, time=185,
+                                                         score=3350, grade="S"))
+                    result_screen.draw(screen)
+                    pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-results.png")
                 reports.append(dict(resolution=list(size), alive=24,
                                     median_ms=round(statistics.median(times), 3),
                                     p95_ms=round(sorted(times)[56], 3),

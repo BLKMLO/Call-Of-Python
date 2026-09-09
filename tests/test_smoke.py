@@ -289,6 +289,32 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(host.player.health, before)
         self.assertEqual(remote.health, 40)
 
+    def test_malformed_gameplay_requests_do_not_crash_or_spend_inventory(self):
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0)
+        self.addCleanup(host.close)
+        host.intermission = 1000
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+        for _ in range(12):
+            host.update(1 / 60)
+            client.update(1 / 60)
+        record = host.clients[client.pid]
+        before = record["weapons"]["rifle"].ammo
+        sequence = client.input_sequence
+        for extra in ({"wid": []}, {"fx": [[{}, []]]}, {"uc": [[], 0]},
+                      {"ix": [True, 0]}, {"gr": {}}, {"pg": []}):
+            sequence += 1
+            message = dict(t="in", id=client.pid, sid=host.session_id, iq=sequence,
+                           x=client.player.x, y=client.player.y, a=0)
+            message.update(extra)
+            client.peer.send(message, client.host_addr)
+            host._net_receive()
+        self.assertEqual(record["weapons"]["rifle"].ammo, before)
+        self.assertEqual(record["grenade_ammo"], 2)
+        client._apply_enemies([[0, [], 1, 1, 0, 100, 0, 0]])
+        client._apply_authoritative_inventory([[[], 0]], "rifle")
+
     def test_menus_draw_and_click_at_extreme_resolutions(self):
         menus = [
             MainMenu(self.sounds, self.settings),

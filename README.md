@@ -2,8 +2,13 @@
 
 FPS retro en pseudo-3D par raycasting, jouable en solo et en cooperation LAN.
 Le jeu propose une campagne de cinq missions, un mode survie de 30 vagues,
-six archetypes ennemis, quatre armes evolutives et une direction pixel-art
+sept archetypes ennemis, quatre armes evolutives et une direction pixel-art
 militaire/SF.
+
+Version gameplay **0.5.0** : objectifs dans l’Entrepôt (solo et LAN),
+améliorations temporaires, mutateurs, secours, élites, attaques du Colosse,
+grenades et score. [Règles et équilibrage](docs/gameplay.md) ·
+[Validation des dix étapes](docs/gameplay-validation.md).
 
 ## Installation
 
@@ -35,6 +40,10 @@ python assets.py --force-procedural
 | Roulade | Maj | A / Croix |
 | Recharger | R | X / Carre |
 | Changer d'arme | 1–4 ou molette | Y / Triangle |
+| Interagir / réanimer | E | LB |
+| Signal coop | C | Back / View |
+| Grenade | G | Clic stick droit |
+| Amélioration 1 / 2 / 3 | F5 / F6 / F7 | Croix gauche / haut / droite |
 | Pause | Echap | Start |
 | FPS | F3 | — |
 | Plein ecran | F11 | — |
@@ -64,7 +73,9 @@ secousses de camera 0/50/100 %, ADS en maintien ou bascule et trois difficultes.
 ### Campagne
 
 Entrepot, Metropole, Gouvernement, Base militaire puis Laboratoire. L'arsenal
-est conserve entre les missions. Le Colosse final possede trois phases et
+est conserve entre les missions. Dans l’Entrepôt, récupérez le manifeste,
+désactivez l’alarme puis tenez l’extraction pendant 8 secondes consécutives.
+Le menu LAN propose aussi cette mission ; les autres cartes restent à élimination. Le Colosse final possede trois phases et
 libere deux packs de vie avant de reveler le portail lunaire.
 
 ### Le Deferlement
@@ -79,13 +90,14 @@ Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v4 refuse
 explicitement toute autre version. L'hote valide deplacements, collisions,
 roulades, cadence, chargeurs et degats.
 
-## Points techniques
+## Nouveautés gameplay
 
 Grenade : G (remappable), clic du stick droit ou FRAG. tactile. Deux charges,
 une seconde entre lancers, fusée 2 s, rebonds, rayon 2,7 m. Dégâts décroissants
 (90 au centre sur les ennemis, 60 sur le lanceur), bloqués par les murs.
 Pas de dégâts directs aux alliés ; les kamikazes peuvent provoquer leurs propres
-explosions. Les récompenses d'amélioration rendent une charge, maximum deux.
+explosions. Les deux interactions et chaque troisième vague nettoyée rendent une charge,
+maximum deux, même lorsque les six améliorations ont déjà été choisies.
 Lancer impossible en roulade ou pendant un secours.
 
 Colosse : annonce de 1,2 s avant une charge rectiligne, puis 1,2 s de
@@ -123,6 +135,14 @@ maximum ; six choix par partie. Aucun bonus n'est enregistré dans les sauvegard
 La capacité supplémentaire se remplit au prochain rechargement. La pause de
 l'hôte fige le délai ; une pause locale d'un client ne suspend pas la partie.
 
+Le score est partagé en coop, les éliminations et la précision restent individuelles.
+Objectif +500, vague nettoyée +200, victoire +500, mise à terre -150 ;
+les quatre premiers secours rapportent +250 chacun. Le grade D à S évalue
+le niveau courant ; A et S exigent la victoire. Le cumul continue en campagne,
+sans classement persistant. Voir le barème complet dans la documentation gameplay.
+
+## Points techniques
+
 - simulation a pas fixe de 60 Hz, rendu decouple jusqu'a 120 Hz ;
 - raycasting multi-couches, murs variables, portes, z-buffer et billboards ;
 - IA avec perception, BFS, couverture, contournement et esquives ;
@@ -131,7 +151,7 @@ l'hôte fige le délai ; une pause locale d'un client ne suspend pas la partie.
   avec limites de taille/temps et limite par adresse source ;
 - protocole sequence, evenements fiables acquittes et inventaire autoritaire ;
 - ressources resolues en mode source, wheel et PyInstaller ;
-- 113 tests et seuil de couverture CI de 70 %.
+- 145 tests, couverture mesurée 78 % et seuil CI de 70 %.
 
 Des fichiers audio `menu`, `survival`, `reload` et `1` a `5` peuvent etre
 places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.

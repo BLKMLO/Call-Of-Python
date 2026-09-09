@@ -59,6 +59,8 @@ class PriorityFixTests(unittest.TestCase):
         host = CoopHostGame.__new__(CoopHostGame)
         host.rescue, host.pings = Rescue(), Pings()
         host.grenades = []
+        from scoring import ScoreBook
+        host.score = ScoreBook()
         host.level = Level(4, config=SURVIVAL_LEVEL)
         host.net_time = 0.0
         host.paused = False

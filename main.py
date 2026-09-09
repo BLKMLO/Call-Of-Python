@@ -247,6 +247,10 @@ def main():
                     start_survival(carry=carry)  # depuis le Sceau)
                 elif action == "play":       # nouvelle partie de zéro
                     start_level(0)
+                elif action == "multiplayer":
+                    leave_game()
+                    state = "mp_menu"
+                    sounds.play_music("menu")
                 elif action == "menu":
                     leave_game()
                     state = "menu"
@@ -280,7 +284,9 @@ def main():
                 if getattr(game, "mission_mode", False):
                     transition = EndScreen(sounds, victory=game.outcome == "victory",
                                            title="EXTRACTION" if game.outcome == "victory"
-                                           else "MISSION ÉCHOUÉE", stats=game.stats)
+                                           else "MISSION ÉCHOUÉE", stats=game.stats,
+                                           coop_mission=True,
+                                           subtitle="Fin de la mission coop Entrepôt.")
                     state = "end"
                     sounds.play_music("menu")
                 elif isinstance(game, (SurvivalGame, CoopClientGame)):

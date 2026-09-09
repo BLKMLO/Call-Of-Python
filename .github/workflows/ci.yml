@@ -60,3 +60,6 @@ jobs:
 
       - name: Vérifier la construction du wheel
         run: python -m pip wheel . --no-deps --wheel-dir dist
+
+      - name: Recette gameplay solo et LAN aux deux résolutions
+        run: python tools/validate_gameplay.py --stage 10 --output gameplay-qa

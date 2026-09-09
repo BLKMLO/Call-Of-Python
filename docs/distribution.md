@@ -28,3 +28,14 @@ python -m coverage run -m unittest discover -s tests -v
 python -m coverage report
 python -m pip wheel . --no-deps --wheel-dir dist
 ```
+
+La version gameplay 0.5.0 inclut les nouveaux modules dans le wheel. Pour
+valider la résolution des ressources, installer le wheel dans un environnement
+virtuel puis lancer le jeu depuis un autre répertoire. La recette automatisée
+complète les tests, sous SDL dummy en CI Windows et Ubuntu :
+
+```bash
+python tools/validate_gameplay.py --stage 10 --output gameplay-qa
+```
+
+Les builds natifs de cette version restent à produire via le workflow de release.

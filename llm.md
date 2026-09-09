@@ -3,9 +3,29 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 9 validées ; Entrepôt jouable en solo et en LAN. Étape 10 reste à
-réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
+Étapes 1 à 10 implémentées et validées localement ; Entrepôt solo et LAN.
+Version jeu 0.5.0, protocole v4. CI distante à vérifier sur la PR. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
+
+Étape 10 : `scoring.py`, score commun autoritaire et grade par segment de niveau.
+Ennemi crédité une fois, objectif +500, vague nettoyée +200, victoire +500,
+mise à terre -150 par transition, secours +250 limité aux quatre premiers.
+Cible campagne = budget initial des ennemis + objectifs + victoire ; cible
+Déferlement 20 000. D/C/B à 0/25/50 %, A/S à 75/90 % avec victoire obligatoire.
+Le cumul suit la campagne, jamais une nouvelle partie ; grade segment local.
+`sc` réplique les cinq champs validés ; PID stables pour les transitions de vie.
+Grenades : tokens de ravitaillement séparés des six récompenses d’amélioration,
+pour continuer une charge chaque troisième vague nettoyée (déduplication bornée).
+Fin Entrepôt LAN : bouton retour LAN, pas de lancement de campagne solo.
+145 tests, couverture de branches incluse 78 %, Ruff OK, wheel 0.5.0 installé
+et démarré hors du clone. Recette 24 ennemis, deux résolutions, loopback réel,
+choix/timers déterministes : médiane/p95 6,324/7,579 ms et 10,761/15,582 ms ;
+UDP maximal observé 718 octets. Budget 1 200 contrôlé sur chaque envoi mesuré.
+`tools/validate_gameplay.py --stage 10` est aussi exécuté en CI sur les deux OS.
+Voir `docs/gameplay.md` et `docs/gameplay-validation.md` pour règles, preuves
+et limites : SDL dummy ne valide ni le ressenti humain ni le LAN multi-machine.
+Conserver toutes les gates demandées par l’utilisateur et mettre à jour README,
+CHANGELOG, architecture, réseau si nécessaire et ce contexte à chaque étape.
 
 Entrepôt : manifeste (25,5 ; 18,5), alarme (24,5 ; 3,5), extraction au spawn
 (1,5 ; 1,5), rayon 1,4 et maintien de 8 s consécutives. `Game.mission` impose

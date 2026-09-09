@@ -1,5 +1,13 @@
 # Architecture
 
+`scoring.ScoreBook` observe les morts créditées une fois, transitions de vie,
+objectifs et victoire. L’hôte détient le score commun ; les clients lisent `sc`.
+Les PID stables évitent une pénalité erronée lors d’une déconnexion. Le cumul
+suit les niveaux, mais le segment et sa cible sont réinitialisés pour le grade.
+Les récompenses de grenades utilisent des tokens séparés des six choix de bonus,
+avec déduplication bornée ; aucun état de partie supplémentaire n’est persisté.
+Voir [règles](gameplay.md) et [recette](gameplay-validation.md).
+
 `grenades.py` gère frottement, rebonds et fusée. Déplacements découpés en pas
 <=0,08 m, contrôle du rayon sur deux axes. `Game` retire le projectile avant
 résolution du souffle et réutilise les hooks de dégâts et packs du Colosse.
@@ -14,7 +22,8 @@ z-buffer. Les clients n'avancent pas les patterns ; ils affichent leur instantan
 
 `elites.py` applique une fois les variantes et recalcule l'aura booléenne du
 Commandant. L'IA multiplie uniquement le délai du prochain tir ; dégâts, seuils
-du boss et délais existants de sniper/roulade sont conservés. `sprite_kind`
+du boss, anticipation du sniper et délais de base sont conservés ; les nouveaux
+modificateurs annoncés affectent le délai du prochain tir, pas la roulade. `sprite_kind`
 sépare l'archétype réseau des PNG réutilisés (Commandant = silhouette soldat).
 Les variantes dérivées occupent un cache LRU de 128 surfaces maximum.
 
@@ -26,7 +35,7 @@ entrée date de plus de 350 ms. `Pings` limite débit, durée et cardinalité de
 marqueurs. `support_ui.py` rend ces états et recycle au plus quatre billboards.
 
 `mutators.py` choisit une variation bornée avec un générateur isolé. La file
-Déferlement stocke `(type, vague_origine, mutateur)` ; les multiplicateurs sont
+Déferlement stocke `(type, vague_origine, mutateur, elite)` ; les multiplicateurs sont
 appliqués une fois au spawn. Une submersion ne rééquilibre pas la file ancienne.
 Le boss est exclu des effets. Le client reçoit l'identifiant pour l'annonce,
 les positions et la vie maximale résultantes pour le rendu.
