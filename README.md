@@ -81,6 +81,13 @@ roulades, cadence, chargeurs et degats.
 
 ## Points techniques
 
+Grenade : G (remappable), clic du stick droit ou FRAG. tactile. Deux charges,
+une seconde entre lancers, fusée 2 s, rebonds, rayon 2,7 m. Dégâts décroissants
+(90 au centre sur les ennemis, 60 sur le lanceur), bloqués par les murs.
+Pas de dégâts directs aux alliés ; les kamikazes peuvent provoquer leurs propres
+explosions. Les récompenses d'amélioration rendent une charge, maximum deux.
+Lancer impossible en roulade ou pendant un secours.
+
 Colosse : annonce de 1,2 s avant une charge rectiligne, puis 1,2 s de
 récupération. Dès la phase 2, il alterne avec une frappe sur une zone verrouillée
 de rayon 1,8 m. Sortez du tracé au sol ou utilisez la fenêtre d'invulnérabilité

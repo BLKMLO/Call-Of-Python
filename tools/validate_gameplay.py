@@ -71,6 +71,12 @@ def validate(stage, output):
                         boss.pattern.apply_snapshot(["warn", "slam", 3.5, 2.5, 1.2])
                         gallery.draw(screen)
                         pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-boss.png")
+                    if stage >= 9:
+                        gallery._throw_grenade()
+                        for _ in range(30):
+                            gallery._update_grenades(1 / 60)
+                        gallery.draw(screen)
+                        pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-grenade.png")
                 finally:
                     gallery.close()
             if stage >= 2:
@@ -108,6 +114,8 @@ def validate(stage, output):
                     if stage >= 7 and index in (1, 2, 3):
                         apply_elite(enemy, "bulwark" if index == 1 else "hunter")
                 assert len(game.enemies) == 24
+                if stage >= 9:
+                    game._throw_grenade()
                 times = []
                 for frame in range(80):
                     game.player.health = game.player.max_health
@@ -183,6 +191,11 @@ def validate(stage, output):
                     client._net_receive()
                     ghost = next(e for e in client.ghosts.values() if e.IS_BOSS)
                     assert ghost.pattern.state == "warn"
+                if stage >= 9:
+                    host._throw_grenade()
+                    host._broadcast()
+                    client._net_receive()
+                    assert client.grenades
                 host.draw(screen)
                 client.draw(screen)
                 pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-coop.png")

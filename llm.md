@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 8 validées ; Entrepôt jouable en solo et en LAN. Étapes 9–10 restent à
+Étapes 1 à 9 validées ; Entrepôt jouable en solo et en LAN. Étape 10 reste à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -97,6 +97,18 @@ simulation du pattern côté client. `hazards.py` projette un tracé au sol
 avec z-buffer, avant ADS ; remplace une première balise billboard trop grande.
 137 tests/Ruff OK. Recette étape 8 avec 24 ennemis, boss, élites et Commandant :
 médiane/p95 6,280/8,422 ms et 10,731/22,444 ms ; UDP observé <=697 octets.
+
+Étape 9 : grenade (`grenades.py`), G/remappable, clic stick droit, FRAG. tactile.
+Deux charges, cooldown 1 s, fusée 2 s, rayon 2,7, dégâts décroissants 90→31
+sur ennemis et 60→21 sur lanceur, alliés exempts du souffle direct. Les
+explosions de kamikazes restent celles du jeu. Collision en pas <=0,08 m,
+rebond amorti, souffle avec ligne de vue ; aucune explosion simulée côté client.
+Huit projectiles maximum. `gr`/`gm` acquittent le lancer ; un doublon ne dépense
+pas de charge. Pause purge les demandes non acquittées et fige la fusée hôte.
+Retirer un projectile avant détonation ; conserver les hooks des packs de phase.
+141 tests et Ruff OK. Recette étape 9 : 24 ennemis et grenade active,
+médiane/p95 6,133/6,930 ms et 10,387/10,812 ms ; UDP <=705 octets. Captures
+du projectile et du compteur inspectées aux deux tailles.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms

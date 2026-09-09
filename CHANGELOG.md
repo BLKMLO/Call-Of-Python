@@ -1,10 +1,17 @@
 # Changelog
 
+## Gameplay — étape 9 (2026-09-09)
+
+- Grenade à fusée fixe, rebonds, souffle avec ligne de vue et inventaire autoritaire.
+- Lancers acquittés/dédupliqués, huit projectiles maximum, alliés protégés du souffle direct.
+- 141 tests : inventaire/retransmission, mur, tir allié et packs du Colosse.
+- Deux résolutions, loopback, 24 ennemis ; UDP observé <=705 octets.
+
 ## Gameplay — étape 8 (2026-09-09)
 
 - Colosse : charge et frappe de zone annoncées, cible verrouillée,
   récupération exploitable ; comportement à pas fixe répliqué.
-- Tracé au sol avec caméra/z-buffer du monde, collisions de charge sous-échantillonnées.
+- Tracé au sol avec caméra/z-buffer du monde, collisions de charge suréchantillonnées.
 - Un impact maximum par attaque et par joueur ; seuils/packs de phase conservés.
 - 137 tests, deux résolutions, loopback et benchmark 24 ennemis dont Colosse.
 

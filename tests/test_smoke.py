@@ -237,6 +237,58 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(set(client.pings.markers), set(host.pings.markers))
         self.assertIsNone(client.pending_ping)
 
+    def test_grenade_respects_walls_and_boss_phase_packs(self):
+        from grenades import Grenade
+
+        game = Game(self.screen, self.settings, self.sounds)
+        self.addCleanup(game.close)
+        game.enemies.clear()
+        game.ais.clear()
+        enemy = game.spawn_enemy("grunt", 3.5, 2.5)
+        game.level.grid[2][2] = "1"
+        game._detonate_grenade(Grenade(0, 0, 1.5, 2.5))
+        self.assertEqual(enemy.health, enemy.max_health)
+        game.level.grid[2][2] = "."
+        boss = game.spawn_enemy("boss", 5.5, 2.5)
+        boss.health = boss.max_health * 2 / 3 + 1
+        game._detonate_grenade(Grenade(1, 0, 5.5, 2.5))
+        self.assertEqual(boss.phase, 2)
+        self.assertEqual(sum(p.dynamic for p in game.pickups), 1)
+
+    def test_coop_grenade_retry_inventory_and_no_direct_friendly_fire(self):
+        from grenades import Grenade
+
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0)
+        self.addCleanup(host.close)
+        host.intermission = 1000
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+
+        def ticks(count):
+            for _ in range(count):
+                host.update(1 / 60)
+                client.update(1 / 60)
+
+        ticks(12)
+        client._throw_grenade()
+        request = client.pending_grenade
+        ticks(12)
+        self.assertEqual(client.grenade_ammo, 1)
+        self.assertTrue(client.grenades)
+        ticks(60)
+        client.pending_grenade = request
+        ticks(12)
+        self.assertEqual(host.clients[client.pid]["grenade_ammo"], 1)
+        remote = host.clients[client.pid]["player"]
+        host.player.shield = remote.shield = 0
+        remote.health = 100
+        remote.x, remote.y = host.player.x, host.player.y
+        before = host.player.health
+        host._detonate_grenade(Grenade(99, client.pid, remote.x, remote.y))
+        self.assertEqual(host.player.health, before)
+        self.assertEqual(remote.health, 40)
+
     def test_menus_draw_and_click_at_extreme_resolutions(self):
         menus = [
             MainMenu(self.sounds, self.settings),

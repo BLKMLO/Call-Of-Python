@@ -21,6 +21,7 @@ ACTION_BUTTONS = {
     pygame.CONTROLLER_BUTTON_START: "pause",
     pygame.CONTROLLER_BUTTON_LEFTSHOULDER: "interact",
     pygame.CONTROLLER_BUTTON_BACK: "ping",
+    pygame.CONTROLLER_BUTTON_RIGHTSTICK: "grenade",
 }
 
 
@@ -195,4 +196,6 @@ def reset_gameplay_input(game):
         game.pending_upgrade = None
     if hasattr(game, "pending_ping"):
         game.pending_ping = None
+    if hasattr(game, "pending_grenade"):
+        game.pending_grenade = None
     pygame.mouse.get_rel()

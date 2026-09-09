@@ -34,6 +34,7 @@ from entities import (
 )
 from game import GUNSHOT_HEARING, SLOT_SCANCODES, Game, new_stats
 from gamepad import GamepadInput, reset_gameplay_input
+from grenades import read_grenades
 from hazards import draw_boss_warnings
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
@@ -149,7 +150,8 @@ class CoopHostGame(SurvivalGame):
     def _award_upgrades(self, token):
         super()._award_upgrades(token)
         for client in self.clients.values():
-            client["upgrades"].award(token)
+            if client["upgrades"].award(token):
+                client["grenade_ammo"] = min(2, client["grenade_ammo"] + 1)
 
     def _interact(self, actor=None):
         if self.paused or self.outcome is not None:
@@ -275,6 +277,7 @@ class CoopHostGame(SurvivalGame):
         if not self.paused and self.outcome is None:
             for client in self.clients.values():
                 client["player"].update_timers(dt)
+                client["grenade_cooldown"] = max(0.0, client["grenade_cooldown"] - dt)
                 for weapon in client["weapons"].values():
                     weapon.update(dt)
         if self.mission_mode:
@@ -328,6 +331,9 @@ class CoopHostGame(SurvivalGame):
             "player": RemotePlayer(pid, x + random.uniform(-0.3, 0.3), y),
             "last_seen": self.net_time,
             "upgrades": SessionUpgrades(101 + pid),
+            "grenade_ammo": 2,
+            "grenade_cooldown": 0.0,
+            "last_grenade": 0,
             "protocol": protocol,
             "last_input_sequence": -1,
             "last_reload_sequence": 0,
@@ -470,6 +476,14 @@ class CoopHostGame(SurvivalGame):
         if type(ping) is int and client.get("last_ping", 0) < ping < 2 ** 31:
             client["last_ping"] = ping
             self._ping(remote, pid)
+
+        grenade = message.get("gr")
+        if type(grenade) is int and client.get("last_grenade", 0) < grenade < 2 ** 31:
+            client["last_grenade"] = grenade
+            if (client["grenade_ammo"] > 0 and client["grenade_cooldown"] <= 0
+                    and self._spawn_grenade(remote, pid)):
+                client["grenade_ammo"] -= 1
+                client["grenade_cooldown"] = 1.0
 
         choice = message.get("uc")
         if isinstance(choice, list) and len(choice) == 2:
@@ -637,6 +651,7 @@ class CoopHostGame(SurvivalGame):
             "ms": self.mission.snapshot(),
             "rr": self.rescue.snapshot(),
             "pg": self.pings.snapshot(),
+            "gr": [grenade.snapshot() for grenade in self.grenades],
             "ov": self.outcome or "",
             "pa": int(self.paused),
             "ev": self.net_events,
@@ -650,6 +665,9 @@ class CoopHostGame(SurvivalGame):
                 payload["sq"] = self.snapshot_sequence
                 payload["ia"] = client.get("last_interaction", 0)
                 payload["ga"] = client.get("last_ping", 0)
+                payload["gm"] = [client.get("grenade_ammo", 2),
+                                  round(client.get("grenade_cooldown", 0), 3),
+                                  client.get("last_grenade", 0)]
                 build = client.get("upgrades")
                 if build is not None:
                     payload["ub"] = build.snapshot()
@@ -728,6 +746,10 @@ class CoopClientGame:
         self.rescue_rows = []
         self.ping_sequence = 0
         self.pending_ping = None
+        self.grenades = []
+        self.grenade_ammo = 2
+        self.grenade_sequence = 0
+        self.pending_grenade = None
         self.interaction_sequence = 0
         self.pending_interaction = None
         self.player = Player(*self.level.player_spawn)
@@ -825,6 +847,14 @@ class CoopClientGame:
         self.ping_sequence += 1
         self.pending_ping = self.ping_sequence
 
+    def _throw_grenade(self):
+        if (self.controls_paused or self.outcome is not None or not self.player.alive
+                or self.player.rolling or self.grenade_ammo <= 0
+                or self.pending_grenade is not None):
+            return
+        self.grenade_sequence += 1
+        self.pending_grenade = self.grenade_sequence
+
     def _choose_upgrade(self, index):
         self.pending_upgrade = [self.upgrades.offer_id, index]
 
@@ -885,6 +915,8 @@ class CoopClientGame:
                 self._request_interaction()
             elif event.key == self.settings.keys.get("signal", pygame.K_c):
                 self._ping()
+            elif event.key == self.settings.keys.get("grenade", pygame.K_g):
+                self._throw_grenade()
             elif (not self.controls_paused and self.player.alive
                   and self.outcome is None
                   and (event.key == self.settings.keys["roulade"]
@@ -952,6 +984,8 @@ class CoopClientGame:
             self._request_interaction()
         elif action == "ping":
             self._ping()
+        elif action == "grenade":
+            self._throw_grenade()
         elif action in ("aim_down", "aim_up"):
             self.player.aiming = (
                 not self.player.rolling
@@ -1003,6 +1037,8 @@ class CoopClientGame:
                     self._request_interaction()
                 elif action == "ping":
                     self._ping()
+                elif action == "grenade":
+                    self._throw_grenade()
         self.time += dt
         self.shake = max(0.0, self.shake - dt * 3.5)
         self._net_receive()
@@ -1164,6 +1200,7 @@ class CoopClientGame:
             "uc": self.pending_upgrade,
             "pg": self.pending_ping,
             "lp": self.controls_paused,
+            "gr": self.pending_grenade,
             "wid": self.player.weapon.spec.id,
             "fx": self.pending_fires,
         }, self.host_addr)
@@ -1191,6 +1228,10 @@ class CoopClientGame:
                             or not 0 <= event_sequence <= 2 ** 63 - 1):
                         continue
                     if session_id != self.host_session:
+                        self.grenades = []
+                        self.grenade_ammo = 2
+                        self.grenade_sequence = 0
+                        self.pending_grenade = None
                         self.pings = Pings()
                         self.rescue_rows = []
                         self.pending_ping = None
@@ -1237,6 +1278,20 @@ class CoopClientGame:
                     and paused in (0, 1))):
             return False
         self._set_host_paused(bool(paused))
+        if "gr" in snap:
+            grenades = read_grenades(snap["gr"])
+            if grenades is None:
+                return False
+            self.grenades = grenades
+        if "gm" in snap:
+            row = snap["gm"]
+            if (not isinstance(row, list) or len(row) != 3 or type(row[0]) is not int
+                    or not 0 <= row[0] <= 2 or _finite_float(row[1], 0, 1) is None
+                    or type(row[2]) is not int or not 0 <= row[2] < 2 ** 31):
+                return False
+            self.grenade_ammo = row[0]
+            if row[2] == self.pending_grenade:
+                self.pending_grenade = None
         if "rr" in snap:
             rows = validated_rows(snap["rr"], rescue=True)
             if rows is None:
@@ -1639,6 +1694,10 @@ class CoopClientGame:
         if not isinstance(event, (list, tuple)) or not event:
             return
         kind = event[0]
+        if kind == "gk" and len(event) == 3:
+            if event[1] == self.pid and type(event[2]) is int and 0 <= event[2] <= 24:
+                self.stats["kills"] += event[2]
+            return
         if kind == "ex" and len(event) == 3:
             _, x, y = event
             x = _finite_float(x, 0.0, self.level.width)
@@ -1714,6 +1773,7 @@ class CoopClientGame:
                    + self.props)
         sprites += self.mission_marker.sprites(self.mission)
         sprites += ping_sprites(self)
+        sprites += self.grenades
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -1740,6 +1800,7 @@ class CoopClientGame:
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
                                 lambda *points: Game._objective_visible(self, *points))
         draw_choices(screen, self.hud, self.upgrades)
+        self.hud.draw_grenade_count(screen, self.grenade_ammo)
         if self.pid is None:
             self.hud.show_message("Connexion à l'hôte...")
         if not self.player.alive and self.outcome is None:

@@ -1,5 +1,10 @@
 # Architecture
 
+`grenades.py` gère frottement, rebonds et fusée. Déplacements découpés en pas
+<=0,08 m, contrôle du rayon sur deux axes. `Game` retire le projectile avant
+résolution du souffle et réutilise les hooks de dégâts et packs du Colosse.
+Le client affiche seulement les projectiles reçus de l'hôte.
+
 `BossPattern` produit les transitions annonce/charge/frappe/récupération.
 `Game._tick_boss` remplace l'IA standard seulement pendant une séquence active ;
 l'IA et les stats de phase existantes restent actives entre ces séquences.

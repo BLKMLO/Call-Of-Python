@@ -32,6 +32,12 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+Grenades : `in.gr` est une séquence 31 bits, consommée même si charges/cooldown
+refusent le lancer. `snap.gm=[charges,cooldown,dernière_séquence]` acquitte ;
+`snap.gr` contient au plus huit `[id,propriétaire,x,y,fusée]`. Ni trajectoire
+ni dégâts proposés par le client. Effets `ex`, éliminations distantes `[gk,pid,compte]`
+dans le journal fiable pour les statistiques individuelles.
+
 `en[15]` est `null` ou `[état,attaque,x_cible,y_cible,temps]` pour un Colosse.
 États connus : idle/warn/charge/recover ; attaques charge/slam. Coordonnées et
 timer (0–10 s) sont bornés. Les impacts passent par la santé autoritaire ;

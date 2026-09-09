@@ -322,6 +322,11 @@ class HUD:
                 text = pygame.transform.smoothscale(text, (width - 16, text.get_height()))
             screen.blit(text, (panel.centerx - text.get_width() // 2, panel.y + 4 + line * 25))
 
+    def draw_grenade_count(self, screen, count):
+        text = self.small_font.render(f"FRAG. {count}/2", True, HUD_AMBER)
+        screen.blit(text, (screen.get_width() // 2 - text.get_width() // 2,
+                           screen.get_height() - 135))
+
     def draw(self, screen, player, enemies, level, pickups=(), fps=None,
              survival=None, stats=None):
         if self.flash > 0.0 and player.ads < 0.5:
