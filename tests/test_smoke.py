@@ -114,6 +114,17 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(info["final"], FINAL_WAVE)
         self.assertGreaterEqual(info["remaining"], 0)
 
+    def test_submersion_preserves_queued_wave_and_mutator(self):
+        game = SurvivalGame(self.screen, self.settings, self.sounds)
+        self.addCleanup(game.close)
+        game._start_wave(4)
+        first = game.spawn_queue[0]
+        game._start_wave(7)
+        self.assertEqual(game.spawn_queue[0], first)
+        game._process_spawn_queue(1 / 60)
+        self.assertEqual(game.enemies[0].mutator, first[2])
+        self.assertEqual(first[1], 4)
+
     def test_warehouse_objectives_gate_victory_and_freeze_when_paused(self):
         game = Game(self.screen, self.settings, self.sounds, 0)
         self.addCleanup(game.close)

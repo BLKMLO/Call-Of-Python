@@ -1,5 +1,11 @@
 # Architecture
 
+`mutators.py` choisit une variation bornée avec un générateur isolé. La file
+Déferlement stocke `(type, vague_origine, mutateur)` ; les multiplicateurs sont
+appliqués une fois au spawn. Une submersion ne rééquilibre pas la file ancienne.
+Le boss est exclu des effets. Le client reçoit l'identifiant pour l'annonce,
+les positions et la vie maximale résultantes pour le rendu.
+
 `SessionUpgrades` détient uniquement l'état de partie : récompenses dédupliquées,
 tirages isolés par graine, propositions, délai fixe, niveaux plafonnés. Les effets
 reconstruisent les specs d'armes depuis `WEAPON_SPECS` sans les muter ; une signature

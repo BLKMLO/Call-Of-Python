@@ -12,6 +12,7 @@ import random
 import pygame
 
 import assets
+from mutators import MUTATORS
 from weapons import WEAPON_ORDER
 
 HUD_GREEN = (82, 220, 153)
@@ -720,8 +721,11 @@ class HUD:
         screen.blit(label, (x + 14, 14))
 
     def _draw_survival(self, screen, info, boss_active=False):
-        """Sous le titre : vague courante, et compte à rebours (répit ou
-        submersion imminente)."""
+        """Vague courante, délai et variation annoncée."""
+        mutator = info.get("mutator", "")
+        if mutator in MUTATORS:
+            text = self.small_font.render(MUTATORS[mutator], True, HUD_AMBER)
+            screen.blit(text, (screen.get_width() // 2 - text.get_width() // 2, 195))
         if info["wave"] <= 0:
             text = f"La horde arrive dans {math.ceil(info['next_in'])} s..."
             color = (240, 200, 160)
@@ -735,10 +739,14 @@ class HUD:
             # le compte à rebours vire au rouge quand la submersion menace
             color = (230, 90, 70) if info["next_in"] < 15 else (220, 220, 160)
         label = self.font.render(text, True, color)
-        if boss_active:
-            y = 160 if self.width < 1000 else 105
+        if self.width < 1000:
+            y = 160
+        elif boss_active:
+            y = 105
         else:
             y = 50
+        if label.get_width() > self.width - 32:
+            label = pygame.transform.smoothscale(label, (self.width - 32, label.get_height()))
         screen.blit(label, ((self.width - label.get_width()) // 2, y))
 
     def _draw_announce(self, screen):

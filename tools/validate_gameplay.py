@@ -124,10 +124,14 @@ def validate(stage, output):
                 host.intermission = 1000
                 for x, y in positions[:24]:
                     host.spawn_enemy("grunt", x, y)
+                if stage >= 5:
+                    host._start_wave(4)
                 for _ in range(120):
                     host.update(1 / 60)
                     client.update(1 / 60)
                 assert client.synced and len(client.ghosts) == 24
+                if stage >= 5:
+                    assert client.wave_info["mutator"] == host.mutator
                 host.draw(screen)
                 client.draw(screen)
                 pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-coop.png")

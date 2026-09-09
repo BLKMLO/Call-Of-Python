@@ -35,6 +35,7 @@ from gamepad import GamepadInput, reset_gameplay_input
 from hud import HUD
 from level import SURVIVAL_LEVEL, Level
 from mission_marker import MissionMarker
+from mutators import MUTATORS
 from network import DEFAULT_PORT, UdpPeer
 from objectives import Mission
 from particles import ParticleSystem
@@ -1563,6 +1564,9 @@ class CoopClientGame:
         clean = {"wave": round(wave), "final": round(final),
                  "remaining": round(remaining), "next_in": next_in,
                  "intermission": bool(wave_info.get("intermission"))}
+        mutator = wave_info.get("mutator", "")
+        if isinstance(mutator, str) and mutator in MUTATORS:
+            clean["mutator"] = mutator
         if clean["wave"] > self.wave_info["wave"] and self.synced:
             self.sounds.play("wave", volume_scale=0.9)
             self.hud.announce(f"VAGUE {clean['wave']}")

@@ -81,6 +81,12 @@ roulades, cadence, chargeurs et degats.
 
 ## Points techniques
 
+Déferlement : dès la vague 4, un mutateur annoncé fait varier les vagues par
+groupes de trois : assaut rapide (+15 % vitesse), blindés (+20 % vie, -10 %
+vitesse), tirs croisés (certains miliciens remplacés par des soldats).
+Les vagues 10/20/30 sont neutres ; les ennemis des vagues précédentes conservent
+leurs effets. Le plafond reste de 24 ennemis vivants, sans hausse de leurs dégâts.
+
 Améliorations de partie : après les deux interactions de l'Entrepôt, ou chaque
 troisième vague nettoyée, choisir une des trois cartes avec F5–F7, gauche/haut/
 droite sur la croix manette, clic ou tactile. Après 12 s, le premier choix est

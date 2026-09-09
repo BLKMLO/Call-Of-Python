@@ -1,5 +1,12 @@
 # Changelog
 
+## Gameplay — étape 5 (2026-09-08)
+
+- Trois mutateurs Déferlement annoncés et répliqués, à partir de la vague 4.
+- Rotation reproductible, vagues de Colosse neutres, compte et dégâts préservés.
+- La file conserve vague et mutateur d'origine lors d'une submersion.
+- 127 tests, deux résolutions, loopback, 24 ennemis, UDP observé <=567 octets.
+
 ## Gameplay — étape 4 (2026-09-08)
 
 - Améliorations temporaires individuelles : cinq bonus, trois cartes proposées,

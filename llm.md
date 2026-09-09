@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 4 validées ; Entrepôt jouable en solo et en LAN. Étapes 5–10 restent à
+Étapes 1 à 5 validées ; Entrepôt jouable en solo et en LAN. Étapes 6–10 restent à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -46,6 +46,18 @@ Le contexte survit au transfert du joueur entre niveaux, jamais à une nouvelle
 partie ; pas de persistance. 124 tests OK et Ruff OK. Recette étape 4, 24 ennemis,
 deux résolutions, choix coop répliqué : médiane/p95 6,044/11,856 ms et
 10,294/11,254 ms ; UDP observé <=550 octets. Captures des cartes inspectées.
+
+Étape 5 : `mutators.py`, trois variations connues (rapid, armored, crossfire).
+Rotation par groupes de trois vagues dès 4, graine isolée 101 ; 10/20/30 neutres.
+Vitesse +15 %, ou vie +20 %/vitesse -10 %, ou remplacement des miliciens à
+indices multiples de 4 par des soldats. Aucun boss modifié ; aucun ennemi ajouté
+par un mutateur. La file stocke `(kind,wave,mutator)` et conserve les effets
+d'origine en cas de submersion. `wv.mutator` répliqué, annonce HUD à y=195 pour
+éviter les panneaux boss. 127 tests et Ruff OK, captures aux deux résolutions.
+Recette étape 5 : 24 ennemis, médiane/p95 5,735/6,413 ms et 10,055/12,456 ms ;
+UDP observé <=567 octets. Pas de sauvegarde ni nouvelle version de protocole.
+Correction visuelle de l'étape 5 : la ligne de vague est placée à y=160 sous
+1000 px de large, sous les panneaux supérieurs ; largeur bornée à l'écran.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms

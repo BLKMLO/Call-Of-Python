@@ -32,6 +32,10 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+`snap.wv.mutator` est vide ou vaut `rapid`, `armored`, `crossfire`. Les
+identifiants inconnus sont ignorés. Les clients ne recalculent pas les effets
+ennemis ; santé maximale et positions restent celles de l'hôte.
+
 Les améliorations v4 utilisent `snap.ub = [id_offre, niveaux, propositions,
 secondes_restantes, crédits_en_attente]`, individuel par client. `in.uc` vaut
 `null` ou `[id_offre, index_choix]`. Les doublons ne peuvent choisir une offre

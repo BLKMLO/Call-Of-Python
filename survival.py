@@ -25,6 +25,7 @@ from collections import deque
 from difficulty import ThreatDirector
 from game import Game
 from level import SURVIVAL_LEVEL
+from mutators import apply_mutator, composition, mutator_for_wave
 
 FINAL_WAVE = 30                # dernière vague
 WAVE_TIMEOUT_BASE = 30.0       # délai de submersion de la 1ère vague (s)
@@ -99,6 +100,7 @@ class SurvivalGame(Game):
                 pickup.level_index = 1
 
         self.wave = 0
+        self.mutator = ""
         self.wave_timer = 0.0          # chrono de submersion de la vague
         self.intermission = INTERMISSION
         self.spawn_queue = deque()     # types d'ennemis en attente
@@ -173,7 +175,9 @@ class SurvivalGame(Game):
         self.wave = number
         self.wave_timer = 0.0
         self.intermission = 0.0
-        self.spawn_queue.extend(wave_composition(number))
+        self.mutator = mutator_for_wave(number)
+        self.spawn_queue.extend((kind, number, self.mutator)
+                                for kind in composition(wave_composition(number), self.mutator))
         self.sounds.play("wave", volume_scale=0.9)
         self.hud.announce(f"VAGUE {number}")
         self._refresh_pickups(number)
@@ -202,10 +206,12 @@ class SurvivalGame(Game):
         if (not self.spawn_queue or self.spawn_cooldown > 0.0
                 or sum(e.alive for e in self.enemies) >= MAX_ALIVE):
             return
-        kind = self.spawn_queue.popleft()
+        entry = self.spawn_queue.popleft()
+        kind, wave, mutator = entry if isinstance(entry, tuple) else (entry, self.wave, "")
         x, y = self._pick_spawn_point()
-        hp_mult, dmg_mult = wave_multipliers(self.wave)
+        hp_mult, dmg_mult = wave_multipliers(wave)
         enemy = self.spawn_enemy(kind, x, y, hp_mult, dmg_mult)
+        apply_mutator(enemy, mutator)
         # Il surgit en chasse, pas en patrouille.
         self.ais[-1].alert((self.player.x, self.player.y))
         self.particles.spawn_portal(enemy.x, enemy.y)
@@ -248,6 +254,7 @@ class SurvivalGame(Game):
                      + len(self.spawn_queue))
         return {
             "wave": self.wave,
+            "mutator": self.mutator,
             "final": FINAL_WAVE,
             "remaining": remaining,
             "next_in": (self.intermission if self.intermission > 0.0

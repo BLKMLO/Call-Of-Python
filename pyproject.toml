@@ -36,7 +36,7 @@ py-modules = [
   "ai", "assets", "coop", "difficulty", "entities", "game", "gamepad",
   "hud", "level", "main", "menu", "network", "particles", "raycaster",
   "resources", "runtime", "settings", "sounds", "survival", "touch_controls", "version",
-  "weapons", "objectives", "mission_marker", "upgrades", "upgrade_ui",
+  "weapons", "objectives", "mission_marker", "upgrades", "upgrade_ui", "mutators",
 ]
 
 [tool.setuptools.data-files]
