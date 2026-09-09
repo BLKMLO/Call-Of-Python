@@ -1,5 +1,9 @@
 # Architecture
 
+`objectives.py` contient les définitions immuables et la progression d'une
+mission. Aucune dépendance SDL ni réseau : seul le simulateur autoritaire
+appelle `interact/update`, les clients liront les instantanés validés.
+
 `main.py` pilote les ecrans et le rendu. En partie, `FixedStepClock` transforme
 le temps de rendu en pas constants de 1/60 s. Le rendu reste libre et ne
 modifie pas l'etat de jeu.

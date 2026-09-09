@@ -96,6 +96,10 @@ places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.
 
 ## Architecture
 
+Évolution gameplay en cours : le moteur déclaratif `objectives.py` fournit
+interaction, déplacement vers une zone, défense chronométrée et élimination.
+La conversion jouable d'un niveau et sa réplication constituent les étapes suivantes.
+
 | Fichier | Role |
 |---|---|
 | `main.py`, `runtime.py` | Etats, rendu et horloge fixe |

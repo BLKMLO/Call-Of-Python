@@ -1,5 +1,19 @@
 # llm.md — Contexte projet unique (source de vérité)
 
+## Évolution gameplay — état de réalisation
+
+Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
+Étape 1 validée : moteur `objectives.py` et recette réutilisable ajoutés. Étapes 2–10
+restent à réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une
+étape validée sans tests et recette. Les nouveaux objectifs ne sont pas encore
+activés sur une carte. Rollback : réversion du commit de l'étape concernée.
+
+Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
+résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms
+à 800×600 et 10,501/12,402 ms à 1280×720 (SDL dummy, machine de travail,
+80 frames dont 20 de chauffe ; indicatif, pas une garantie matérielle).
+Datagramme maximal observé : 530 octets. Captures inspectées aux deux tailles.
+
 > **Ce fichier est l'unique source de contexte pour toutes les IA** (Claude,
 > GPT, Kimi, agents, etc.) travaillant sur ce dépôt. Les anciens fichiers
 > (`CLAUDE.md`, `GPT.md`, `AGENTS.md`) ne contiennent plus qu'une redirection

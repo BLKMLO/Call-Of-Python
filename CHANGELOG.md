@@ -1,5 +1,12 @@
 # Changelog
 
+## Gameplay — étape 1 (2026-09-08)
+
+- Moteur d'objectifs pur et borné, interactions avec distance/visibilité,
+  défense en temps de simulation, instantanés validés atomiquement.
+- Aucun changement des règles de victoire à cette étape ; anciennes parties conservées.
+- Recette `tools/validate_gameplay.py` : deux résolutions, 24 ennemis, loopback et MTU.
+
 ## [Non publié] — 2026-09-08
 
 - Navigation des menus au clavier et à la croix directionnelle SDL,
