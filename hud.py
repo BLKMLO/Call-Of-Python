@@ -860,7 +860,7 @@ class HUD:
         self._red_veil.set_alpha(110)
         screen.blit(self._red_veil, (0, 0))
         title = self.big_font.render("VOUS ÊTES À TERRE", True, (240, 200, 190))
-        hint = self.font.render("Réapparition dans quelques secondes...",
+        hint = self.font.render("Un allié peut vous porter secours.",
                                 True, (220, 200, 200))
         screen.blit(title, ((self.width - title.get_width()) // 2,
                             self.height // 2 - 60))

@@ -1,5 +1,14 @@
 # Changelog
 
+## Gameplay — étape 6 (2026-09-08)
+
+- Secours coop : 20 s à terre, réanimation canalisée de 3 s, interruption sur
+  dégâts/roulade/éloignement/perte de vue, tir bloqué, retour à 40 PV.
+- Réapparition conservée après 20+6 s ; défaite si toute l'équipe tombe.
+- Ping borné, répliqué, position calculée par l'hôte ; clavier/manette/tactile.
+- Timers de secours/signaux, demandes et instantanés validés ; 132 tests.
+- HUD à terre vérifié aux deux résolutions ; temps de secours sous le titre.
+
 ## Gameplay — étape 5 (2026-09-08)
 
 - Trois mutateurs Déferlement annoncés et répliqués, à partir de la vague 4.

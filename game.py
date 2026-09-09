@@ -12,6 +12,7 @@ import pygame
 
 import assets
 from ai import EnemyAI
+from coop_support import Pings
 from difficulty import get_difficulty
 from entities import ENEMY_TYPES, Pickup, Player, Prop
 from gamepad import GamepadInput, reset_gameplay_input
@@ -21,6 +22,7 @@ from mission_marker import MissionMarker
 from objectives import Mission
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, has_line_of_sight, rotate_zoom_screen, zoom_screen
+from support_ui import draw_support, ping_sprites
 from touch_controls import FINGER_EVENTS, TouchControls
 from upgrade_ui import choice_event, draw_choices
 from upgrades import SessionUpgrades
@@ -54,6 +56,7 @@ class Game:
         self.level = Level(level_index, config=level_config)
         self.mission = Mission(self.level.config.get("objectives", ()))
         self.mission_marker = MissionMarker()
+        self.pings = Pings()
         self.level_index = level_index
         self.difficulty = get_difficulty(
             getattr(settings, "difficulty", "soldier"),
@@ -116,13 +119,13 @@ class Game:
     # Événements ponctuels (clics, touches, molette)
     # ------------------------------------------------------------------
     def handle_event(self, event):
+        """Retourne menu si le joueur demande à quitter la partie, sinon None."""
         if self.outcome is None and not self.paused and self.player.alive:
             choice = choice_event(event, (self.raycaster.width, self.raycaster.height),
                                   self.upgrades)
             if choice is not None:
                 self._choose_upgrade(choice)
                 return None
-        """Retourne "menu" si le joueur demande à quitter la partie, sinon None."""
         gamepad = getattr(self, "gamepad", None)
         if gamepad is not None:
             gamepad.handle_event(event)
@@ -171,6 +174,8 @@ class Game:
                 self.show_fps = not self.show_fps
             elif event.key == self.settings.keys.get("interagir", pygame.K_e):
                 self._interact()
+            elif event.key == self.settings.keys.get("signal", pygame.K_c):
+                self._ping()
             elif (not self.paused and self.outcome is None
                   and self.player.alive
                   and (event.key == self.settings.keys["roulade"]
@@ -238,6 +243,8 @@ class Game:
             self._player_fire()
         elif action == "interact":
             self._interact()
+        elif action == "ping":
+            self._ping()
         elif action in ("aim_down", "aim_up"):
             self.player.aiming = (
                 not self.player.rolling
@@ -283,6 +290,8 @@ class Game:
                     self._player_fire()
                 elif action == "interact":
                     self._interact()
+                elif action == "ping":
+                    self._ping()
         # Mort : on fige le gameplay mais on laisse tourner la caméra de
         # mort (chute + fondu) et les particules, même si une pause avait été
         # activée juste avant le coup fatal.
@@ -298,6 +307,7 @@ class Game:
             return
         self.time += dt
         self._update_upgrades(dt)
+        self.pings.update(dt)
         self.shake = max(0.0, self.shake - dt * 3.5)
 
         player = self.player
@@ -412,6 +422,15 @@ class Game:
 
     def _objective_visible(self, x0, y0, x1, y1):
         return has_line_of_sight(self.level, x0, y0, x1, y1)
+
+    def _ping(self, actor=None, pid=0):
+        actor = actor or self.player
+        if self.paused or self.outcome is not None or not actor.alive:
+            return False
+        depth, _, _, _ = cast_ray(self.level, actor.x, actor.y, actor.angle)
+        distance = min(12.0, max(0.0, depth - 0.25))
+        return self.pings.add(pid, actor.x + math.cos(actor.angle) * distance,
+                              actor.y + math.sin(actor.angle) * distance)
 
     def _interact(self, actor=None):
         if self.paused or self.outcome is not None:
@@ -833,6 +852,7 @@ class Game:
         # Billboards : décors, cadavres, ennemis, coéquipiers, objets.
         sprites = list(self.enemies) + self._extra_sprites() + self.props
         sprites += self.mission_marker.sprites(self.mission)
+        sprites += ping_sprites(self)
         for pickup in self.pickups:
             if not pickup.taken:
                 pickup.v_offset = 0.12 + pickup.bob_offset(self.time)
@@ -879,6 +899,8 @@ class Game:
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
                                 self._objective_visible)
         draw_choices(screen, self.hud, self.upgrades)
+        if not hasattr(self, "rescue"):
+            draw_support(screen, self.hud, self.player, self.pings)
         if self.paused:
             self.hud.draw_pause(screen)
         self.touch.draw(screen, paused=self.paused)

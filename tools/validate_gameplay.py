@@ -132,6 +132,13 @@ def validate(stage, output):
                 assert client.synced and len(client.ghosts) == 24
                 if stage >= 5:
                     assert client.wave_info["mutator"] == host.mutator
+                if stage >= 6:
+                    host._ping()
+                    host.clients[client.pid]["player"].health = 0
+                    for _ in range(8):
+                        host.update(1 / 60)
+                        client.update(1 / 60)
+                    assert client.rescue_rows and client.pings.markers
                 host.draw(screen)
                 client.draw(screen)
                 pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-coop.png")

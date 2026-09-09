@@ -3,7 +3,7 @@
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 5 validées ; Entrepôt jouable en solo et en LAN. Étapes 6–10 restent à
+Étapes 1 à 6 validées ; Entrepôt jouable en solo et en LAN. Étapes 7–10 restent à
 réaliser. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
@@ -58,6 +58,21 @@ Recette étape 5 : 24 ennemis, médiane/p95 5,735/6,413 ms et 10,055/12,456 ms ;
 UDP observé <=567 octets. Pas de sauvegarde ni nouvelle version de protocole.
 Correction visuelle de l'étape 5 : la ligne de vague est placée à y=160 sous
 1000 px de large, sous les panneaux supérieurs ; largeur bornée à l'écran.
+
+Étape 6 : `coop_support.py` et `support_ui.py`. La réapparition automatique
+historique de 6 s est remplacée par 20 s de secours possible, puis 6 s avant
+spawn. Santé nulle = actions bloquées ; tous joueurs à terre = défaite.
+Interagir à <=1,4 m commence un secours de 3 s ; nouvel appui annule. Dégât,
+roulade, perte de vue ou éloignement annulent ; un helper supplémentaire
+n'accélère pas. Tir bloqué pendant le secours, retour 40 PV/2 s bouclier sans
+munitions offertes. Retour automatique 60 PV au spawn. Pause hôte fige tout ;
+pause locale/silence client >350 ms annulent son secours. `rr`, `pg`, `ga`, `lp`
+sont détaillés dans la doc réseau. Ping C/remappable, Back/View, tactile SIG.
+Portée 12 m calculée par l'hôte, 5 s, délai 2 s, quatre marqueurs maximum.
+132 tests OK, Ruff OK, recette solo/loopback et captures à terre 800/1280.
+Benchmark 24 ennemis : médiane/p95 5,745/6,162 ms et 10,907/20,968 ms ; mesures
+indicatives avec autres contrôles actifs. UDP observé <=597 octets. Pas de
+sauvegarde. Les captures ont conduit à déplacer le détail secours sous le titre.
 
 Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
 résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms

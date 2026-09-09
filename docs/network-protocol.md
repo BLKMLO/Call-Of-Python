@@ -32,6 +32,18 @@ datagramme déjà envoyé peut avoir été accepté avant cette pause.
 
 ## Transport
 
+Secours : `snap.rr` contient au plus quatre lignes `[pid, secondes_avant_respawn,
+progression_secours, pid_secouriste]` (secouriste -1 si absent). La fenêtre de
+secours correspond aux 20 premières secondes du délai total de 26 s. `ix`
+commence/annule un secours proche avant de chercher une interaction de mission.
+`in.lp: true` annule le secours et ignore le gameplay du client en pause locale.
+Un silence d'entrée de 350 ms annule également le secours ; pas la partie.
+
+Ping : `in.pg` est une séquence 31 bits, acquittée par `snap.ga`. `snap.pg`
+contient `[pid,x,y,secondes]`, au plus quatre lignes. Le point est dérivé du
+rayon de visée hôte, borné à 12 m et avant le mur ; aucune coordonnée de ping
+cliente acceptée. Les états remplacent les anciens, sans effets cumulés.
+
 `snap.wv.mutator` est vide ou vaut `rapid`, `armored`, `crossfire`. Les
 identifiants inconnus sont ignorés. Les clients ne recalculent pas les effets
 ennemis ; santé maximale et positions restent celles de l'hôte.

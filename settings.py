@@ -34,10 +34,12 @@ DEFAULT_KEYS = {
     "roulade": pygame.K_LSHIFT,
     "recharger": pygame.K_r,
     "interagir": pygame.K_e,
+    "signal": pygame.K_c,
 }
 
 # L'ordre d'affichage des actions dans le menu des paramètres.
-KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "roulade", "recharger", "interagir"]
+KEY_ACTIONS = ["avancer", "reculer", "gauche", "droite", "roulade", "recharger",
+               "interagir", "signal"]
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 MAX_SETTINGS_BYTES = 64 * 1024

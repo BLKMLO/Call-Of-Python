@@ -1,5 +1,12 @@
 # Architecture
 
+`coop_support.Rescue` gère les timers à terre et les secours. Les joueurs à
+0 PV restent inactifs ; le résultat du moteur restaure 40 PV sur place ou
+60 PV au spawn. Une seule progression est comptée par victime ; les helpers
+ne multiplient pas la vitesse. L'hôte annule un secours client si sa dernière
+entrée date de plus de 350 ms. `Pings` limite débit, durée et cardinalité des
+marqueurs. `support_ui.py` rend ces états et recycle au plus quatre billboards.
+
 `mutators.py` choisit une variation bornée avec un générateur isolé. La file
 Déferlement stocke `(type, vague_origine, mutateur)` ; les multiplicateurs sont
 appliqués une fois au spawn. Une submersion ne rééquilibre pas la file ancienne.

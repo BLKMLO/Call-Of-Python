@@ -117,7 +117,10 @@ class CleanupTests(unittest.TestCase):
         self.assertIsNone(valid_ipv4("localhost"))
 
     def _host_with_remote(self):
+        from coop_support import Pings, Rescue
+
         host = CoopHostGame.__new__(CoopHostGame)
+        host.rescue, host.pings = Rescue(), Pings()
         host.level = Level(4, config=SURVIVAL_LEVEL)
         host.net_time = 0.1
         host.paused = False

@@ -206,6 +206,37 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(host.outcome, "victory")
         self.assertEqual(client.outcome, "victory")
 
+    def test_coop_rescue_and_ping_are_host_authoritative(self):
+        host = CoopHostGame(self.screen, self.settings, self.sounds, port=0)
+        self.addCleanup(host.close)
+        host.intermission = 1000
+        client = CoopClientGame(self.screen, self.settings, self.sounds, "127.0.0.1",
+                                port=host.peer.sock.getsockname()[1])
+        self.addCleanup(client.close)
+
+        def ticks(count):
+            for _ in range(count):
+                host.update(1 / 60)
+                client.update(1 / 60)
+
+        ticks(12)
+        host.player.health = 0
+        remote = host.clients[client.pid]["player"]
+        remote.x = client.player.x = host.player.x + .5
+        remote.y = client.player.y = host.player.y
+        ticks(12)
+        self.assertTrue(client.rescue_rows)
+        client._request_interaction()
+        ticks(190)
+        self.assertEqual(host.player.health, 40)
+        self.assertTrue(client.allies[0].alive)
+        self.assertFalse(client.rescue_rows)
+        client._ping()
+        ticks(12)
+        self.assertIn(client.pid, host.pings.markers)
+        self.assertEqual(set(client.pings.markers), set(host.pings.markers))
+        self.assertIsNone(client.pending_ping)
+
     def test_menus_draw_and_click_at_extreme_resolutions(self):
         menus = [
             MainMenu(self.sounds, self.settings),

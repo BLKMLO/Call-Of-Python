@@ -81,6 +81,14 @@ roulades, cadence, chargeurs et degats.
 
 ## Points techniques
 
+Secours coop : un joueur à terre peut être réanimé pendant 20 s. Approchez à
+1,4 m puis Interagir (E/LB/ACT.) pour commencer un secours de 3 s ; rester près
+de lui. Dégâts, roulade, perte de vue ou nouvel appui annulent le secours. Le
+tir est bloqué pendant l'action. Réanimation sur place à 40 PV et 2 s de bouclier.
+Sans secours, réapparition au spawn après 6 s supplémentaires à 60 PV. Si toute
+l'équipe tombe, la partie est perdue. Signal : C (remappable), Back/View ou
+SIG. en tactile ; durée 5 s, délai 2 s, portée 12 m, quatre marqueurs maximum.
+
 Déferlement : dès la vague 4, un mutateur annoncé fait varier les vagues par
 groupes de trois : assaut rapide (+15 % vitesse), blindés (+20 % vie, -10 %
 vitesse), tirs croisés (certains miliciens remplacés par des soldats).
