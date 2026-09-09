@@ -2,6 +2,9 @@
 
 ## 0.5.0 — Gameplay, étape 10 (2026-09-09)
 
+- Suivi de validation distante : correction du groupe de concurrence du workflow
+  Executables ; `matrix.os` n’est pas disponible au niveau global.
+
 - Score autoritaire partagé, crédits uniques, grades par niveau, résultats responsifs.
 - Bonus de secours plafonné et pénalité de mise à terre ; ravitaillement de grenades
   indépendant du plafond des six améliorations.

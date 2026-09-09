@@ -19,7 +19,9 @@ call-of-python
 
 Le lancement depuis un clone reste possible avec `python main.py`. La
 combinaison supportee est Python 3.12 avec pygame 2.6.1. Les tags produisent
-aussi des distributions autonomes Windows et Linux dans GitHub Actions.
+aussi des distributions autonomes Windows et Linux dans GitHub Actions. Une
+seule exécution de distribution par référence est conservée ; ses deux builds
+Windows/Linux restent parallèles.
 
 Le pack PNG livre est toujours prioritaire. `python assets.py` genere
 uniquement les fichiers absents. Seule la commande suivante remplace les

@@ -1,5 +1,9 @@
 # Architecture
 
+Le workflow Executables utilise un groupe de concurrence par référence Git,
+indépendant de la matrice des jobs : les deux OS se construisent en parallèle
+et une nouvelle exécution de la même référence remplace l’ancienne.
+
 `scoring.ScoreBook` observe les morts créditées une fois, transitions de vie,
 objectifs et victoire. L’hôte détient le score commun ; les clients lisent `sc`.
 Les PID stables évitent une pénalité erronée lors d’une déconnexion. Le cumul

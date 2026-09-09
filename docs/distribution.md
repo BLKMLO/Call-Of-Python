@@ -39,3 +39,8 @@ python tools/validate_gameplay.py --stage 10 --output gameplay-qa
 ```
 
 Les builds natifs de cette version restent à produire via le workflow de release.
+
+Le groupe de concurrence global est `executables-${{ github.ref }}`. Ne pas
+y utiliser `matrix.os` : la matrice est disponible uniquement au niveau des
+jobs. Ce défaut préexistant a été découvert et corrigé pendant la validation
+distante de la PR gameplay ; les deux builds OS ne s’annulent pas mutuellement.

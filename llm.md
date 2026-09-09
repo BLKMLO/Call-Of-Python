@@ -4,7 +4,10 @@
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
 Étapes 1 à 10 implémentées et validées localement ; Entrepôt solo et LAN.
-Version jeu 0.5.0, protocole v4. CI distante à vérifier sur la PR. Pas de changement de sauvegardes. Ne jamais annoncer une étape
+Version jeu 0.5.0, protocole v4. PR brouillon #29 ; CI à consulter sur GitHub.
+Suivi distant : workflow release préexistant invalide (`matrix.os` au niveau
+global). Groupe corrigé en `executables-${{ github.ref }}` ; matrice de jobs
+inchangée. Correctif de publication séparé après les dix étapes gameplay. Pas de changement de sauvegardes. Ne jamais annoncer une étape
 validée sans tests et recette. Rollback : réversion du commit de l'étape.
 
 Étape 10 : `scoring.py`, score commun autoritaire et grade par segment de niveau.
