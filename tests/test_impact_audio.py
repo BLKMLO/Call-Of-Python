@@ -88,6 +88,33 @@ class ImpactAudioTests(unittest.TestCase):
             0.8 * MUSIC_VOLUME, 0.8 * MUSIC_VOLUME,
         )
 
+    def test_file_music_is_released_when_switching_tracks(self):
+        bank = SoundBank.__new__(SoundBank)
+        bank.settings = SimpleNamespace(sound_volume=0.4, music_volume=0.7)
+        bank.enabled = True
+        bank.music_cache = {}
+        bank.file_music_keys = set()
+        bank.music_key = None
+        bank.music_channel = Mock()
+        bank._last_music_volume = None
+
+        def custom_path(key):
+            return None if key == "menu" else f"{key}.mp3"
+
+        with patch("sounds._custom_music_path", side_effect=custom_path), \
+                patch("sounds._music_loop", return_value=b"\0\0\0\0"), \
+                patch("pygame.mixer.Sound", side_effect=lambda *a, **k: Mock()):
+            bank.play_music("menu")
+            bank.play_music("level0")
+            self.assertEqual(set(bank.music_cache), {"menu", "level0"})
+            bank.play_music("level1")
+            # L'ancienne piste fichier est libérée, la nappe synthétisée reste.
+            self.assertEqual(set(bank.music_cache), {"menu", "level1"})
+            bank.stop_music()
+            bank.play_music("survival")
+            self.assertEqual(set(bank.music_cache), {"menu", "survival"})
+            self.assertEqual(bank.file_music_keys, {"survival"})
+
     def test_settings_menu_exposes_two_independent_audio_rows(self):
         settings = SimpleNamespace(
             resolution=(1280, 720),

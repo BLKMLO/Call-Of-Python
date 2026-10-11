@@ -6,6 +6,8 @@
   jouées à la place des nappes synthétisées.
 - Musique réelle du Déferlement ajoutée (`assets/sound/survival.mp3`), aussi jouée
   en coop LAN.
+- Une seule musique fichier gardée en mémoire à la fois (les précédentes sont
+  libérées au changement de niveau ou de mode) ; test de non-régression ajouté.
 - Volume des effets sonores par défaut abaissé de 0.7 à 0.4 pour laisser entendre
   la musique (les réglages déjà sauvegardés sont conservés).
 

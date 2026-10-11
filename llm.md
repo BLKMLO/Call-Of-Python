@@ -371,7 +371,11 @@ d'implémentation et les décisions techniques non triviales.
   committées (`assets/sound/1.mp3` … `5.mp3`, ~2 min 40 à 2 min 51 chacune,
   44,1 kHz stéréo), ainsi que `assets/sound/survival.mp3` (Déferlement,
   ~2 min 52, aussi joué en coop LAN) ; seul le menu reste synthétisé tant
-  qu'aucun `menu.<ext>` n'est fourni. Le volume par défaut des
+  qu'aucun `menu.<ext>` n'est fourni.
+  `SoundBank.play_music` ne garde en cache qu'une seule piste issue d'un
+  fichier (~15 Mo décodée) : les autres sont libérées à chaque changement,
+  y compris au retour au menu (`file_music_keys`, `_release_file_music`).
+  Les nappes synthétisées (~1 Mo) restent en cache. Le volume par défaut des
   effets (`Settings.sound_volume`) passe de 0.7 à 0.4 pour laisser entendre
   la musique (les réglages déjà sauvegardés ne sont pas modifiés).
 - **Coop LAN** : `CoopHostGame` hérite de `SurvivalGame` (hôte

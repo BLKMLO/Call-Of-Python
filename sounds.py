@@ -479,6 +479,7 @@ class SoundBank:
         self.settings = settings
         self.sounds = {}
         self.music_cache = {}
+        self.file_music_keys = set()   # clés du cache chargées depuis un fichier
         self.music_key = None
         self.music_channel = None
         self._last_music_volume = None
@@ -556,6 +557,10 @@ class SoundBank:
         Un fichier personnalisé dans `assets/sound/` (voir
         `_custom_music_path`) est utilisé s'il existe ; sinon la nappe est
         synthétisée à la première demande puis mise en cache.
+
+        Un fichier décodé pèse ~15 Mo (pistes de ~2 min 45) : seul celui en
+        cours reste en mémoire, les autres sont libérés au changement. Les
+        nappes synthétisées (~1 Mo, coûteuses à générer) restent en cache.
         """
         if not self.enabled or key not in MUSIC_KEYS or key == self.music_key:
             return
@@ -565,14 +570,23 @@ class SoundBank:
             if custom is not None:
                 try:
                     sound = pygame.mixer.Sound(custom)
+                    self.file_music_keys.add(key)
                 except pygame.error:
                     sound = None  # fichier illisible : repli sur la synthèse
             if sound is None:
                 sound = pygame.mixer.Sound(buffer=_music_loop(key))
             self.music_cache[key] = sound
         self.music_channel.play(self.music_cache[key], loops=-1, fade_ms=600)
+        self._release_file_music(keep=key)
         self.music_key = key
         self.refresh_music_volume()
+
+    def _release_file_music(self, keep):
+        """Libère les musiques issues de fichiers autres que `keep`."""
+        for key in list(self.file_music_keys):
+            if key != keep:
+                self.music_cache.pop(key, None)
+                self.file_music_keys.discard(key)
 
     def refresh_music_volume(self):
         """Applique le volume courant à la musique (appelé quand il change)."""
