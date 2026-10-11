@@ -81,7 +81,7 @@ class CleanupTests(unittest.TestCase):
             with patch.object(settings_module, "SETTINGS_FILE", path):
                 loaded = Settings()
                 self.assertEqual(loaded.resolution_index, 4)
-                self.assertEqual(loaded.volume, 0.7)
+                self.assertEqual(loaded.volume, 0.4)
                 self.assertFalse(loaded.fullscreen)
                 self.assertEqual(loaded.last_ip, "127.0.0.1")
                 self.assertEqual(len(set(loaded.keys.values())), len(loaded.keys))
@@ -100,7 +100,7 @@ class CleanupTests(unittest.TestCase):
                 stream.write("[" * 5000 + "]" * 5000)
             with patch.object(settings_module, "SETTINGS_FILE", path):
                 loaded = Settings()  # ne lève pas : valeurs par défaut
-                self.assertEqual(loaded.volume, 0.7)
+                self.assertEqual(loaded.volume, 0.4)
 
     def test_key_binding_swaps_conflicts_and_rejects_global_shortcuts(self):
         settings = Settings.__new__(Settings)

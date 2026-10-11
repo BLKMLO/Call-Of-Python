@@ -369,7 +369,7 @@ class SmokeTests(unittest.TestCase):
         # Fichier tronqué en plein milieu : retour aux défauts, pas de crash.
         with open(self.settings_path, "r+b") as stream:
             stream.truncate(5)
-        self.assertEqual(Settings().volume, 0.7)
+        self.assertEqual(Settings().volume, 0.4)
 
     def test_all_sounds_and_music_play_without_error(self):
         if not self.sounds.enabled:

@@ -367,6 +367,12 @@ d'implémentation et les décisions techniques non triviales.
   `AUDIO_EXTENSIONS` (ogg, mp3, wav, flac). Sans fichier, chaque contexte
   utilise son propre `MusicProfile` (racine, tempo, motif et timbre) et une
   boucle déterministe de 12 secondes raccordée sans clic.
+  Depuis le 11 octobre 2026, les musiques réelles des niveaux 1 à 5 sont
+  committées (`assets/sound/1.mp3` … `5.mp3`, ~2 min 40 à 2 min 51 chacune,
+  44,1 kHz stéréo) ; `survival.<ext>` (Déferlement) et `menu.<ext>` restent
+  synthétisés tant qu'aucun fichier n'est fourni. Le volume par défaut des
+  effets (`Settings.sound_volume`) passe de 0.7 à 0.4 pour laisser entendre
+  la musique (les réglages déjà sauvegardés ne sont pas modifiés).
 - **Coop LAN** : `CoopHostGame` hérite de `SurvivalGame` (hôte
   autoritaire) ; `CoopClientGame` est une classe indépendante qui expose
   la même interface (`handle_event`/`update`/`draw`/`finished`/`outcome`)

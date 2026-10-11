@@ -1,5 +1,12 @@
 # Changelog
 
+## Non publié — Musiques de campagne (2026-10-11)
+
+- Musiques réelles des niveaux 1 à 5 ajoutées (`assets/sound/1.mp3` … `5.mp3`),
+  jouées à la place des nappes synthétisées.
+- Volume des effets sonores par défaut abaissé de 0.7 à 0.4 pour laisser entendre
+  la musique (les réglages déjà sauvegardés sont conservés).
+
 ## 0.5.0 — Gameplay, étape 10 (2026-09-09)
 
 - Suivi de validation distante : correction du groupe de concurrence du workflow
