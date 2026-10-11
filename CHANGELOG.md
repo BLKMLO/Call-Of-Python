@@ -4,6 +4,8 @@
 
 - Musiques réelles des niveaux 1 à 5 ajoutées (`assets/sound/1.mp3` … `5.mp3`),
   jouées à la place des nappes synthétisées.
+- Musique réelle du Déferlement ajoutée (`assets/sound/survival.mp3`), aussi jouée
+  en coop LAN.
 - Volume des effets sonores par défaut abaissé de 0.7 à 0.4 pour laisser entendre
   la musique (les réglages déjà sauvegardés sont conservés).
 
