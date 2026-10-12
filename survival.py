@@ -15,6 +15,9 @@ Règles :
 - les trousses de soins réapparaissent toutes les 3 vagues, les packs de
   vie complets toutes les 2 vagues, les armes au sol toutes les 5 vagues
   (de plus en plus améliorées) ;
+- en solo, aucune amélioration ennemie (ni mutateur, ni élite) et une
+  amélioration d'arme toutes les 2 vagues nettoyées ; en coopération LAN,
+  mutateurs et élites restent actifs avec une amélioration toutes les 3 ;
 - survivre à la vague 30 est la victoire ultime.
 """
 
@@ -38,6 +41,8 @@ MAX_ALIVE = 24                 # ennemis simultanés (les autres attendent en fi
 MAX_CORPSES = 60               # cadavres conservés au sol (rendu)
 CLEAR_HEAL = 12                # PV rendus quand une vague est nettoyée à temps
 ALERT_PULSE = 2.5              # la horde re-flaire le joueur à cette fréquence (s)
+UPGRADE_EVERY_SOLO = 2         # amélioration d'arme toutes les N vagues (solo)
+UPGRADE_EVERY_COOP = 3         # idem en coopération LAN (inchangé)
 
 
 def wave_timeout(wave):
@@ -84,6 +89,10 @@ def wave_multipliers(wave):
 
 class SurvivalGame(Game):
     """Un `Game` sur l'arène du Déferlement, piloté par les vagues."""
+
+    # Solo : ennemis sans mutateur ni élite, améliorations plus fréquentes.
+    # `CoopHostGame` repasse à False pour garder la difficulté LAN.
+    SOLO = True
 
     def __init__(self, screen, settings, sounds, carry_player=None):
         super().__init__(screen, settings, sounds, level_index=4,
@@ -166,7 +175,8 @@ class SurvivalGame(Game):
                 self.player.health = min(self.player.max_health,
                                          self.player.health + CLEAR_HEAL)
                 self.intermission = INTERMISSION
-                if self.wave % 3 == 0:
+                every = UPGRADE_EVERY_SOLO if self.SOLO else UPGRADE_EVERY_COOP
+                if self.wave % every == 0:
                     self._award_upgrades(f"wave:{self.wave}")
                 self.sounds.play("heal", volume_scale=0.7)
         elif self.wave_timer >= wave_timeout(self.wave) and self.wave < FINAL_WAVE:
@@ -177,13 +187,14 @@ class SurvivalGame(Game):
         self.wave = number
         self.wave_timer = 0.0
         self.intermission = 0.0
-        self.mutator = mutator_for_wave(number)
+        self.mutator = "" if self.SOLO else mutator_for_wave(number)
         kinds = composition(wave_composition(number), self.mutator)
         if number % 10 == 5:
             kinds[0] = "commander"
+        elites = not self.SOLO and number >= 4
         self.spawn_queue.extend((kind, number, self.mutator,
                                  ("bulwark" if i == 1 else "hunter")
-                                 if number >= 4 and i in (1, 3) else "")
+                                 if elites and i in (1, 3) else "")
                                 for i, kind in enumerate(kinds))
         self.sounds.play("wave", volume_scale=0.9)
         self.hud.announce(f"VAGUE {number}")

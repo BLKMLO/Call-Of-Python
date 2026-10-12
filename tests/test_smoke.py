@@ -117,6 +117,7 @@ class SmokeTests(unittest.TestCase):
     def test_submersion_preserves_queued_wave_and_mutator(self):
         game = SurvivalGame(self.screen, self.settings, self.sounds)
         self.addCleanup(game.close)
+        game.SOLO = False      # mutateurs actifs comme en coopération
         game._start_wave(4)
         first = game.spawn_queue[0]
         game._start_wave(7)
@@ -124,6 +125,31 @@ class SmokeTests(unittest.TestCase):
         game._process_spawn_queue(1 / 60)
         self.assertEqual(game.enemies[0].mutator, first[2])
         self.assertEqual(first[1], 4)
+
+    def test_solo_survival_has_no_enemy_upgrades(self):
+        game = SurvivalGame(self.screen, self.settings, self.sounds)
+        self.addCleanup(game.close)
+        for wave in range(1, 31):
+            game.spawn_queue.clear()
+            game._start_wave(wave)
+            self.assertEqual(game.mutator, "")
+            self.assertTrue(all(entry[2] == "" and entry[3] == ""
+                                for entry in game.spawn_queue))
+        self.assertFalse(CoopHostGame.SOLO)
+
+    def test_solo_survival_awards_upgrade_every_two_waves(self):
+        game = SurvivalGame(self.screen, self.settings, self.sounds)
+        self.addCleanup(game.close)
+        awarded = []
+        game._award_upgrades = awarded.append
+        for wave in range(1, 7):
+            game.intermission = 0.0
+            game.wave = wave
+            game.spawn_queue.clear()
+            for enemy in game.enemies:
+                enemy.health = 0
+            game._update_waves(1 / 60)
+        self.assertEqual(awarded, ["wave:2", "wave:4", "wave:6"])
 
     def test_warehouse_objectives_gate_victory_and_freeze_when_paused(self):
         game = Game(self.screen, self.settings, self.sounds, 0)

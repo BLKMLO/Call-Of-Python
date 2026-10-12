@@ -122,6 +122,8 @@ def _revive(entity, health):
 class CoopHostGame(SurvivalGame):
     """Le Déferlement, hébergé : partie locale + service des clients."""
 
+    SOLO = False   # mutateurs, élites et cadence d'améliorations d'origine
+
     def __init__(self, screen, settings, sounds, carry_player=None,
                  port=DEFAULT_PORT, mission_mode=False):
         self.mission_mode = bool(mission_mode)

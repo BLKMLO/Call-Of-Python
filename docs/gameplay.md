@@ -15,6 +15,7 @@ L’hôte est seul responsable des objectifs, récompenses, dégâts et timers.
 ## Améliorations et ressources
 
 Chaque interaction de mission et chaque troisième vague entièrement nettoyée
+(chaque deuxième en Déferlement solo)
 ouvre une offre, jusqu’à six choix par partie. Choisir parmi trois cartes avec
 F5/F6/F7, croix gauche/haut/droite, souris ou tactile. Sans réponse pendant
 12 secondes, la première carte est choisie. La pause hôte fige le délai ; une
@@ -40,7 +41,9 @@ Une vague submergée sans nettoyage ne donne pas sa récompense.
 
 ## Déferlement et adversaires
 
-Dès la vague 4, les mutateurs changent par groupes de trois vagues, selon une
+En solo, le Déferlement n'applique ni mutateur ni élite (Commandant, Colosses
+et montée de vie/dégâts par vague conservés). En coop LAN :
+dès la vague 4, les mutateurs changent par groupes de trois vagues, selon une
 rotation reproductible : rapide (+15 % vitesse), blindé (+20 % vie, -10 %
 vitesse), tirs croisés (un milicien sur quatre devient soldat). Les vagues
 10/20/30 sont neutres et les boss sont exclus. Une file d’apparition conserve

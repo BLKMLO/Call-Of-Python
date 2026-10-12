@@ -1,5 +1,13 @@
 # Changelog
 
+## Non publié — Difficulté du Déferlement solo (2026-10-12)
+
+- Déferlement solo : plus de mutateurs ni de variantes élites ennemies
+  (Commandant, Colosses et montée de vie/dégâts par vague conservés).
+- Déferlement solo : une amélioration d'arme (et une charge de grenade) toutes
+  les 2 vagues nettoyées au lieu de 3 ; plafond de six choix inchangé.
+- Coop LAN inchangée. Deux tests ajoutés (148 tests).
+
 ## Non publié — Musiques de campagne (2026-10-11)
 
 - Musiques réelles des niveaux 1 à 5 ajoutées (`assets/sound/1.mp3` … `5.mp3`),

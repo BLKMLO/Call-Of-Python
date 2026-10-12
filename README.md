@@ -98,7 +98,7 @@ Grenade : G (remappable), clic du stick droit ou FRAG. tactile. Deux charges,
 une seconde entre lancers, fusée 2 s, rebonds, rayon 2,7 m. Dégâts décroissants
 (90 au centre sur les ennemis, 60 sur le lanceur), bloqués par les murs.
 Pas de dégâts directs aux alliés ; les kamikazes peuvent provoquer leurs propres
-explosions. Les deux interactions et chaque troisième vague nettoyée rendent une charge,
+explosions. Les deux interactions et chaque troisième vague nettoyée (deuxième en Déferlement solo) rendent une charge,
 maximum deux, même lorsque les six améliorations ont déjà été choisies.
 Lancer impossible en roulade ou pendant un secours.
 
@@ -112,8 +112,8 @@ Bestiaire : Résistant (bleu : +35 % vie, -10 % vitesse), Traqueur (rouge :
 +15 % vitesse, délai entre tirs -10 %), Commandant (doré : cadence des alliés
 à moins de 5 m accélérée de 25 % avec ligne de vue). Éliminez le Commandant
 pour supprimer son aura. Trois élites et un Commandant vivants au maximum.
-Ils apparaissent dans l'Entrepôt ; en Déferlement, élites dès la vague 4 et
-Commandant aux vagues 5/15/25. Les boss ne reçoivent ni aura ni variante élite.
+Ils apparaissent dans l'Entrepôt ; en Déferlement, élites dès la vague 4
+(coop LAN uniquement) et Commandant aux vagues 5/15/25. Les boss ne reçoivent ni aura ni variante élite.
 
 Secours coop : un joueur à terre peut être réanimé pendant 20 s. Approchez à
 1,4 m puis Interagir (E/LB/ACT.) pour commencer un secours de 3 s ; rester près
@@ -123,14 +123,16 @@ Sans secours, réapparition au spawn après 6 s supplémentaires à 60 PV. Si to
 l'équipe tombe, la partie est perdue. Signal : C (remappable), Back/View ou
 SIG. en tactile ; durée 5 s, délai 2 s, portée 12 m, quatre marqueurs maximum.
 
-Déferlement : dès la vague 4, un mutateur annoncé fait varier les vagues par
+Déferlement en coop LAN : dès la vague 4, un mutateur annoncé fait varier les vagues par
 groupes de trois : assaut rapide (+15 % vitesse), blindés (+20 % vie, -10 %
 vitesse), tirs croisés (certains miliciens remplacés par des soldats).
 Les vagues 10/20/30 sont neutres ; les ennemis des vagues précédentes conservent
 leurs effets. Le plafond reste de 24 ennemis vivants, sans hausse de leurs dégâts.
+En solo, ni mutateur ni élite : les ennemis ne gardent que la montée de vie et
+de dégâts propre à chaque vague.
 
 Améliorations de partie : après les deux interactions de l'Entrepôt, ou chaque
-troisième vague nettoyée, choisir une des trois cartes avec F5–F7, gauche/haut/
+troisième vague nettoyée (chaque deuxième en Déferlement solo), choisir une des trois cartes avec F5–F7, gauche/haut/
 droite sur la croix manette, clic ou tactile. Après 12 s, le premier choix est
 retenu. Impact, recharge, capacité, précision et cadence ont deux niveaux au
 maximum ; six choix par partie. Aucun bonus n'est enregistré dans les sauvegardes.

@@ -1,5 +1,20 @@
 # llm.md — Contexte projet unique (source de vérité)
 
+## Difficulté du Déferlement solo (12 octobre 2026)
+
+`SurvivalGame.SOLO = True`, `CoopHostGame.SOLO = False`. En solo : aucun
+mutateur (`self.mutator = ""`) et aucun candidat élite dans la file ; le
+Commandant des vagues 5/15/25, les Colosses des vagues 10/20/30 et la montée
+`wave_multipliers` (vie +3 %/vague, dégâts +2,5 %/vague) sont conservés.
+Amélioration d'arme (+1 charge de grenade) toutes les `UPGRADE_EVERY_SOLO = 2`
+vagues nettoyées au lieu de 3 : les six choix (`MAX_CHOICES`, inchangé car
+`_offer_next` tire 3 cartes parmi les bonus non maxés : au-delà de 6 la
+pioche pourrait tomber à 2) arrivent aux vagues 2 à 12 au lieu de 3 à 18,
+si chaque vague paire est nettoyée avant submersion. Coop LAN strictement
+inchangée (mutateurs, élites dès 4, `UPGRADE_EVERY_COOP = 3`). Le test de
+submersion force `game.SOLO = False` pour garder la couverture des mutateurs.
+148 tests OK ; Ruff : une erreur E501 préexistante dans `settings.py`.
+
 ## Évolution gameplay — état de réalisation
 
 Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
@@ -520,6 +535,8 @@ d'implémentation et les décisions techniques non triviales.
     -11 à -18 % sur le rendu du monde, frames de mort/roulade deux fois plus
     rapides, rendu identique au pixel près. Onze tests portent la suite à
     113 tests.
+33. Difficulté Déferlement solo (12 octobre 2026) : plus de mutateurs ni
+    d'élites en solo, amélioration toutes les 2 vagues ; coop inchangée.
 
 ## Dette / manques à connaître
 
