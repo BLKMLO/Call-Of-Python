@@ -24,7 +24,9 @@
   croix gauche/haut/droite/bas, carte hors arme bordée d'ambre.
 - **Vagues** (`survival.py`) : `wave_timeout = max(wave_floor, 30 × 0,9^(n-1))`,
   `wave_floor` = 8 s (1-10), 6 s (11-20), 4 s (21-30), minimum 2 s.
-  Vague nettoyée : `intermission = temps restant + CLEAR_BONUS (5 s)`.
+  Vague nettoyée : `intermission = CLEAR_INTERMISSION` (7 s fixes, demande
+  utilisateur, remplace « temps restant + 5 s »). Vague non nettoyée : pas de
+  répit, la suivante démarre à `wave_timeout` par-dessus les survivants.
   `INTERMISSION = 4` ne sert plus qu'avant la vague 1.
 - **Apparitions** : `_pick_spawn_point(radius)` renvoie `(x, y, angle)` à la
   bouche du portail (`level.config["portal"]`, case bloquante) : distance

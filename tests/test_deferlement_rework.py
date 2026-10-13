@@ -20,7 +20,7 @@ from level import Level
 from settings import DEFAULT_KEYS, RESOLUTIONS, Settings
 from sounds import SoundBank
 from survival import (
-    CLEAR_BONUS,
+    CLEAR_INTERMISSION,
     EMERGE_TIME,
     SPAWN_MAX_DISTANCE,
     SurvivalGame,
@@ -84,15 +84,27 @@ class SurvivalGameTests(unittest.TestCase):
                                  SoundBank(self.settings))
         self.addCleanup(self.game.close)
 
-    def test_cleared_wave_adds_five_seconds_to_remaining_time(self):
+    def test_cleared_wave_gives_fixed_seven_second_break(self):
+        game = self.game
+        for timer in (1.0, 20.0):
+            game.intermission = 0.0
+            game.wave = 3
+            game.wave_timer = timer
+            game.spawn_queue.clear()
+            game._update_waves(0.0)
+            self.assertEqual(game.intermission, CLEAR_INTERMISSION)
+        self.assertEqual(CLEAR_INTERMISSION, 7.0)
+
+    def test_unfinished_wave_is_overrun_by_the_next_one(self):
         game = self.game
         game.intermission = 0.0
-        game.wave = 3
-        game.wave_timer = 7.0
         game.spawn_queue.clear()
-        game._update_waves(0.0)
-        self.assertAlmostEqual(game.intermission,
-                               wave_timeout(3) - 7.0 + CLEAR_BONUS)
+        game._start_wave(2)
+        queued = len(game.spawn_queue)
+        game._update_waves(wave_timeout(2) + 0.01)
+        self.assertEqual(game.wave, 3)
+        self.assertEqual(game.intermission, 0.0)
+        self.assertGreater(len(game.spawn_queue), queued)
 
     def test_enemies_spawn_at_the_portal_then_move_away(self):
         game = self.game

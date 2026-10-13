@@ -9,7 +9,9 @@
   par offre : trois d'arme et une hors arme (Artificier, Glissade fantôme,
   Blindage, Élan), choix F8 / croix bas pour la quatrième.
 - Vagues : submersion à 30 s puis -10 % par vague, plancher 8 s (1-10),
-  6 s (11-20), 4 s (21-30). Vague nettoyée : temps restant + 5 s avant la suivante.
+  6 s (11-20), 4 s (21-30). Vague nettoyée : répit fixe de 7 s (d'abord
+  « temps restant + 5 s », remplacé le jour même) ; vague non nettoyée :
+  la suivante déferle quand même à la submersion.
 - Les ennemis sortent tous du portail central (à moins de 2 m) puis s'en écartent.
 - Sprites : onze frames d'ennemis nettoyées (débris de frames voisines, silhouettes
   décalées), outil `tools/clean_sprites.py`.

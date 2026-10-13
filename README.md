@@ -87,8 +87,8 @@ Trente vagues lunaires de creatures possedees, avec submersion progressive,
 ravitaillement periodique et un Colosse toutes les dix vagues. Les ennemis
 sortent tous du portail central puis s'en ecartent. Le delai avant submersion
 part de 30 s et baisse de 10 % par vague, sans descendre sous 8 s (vagues
-1-10), 6 s (11-20) et 4 s (21-30). Une vague nettoyee laisse le temps qui
-restait, plus 5 s pour recharger, avant la suivante. Un boss final geant est
+1-10), 6 s (11-20) et 4 s (21-30). Une vague nettoyee laisse 7 s de repit
+avant la suivante ; une vague non nettoyee est submergee par la suivante. Un boss final geant est
 en preparation (`docs/boss-final-deferlement.md`). Un directeur
 ajuste legerement la cadence d'apparition selon la sante du joueur et la
 pression deja presente ; il ne modifie jamais les degats, la composition ou

@@ -6,8 +6,8 @@ par les sas de l'arène, vague après vague, jusqu'à la 30e.
 
 Règles :
 - une vague est "terminée" quand tous ses ennemis sont morts ; la
-  suivante arrive après le temps qui restait au chrono plus 5 secondes
-  (le temps de recharger), avec un petit bonus de soin ;
+  suivante arrive après un répit fixe de 7 secondes (le temps de
+  recharger), avec un petit bonus de soin ;
 - MAIS si la vague n'est pas nettoyée avant la submersion (30 secondes
   pour la 1ère vague, puis 10 % de moins à chaque nouvelle vague, sans
   descendre sous 8 s pour les vagues 1-10, 6 s pour 11-20 et 4 s pour
@@ -43,7 +43,7 @@ WAVE_FLOOR_START = 8.0         # plancher des vagues 1-10 (s)
 WAVE_FLOOR_STEP = 2.0          # -2 s de plancher par tranche de 10 vagues
 WAVE_FLOOR_MIN = 2.0           # plancher absolu (au-delà de la vague 40)
 INTERMISSION = 4.0             # répit avant la toute première vague (s)
-CLEAR_BONUS = 5.0              # ajouté au chrono restant d'une vague nettoyée (s)
+CLEAR_INTERMISSION = 7.0       # répit fixe après une vague nettoyée (s)
 EMERGE_TIME = 0.6              # durée de la poussée de sortie du portail (s)
 EMERGE_SPEED = 3.5             # vitesse de cette poussée (cases / s)
 SPAWN_MAX_DISTANCE = 2.0       # apparition toujours à moins de 2 m du portail
@@ -208,12 +208,12 @@ class SurvivalGame(Game):
                 self.outcome = "victory"     # le Déferlement est brisé
                 self.sounds.play("level_complete")
             else:
-                # Vague nettoyée à temps : le chrono restant devient un
-                # répit, allongé de quelques secondes pour recharger.
+                # Vague nettoyée à temps : répit fixe pour recharger. Une
+                # vague non nettoyée n'en a pas : la suivante déferle à la
+                # submersion, par-dessus les survivants.
                 self.player.health = min(self.player.max_health,
                                          self.player.health + CLEAR_HEAL)
-                remaining = max(0.0, wave_timeout(self.wave) - self.wave_timer)
-                self.intermission = remaining + CLEAR_BONUS
+                self.intermission = CLEAR_INTERMISSION
                 every = UPGRADE_EVERY_SOLO if self.SOLO else UPGRADE_EVERY_COOP
                 if self.wave % every == 0:
                     self._award_upgrades(f"wave:{self.wave}")
