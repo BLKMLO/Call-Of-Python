@@ -27,6 +27,8 @@
   Vague nettoyée : `intermission = CLEAR_INTERMISSION` (7 s fixes, demande
   utilisateur, remplace « temps restant + 5 s »). Vague non nettoyée : pas de
   répit, la suivante démarre à `wave_timeout` par-dessus les survivants.
+  Vague avec un Colosse (`"boss"` dans la composition) : +`BOSS_EXTRA_TIME`
+  (10 s, demande utilisateur) ; délai effectif stocké dans `self.wave_limit`.
   `INTERMISSION = 4` ne sert plus qu'avant la vague 1.
 - **Apparitions** : `_pick_spawn_point(radius)` renvoie `(x, y, angle)` à la
   bouche du portail (`level.config["portal"]`, case bloquante) : distance

@@ -20,6 +20,7 @@ from level import Level
 from settings import DEFAULT_KEYS, RESOLUTIONS, Settings
 from sounds import SoundBank
 from survival import (
+    BOSS_EXTRA_TIME,
     CLEAR_INTERMISSION,
     EMERGE_TIME,
     SPAWN_MAX_DISTANCE,
@@ -105,6 +106,19 @@ class SurvivalGameTests(unittest.TestCase):
         self.assertEqual(game.wave, 3)
         self.assertEqual(game.intermission, 0.0)
         self.assertGreater(len(game.spawn_queue), queued)
+
+    def test_colossus_wave_gets_ten_extra_seconds(self):
+        game = self.game
+        game.intermission = 0.0
+        self.assertEqual(BOSS_EXTRA_TIME, 10.0)
+        game._start_wave(10)
+        self.assertIn("boss", [k for k, *_ in game.spawn_queue])
+        game.spawn_queue.append(("grunt", 10, "", ""))  # vague non nettoyée
+        game._update_waves(wave_timeout(10) + 0.01)
+        self.assertEqual(game.wave, 10)
+        game._update_waves(BOSS_EXTRA_TIME)
+        self.assertEqual(game.wave, 11)
+        self.assertAlmostEqual(game.wave_limit, wave_timeout(11))
 
     def test_enemies_spawn_at_the_portal_then_move_away(self):
         game = self.game

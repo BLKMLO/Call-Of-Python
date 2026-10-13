@@ -44,6 +44,7 @@ WAVE_FLOOR_STEP = 2.0          # -2 s de plancher par tranche de 10 vagues
 WAVE_FLOOR_MIN = 2.0           # plancher absolu (au-delà de la vague 40)
 INTERMISSION = 4.0             # répit avant la toute première vague (s)
 CLEAR_INTERMISSION = 7.0       # répit fixe après une vague nettoyée (s)
+BOSS_EXTRA_TIME = 10.0         # délai de submersion en plus si un Colosse est dans la vague (s)
 EMERGE_TIME = 0.6              # durée de la poussée de sortie du portail (s)
 EMERGE_SPEED = 3.5             # vitesse de cette poussée (cases / s)
 SPAWN_MAX_DISTANCE = 2.0       # apparition toujours à moins de 2 m du portail
@@ -136,6 +137,7 @@ class SurvivalGame(Game):
         self.wave = 0
         self.mutator = ""
         self.wave_timer = 0.0          # chrono de submersion de la vague
+        self.wave_limit = wave_timeout(1)  # délai de submersion de la vague en cours
         self.intermission = INTERMISSION
         self.spawn_queue = deque()     # types d'ennemis en attente
         self.spawn_cooldown = 0.0
@@ -219,7 +221,7 @@ class SurvivalGame(Game):
                 if self.wave % every == 0:
                     self._award_upgrades(f"wave:{self.wave}")
                 self.sounds.play("heal", volume_scale=0.7)
-        elif self.wave_timer >= wave_timeout(self.wave) and self.wave < FINAL_WAVE:
+        elif self.wave_timer >= self.wave_limit and self.wave < FINAL_WAVE:
             # Submersion : la vague suivante déferle par-dessus.
             self._start_wave(self.wave + 1)
 
@@ -231,6 +233,9 @@ class SurvivalGame(Game):
         kinds = composition(wave_composition(number), self.mutator)
         if number % 10 == 5:
             kinds[0] = "commander"
+        # Le Colosse est long à abattre : temps de nettoyage supplémentaire.
+        self.wave_limit = wave_timeout(number) + (
+            BOSS_EXTRA_TIME if "boss" in kinds else 0.0)
         elites = not self.SOLO and number >= 4
         self.spawn_queue.extend((kind, number, self.mutator,
                                  ("bulwark" if i == 1 else "hunter")
@@ -345,6 +350,6 @@ class SurvivalGame(Game):
             "final": FINAL_WAVE,
             "remaining": remaining,
             "next_in": (self.intermission if self.intermission > 0.0
-                        else max(0.0, wave_timeout(self.wave) - self.wave_timer)),
+                        else max(0.0, self.wave_limit - self.wave_timer)),
             "intermission": self.intermission > 0.0,
         }
