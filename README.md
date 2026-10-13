@@ -1,223 +1,87 @@
 # Call of Python — FPS Python / pygame
 
-FPS retro en pseudo-3D par raycasting, jouable en solo et en cooperation LAN.
-Le jeu propose une campagne de cinq missions, un mode survie de 30 vagues,
-sept archetypes ennemis, quatre armes evolutives et une direction pixel-art
-militaire/SF.
-
-Version gameplay **0.6.0** : refonte du Déferlement (glissade, cartes sans
-limite dont une hors arme, nouveaux délais de vagues, sortie par le portail),
-après les objectifs de l’Entrepôt (solo et LAN), améliorations temporaires,
-mutateurs, secours, élites, attaques du Colosse, grenades et score. [Règles et équilibrage](docs/gameplay.md) ·
-[Validation des dix étapes](docs/gameplay-validation.md).
+FPS rétro en pseudo-3D (raycasting), solo ou coop LAN jusqu'à 4 joueurs :
+campagne de cinq missions, mode survie de 30 vagues, quatre armes évolutives.
+Version gameplay **0.6.0**. Détails : [règles et équilibrage](docs/gameplay.md).
 
 ## Installation
 
 ```bash
 python -m pip install .
-call-of-python
+call-of-python        # ou : python main.py depuis un clone
 ```
 
-Le lancement depuis un clone reste possible avec `python main.py`. La
-combinaison supportee est Python 3.12 avec pygame 2.6.1. Les tags produisent
-aussi des distributions autonomes Windows et Linux dans GitHub Actions. Une
-seule exécution de distribution par référence est conservée ; ses deux builds
-Windows/Linux restent parallèles.
+Python 3.12 + pygame 2.6.1. Les tags produisent des builds Windows/Linux via
+GitHub Actions. `python assets.py` génère les visuels manquants
+(`--force-procedural` remplace les PNG existants).
 
-Le pack PNG livre est toujours prioritaire. `python assets.py` genere
-uniquement les fichiers absents. Seule la commande suivante remplace les
-visuels existants par les anciens fallbacks proceduraux :
+## Contrôles
 
-```bash
-python assets.py --force-procedural
-```
-
-## Controles
-
-| Action | Clavier / souris | Manette SDL |
+| Action | Clavier / souris | Manette |
 |---|---|---|
-| Deplacement | ZQSD | Stick gauche |
-| Vue | Souris | Stick droit |
-| Tir | Clic gauche | Gachette droite ou RB |
-| Mise en joue | Clic droit | Gachette gauche |
-| Glissade (tir possible) | Maj | A / Croix |
-| Recharger | R | X / Carre |
-| Changer d'arme | 1–4 ou molette | Y / Triangle |
+| Déplacement / vue | ZQSD / souris | Sticks gauche / droit |
+| Tir / mise en joue | Clic gauche / droit | Gâchette droite (ou RB) / gauche |
+| Glissade | Maj | A / Croix |
+| Recharger | R | X / Carré |
+| Changer d'arme | 1–4, molette | Y / Triangle |
 | Interagir / réanimer | E | LB |
-| Signal coop | C | Back / View |
 | Grenade | G | Clic stick droit |
-| Carte 1 / 2 / 3 / 4 | F5 / F6 / F7 / F8 | Croix gauche / haut / droite / bas |
-| Pause | Echap | Start |
-| FPS | F3 | — |
-| Plein ecran | F11 | — |
+| Signal coop | C | Back / View |
+| Cartes d'amélioration | F5–F8 | Croix directionnelle |
+| Pause / FPS / plein écran | Échap / F3 / F11 | Start |
 
-Les touches clavier sont remappables. Les manettes Xbox, PlayStation et
-compatibles passent par les mappings SDL, avec zone morte et vibration courte
-sur les degats. Les commandes tactiles multi-doigts restent disponibles.
-
-Dans les menus : flèches haut/bas ou croix directionnelle pour sélectionner,
-Entrée/Espace ou A (Croix) pour valider, Échap ou B (Rond) pour revenir.
-Les flèches gauche/droite règlent l'option sélectionnée. La souris reste
-utilisable ; déplacer le pointeur lui redonne la sélection visuelle.
-La saisie d'une nouvelle adresse IP et le remappage des touches nécessitent
-encore un clavier ; B annule leur saisie sans quitter le sous-menu.
-
-En pause : Start reprend, B (Rond) retourne au menu. Une pause imposée par
-l'hôte est indiquée « PAUSE HÔTE » et seul l'hôte peut la lever. Après une
-pause ou un changement de partie, relâcher les gâchettes avant de tirer ou
-viser à nouveau. A (Croix) passe la caméra de mort après son verrou de trois
-secondes. F3 affiche les FPS du rendu, indépendamment de la simulation à 60 Hz.
-
-Les Parametres exposent aussi : volumes separes, sensibilite, FOV 60–90 degres,
-secousses de camera 0/50/100 %, ADS en maintien ou bascule et trois difficultes.
+Touches remappables ; commandes tactiles disponibles. Menus : flèches ou
+croix, Entrée/A pour valider, Échap/B pour revenir.
 
 ## Modes
 
-### Campagne
+**Campagne** — Entrepôt, Métropole, Gouvernement, Base militaire, Laboratoire.
+L'arsenal est conservé. L'Entrepôt (jouable aussi en LAN) a des objectifs :
+manifeste, alarme, puis 8 s d'extraction. Les autres missions se gagnent par
+élimination. Colosse final en trois phases.
 
-Entrepot, Metropole, Gouvernement, Base militaire puis Laboratoire. L'arsenal
-est conserve entre les missions. Dans l’Entrepôt, récupérez le manifeste,
-désactivez l’alarme puis tenez l’extraction pendant 8 secondes consécutives.
-Le menu LAN propose aussi cette mission ; les autres cartes restent à élimination. Le Colosse final possede trois phases et
-libere deux packs de vie avant de reveler le portail lunaire.
+**Le Déferlement** — 30 vagues sortant d'un portail, Colosse aux vagues 10/20/30,
+Commandant aux vagues 5/15/25. Délai avant submersion : 30 s, −10 % par vague,
+plancher 8 s (1-10), 6 s (11-20), 4 s (21-30) ; **+10 s si un Colosse est dans
+la vague**. Vague nettoyée : 7 s de répit et +12 PV ; sinon la suivante arrive
+par-dessus. En coop LAN : mutateurs et élites dès la vague 4.
 
-### Le Deferlement
+## Mécaniques
 
-Trente vagues lunaires de creatures possedees, avec submersion progressive,
-ravitaillement periodique et un Colosse toutes les dix vagues. Les ennemis
-sortent tous du portail central puis s'en ecartent. Le delai avant submersion
-part de 30 s et baisse de 10 % par vague, sans descendre sous 8 s (vagues
-1-10), 6 s (11-20) et 4 s (21-30). Une vague nettoyee laisse 7 s de repit
-avant la suivante ; une vague non nettoyee est submergee par la suivante. Un boss final geant est
-en preparation (`docs/boss-final-deferlement.md`). Un directeur
-ajuste legerement la cadence d'apparition selon la sante du joueur et la
-pression deja presente ; il ne modifie jamais les degats, la composition ou
-le nombre d'ennemis prevu.
+- **Glissade** : 4,5 cases, tir possible, 0,30 s d'invulnérabilité.
+- **Grenades** : 2 charges, fusée 2 s, rayon 2,7 m, bloquées par les murs.
+- **Améliorations** : choix d'une carte sur 4 (3 d'arme, 1 hors arme) après les
+  objectifs de l'Entrepôt ou toutes les 3 vagues nettoyées (2 en solo).
+- **Secours coop** : 20 s pour réanimer un allié (3 s près de lui) ; sinon
+  réapparition après 6 s. Toute l'équipe à terre = défaite.
+- **Ennemis** : sept archétypes, élites Résistant / Traqueur, Commandant (aura
+  de cadence), Colosse (charge et frappe de zone).
+- **Score** partagé en coop, grade D à S.
 
-Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v5 refuse
-explicitement toute autre version. L'hote valide deplacements, collisions,
-glissades, cadence, chargeurs et degats.
+## Technique
 
-La glissade (Maj) remplace la roulade : 4,5 cases au lieu de 2,5, vitesse
-decroissante, tir et rotation possibles pendant le mouvement (sans lunette),
-0,30 s d'invulnerabilite au coeur du mouvement (toute la glissade avec la
-carte Glissade fantome).
+Simulation 60 Hz et rendu jusqu'à 120 Hz, IA (BFS, couverture), réseau UDP
+port 5577, protocole v5, hôte autoritaire. Voir
+[architecture](docs/architecture.md), [protocole](docs/network-protocol.md),
+[distribution](docs/distribution.md).
 
-## Nouveautés gameplay
-
-Grenade : G (remappable), clic du stick droit ou FRAG. tactile. Deux charges,
-une seconde entre lancers, fusée 2 s, rebonds, rayon 2,7 m. Dégâts décroissants
-(90 au centre sur les ennemis, 60 sur le lanceur), bloqués par les murs.
-Pas de dégâts directs aux alliés ; les kamikazes peuvent provoquer leurs propres
-explosions. Les deux interactions et chaque troisième vague nettoyée (deuxième en Déferlement solo) rendent une charge,
-maximum deux (plus un par niveau de la carte Artificier).
-Lancer impossible en glissade ou pendant un secours.
-
-Colosse : annonce de 1,2 s avant une charge rectiligne, puis 1,2 s de
-récupération. Dès la phase 2, il alterne avec une frappe sur une zone verrouillée
-de rayon 1,8 m. Sortez du tracé au sol ou utilisez la fenêtre d'invulnérabilité
-de glissade. Murs et obstacles arrêtent la charge ; chaque attaque ne touche
-qu'une fois chaque joueur. Les deux packs de changement de phase sont conservés.
-
-Bestiaire : Résistant (bleu : +35 % vie, -10 % vitesse), Traqueur (rouge :
-+15 % vitesse, délai entre tirs -10 %), Commandant (doré : cadence des alliés
-à moins de 5 m accélérée de 25 % avec ligne de vue). Éliminez le Commandant
-pour supprimer son aura. Trois élites et un Commandant vivants au maximum.
-Ils apparaissent dans l'Entrepôt ; en Déferlement, élites dès la vague 4
-(coop LAN uniquement) et Commandant aux vagues 5/15/25. Les boss ne reçoivent ni aura ni variante élite.
-
-Secours coop : un joueur à terre peut être réanimé pendant 20 s. Approchez à
-1,4 m puis Interagir (E/LB/ACT.) pour commencer un secours de 3 s ; rester près
-de lui. Dégâts, glissade, perte de vue ou nouvel appui annulent le secours. Le
-tir est bloqué pendant l'action. Réanimation sur place à 40 PV et 2 s de bouclier.
-Sans secours, réapparition au spawn après 6 s supplémentaires à 60 PV. Si toute
-l'équipe tombe, la partie est perdue. Signal : C (remappable), Back/View ou
-SIG. en tactile ; durée 5 s, délai 2 s, portée 12 m, quatre marqueurs maximum.
-
-Déferlement en coop LAN : dès la vague 4, un mutateur annoncé fait varier les vagues par
-groupes de trois : assaut rapide (+15 % vitesse), blindés (+20 % vie, -10 %
-vitesse), tirs croisés (certains miliciens remplacés par des soldats).
-Les vagues 10/20/30 sont neutres ; les ennemis des vagues précédentes conservent
-leurs effets. Le plafond reste de 24 ennemis vivants, sans hausse de leurs dégâts.
-En solo, ni mutateur ni élite : les ennemis ne gardent que la montée de vie et
-de dégâts propre à chaque vague.
-
-Améliorations de partie : après les deux interactions de l'Entrepôt, ou chaque
-troisième vague nettoyée (chaque deuxième en Déferlement solo), choisir une des quatre cartes avec F5–F8,
-gauche/haut/droite/bas sur la croix manette, clic ou tactile. Les trois premières
-améliorent l'arme (impact, recharge, capacité, précision, cadence) ; la quatrième
-est hors arme (Artificier, Glissade fantôme, Blindage, Élan). Après 12 s, le
-premier choix est retenu. Aucune limite de choix par partie : seul chaque bonus
-a un plafond (voir `docs/gameplay.md`). Aucun bonus n'est enregistré dans les sauvegardes.
-La capacité supplémentaire se remplit au prochain rechargement. La pause de
-l'hôte fige le délai ; une pause locale d'un client ne suspend pas la partie.
-
-Le score est partagé en coop, les éliminations et la précision restent individuelles.
-Objectif +500, vague nettoyée +200, victoire +500, mise à terre -150 ;
-les quatre premiers secours rapportent +250 chacun. Le grade D à S évalue
-le niveau courant ; A et S exigent la victoire. Le cumul continue en campagne,
-sans classement persistant. Voir le barème complet dans la documentation gameplay.
-
-## Points techniques
-
-- simulation a pas fixe de 60 Hz, rendu decouple jusqu'a 120 Hz ;
-- raycasting multi-couches, murs variables, portes, z-buffer et billboards ;
-- IA avec perception, BFS, couverture, contournement et esquives ;
-- cache billboards LRU borne a 64 Mio et cache mural FIFO incremental ;
-- UDP compresse, fragmente en datagrammes de 1 200 octets maximum, reassemble
-  avec limites de taille/temps et limite par adresse source ;
-- protocole sequence, evenements fiables acquittes et inventaire autoritaire ;
-- ressources resolues en mode source, wheel et PyInstaller ;
-- 145 tests, couverture mesurée 78 % et seuil CI de 70 %.
-
-Des fichiers audio `menu`, `survival`, `reload` et `1` a `5` peuvent etre
-places dans `assets/sound/` aux formats OGG, MP3, WAV ou FLAC.
-
-## Architecture
-
-Évolution gameplay en cours : le moteur déclaratif `objectives.py` fournit
-interaction, déplacement vers une zone, défense chronométrée et élimination.
-L'Entrepôt demande de récupérer le manifeste, désactiver l'alarme du bureau,
-puis tenir l'extraction pendant 8 secondes consécutives. Les balises vertes
-et le HUD guident le parcours. Interagir : **E** (remappable), **LB** ou bouton
-tactile **ACT.** ; la roulade bloque l'interaction. Quitter la zone remet le
-compteur à zéro, la pause le fige. Les autres niveaux gardent leur victoire
-par élimination. Dans le menu LAN, **Héberger (Mission Entrepôt en coop)**
-permet de jouer cette mission à quatre ; rejoindre charge automatiquement
-la bonne carte. La progression est commune, même en arrivant en cours de partie.
-Tous les participants doivent utiliser le protocole v5 de cette version.
-
-| Fichier | Role |
+| Fichier | Rôle |
 |---|---|
-| `main.py`, `runtime.py` | Etats, rendu et horloge fixe |
-| `game.py`, `survival.py` | Gameplay de mission et vagues |
-| `difficulty.py` | Profils et directeur de pression |
-| `entities.py`, `ai.py`, `weapons.py` | Entites, comportements et arsenal |
-| `raycaster.py`, `hud.py`, `particles.py` | Rendu du monde et interface |
-| `network.py`, `coop.py`, `version.py` | Transport et replication LAN |
-| `settings.py`, `menu.py` | Configuration et ecrans |
-| `gamepad.py`, `touch_controls.py` | Manette et tactile |
+| `main.py`, `runtime.py` | États, rendu, horloge |
+| `game.py`, `survival.py`, `objectives.py` | Missions, vagues, objectifs |
+| `entities.py`, `ai.py`, `weapons.py` | Entités, IA, armes |
+| `raycaster.py`, `hud.py`, `particles.py` | Rendu et interface |
+| `network.py`, `coop.py` | Réseau LAN |
+| `settings.py`, `menu.py`, `gamepad.py`, `touch_controls.py` | Config et entrées |
 | `assets.py`, `resources.py`, `sounds.py` | Ressources et audio |
 
-Voir [`docs/architecture.md`](docs/architecture.md),
-[`docs/network-protocol.md`](docs/network-protocol.md) et
-[`docs/distribution.md`](docs/distribution.md).
-
-## Qualite et distribution
+## Développement
 
 ```bash
 python -m pip install ".[dev]"
 ruff check .
-python -m coverage run -m unittest discover -s tests -v
-python -m coverage report
-python -m pip wheel . --no-deps --wheel-dir dist
+python -m coverage run -m unittest discover -s tests && python -m coverage report
+python -m pip install ".[build]" && python -m PyInstaller --clean --noconfirm call_of_python.spec
 ```
 
-Executable local :
-
-```bash
-python -m pip install ".[build]"
-python -m PyInstaller --clean --noconfirm call_of_python.spec
-```
-
-Le projet est distribue sous licence [MIT](LICENSE).
+Licence [MIT](LICENSE).
