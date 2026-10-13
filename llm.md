@@ -1,1327 +1,442 @@
 # llm.md — Contexte projet unique (source de vérité)
 
-## Refonte du Déferlement — 0.6.0, protocole v5 (13 octobre 2026)
+> **Unique source de contexte pour toutes les IA** (Claude, GPT, Kimi,
+> agents…). `CLAUDE.md`, `GPT.md`, `AGENTS.md` ne sont que des redirections
+> vers ce fichier : ne jamais y remettre de contenu. Après chaque changement
+> notable, mettre à jour **ce fichier et lui seul**.
 
-- **Glissade** (remplace la roulade du joueur ; les noms `roll_*`, la touche
-  `roulade` et les champs réseau `rt`/`rs` sont conservés pour la compatibilité
-  des sauvegardes). `Player.ROLL_DURATION = 0.8`, `ROLL_SPEED = 7.5`,
-  `SLIDE_DECEL = 0.5` : vitesse `Player.slide_speed` décroissante, distance
-  7,5 × 0,8 × 0,75 = 4,5 cases (ancienne roulade 2,5). Tir (`_player_fire`,
-  tir auto, tirs distants côté hôte) et rotation autorisés pendant la glissade ;
-  ADS coupé. Grenade et interaction restent bloquées. i-frames 0,08–0,38 s ;
-  `slide_ghost` (carte) = toute la glissade, aussi sur `RemotePlayer`.
-  Caméra : `_player_roll_camera` abaisse la vue (image remontée de 4 %,
-  inclinaison 3°). Libellés HUD/menu/tactile : « GLISSADE », « GLIS. ».
-- **Cartes** (`upgrades.py`) : plus de `MAX_CHOICES`, plafond par bonus `CAPS`.
-  Offre = `rng.sample` de 3 cartes `WEAPON_UPGRADES` (même tirage qu'avant pour
-  les 3 premières) + 1 `PERKS` en dernière position (`valid_offers`). Perks :
-  `grenade` (+1 max, plein ; `grenade_capacity`, `MAX_GRENADES = 6`),
-  `ghost_slide`, `vitality` (+20 PV max et rendus), `momentum` (+25 %
-  `slide_boost`). `apply_player` est idempotent (`vitality_applied`,
-  `grenade_applied`, copiés au changement de niveau) et renvoie les niveaux
-  d'Artificier gagnés → `Game._apply_upgrades` / `CoopHostGame._apply_client_upgrades`
-  remplissent les grenades. UI : 4 cartes, F5–F8 (F8 ajoutée à `RESERVED_KEYS`),
-  croix gauche/haut/droite/bas, carte hors arme bordée d'ambre.
-- **Vagues** (`survival.py`) : `wave_timeout = max(wave_floor, 30 × 0,9^(n-1))`,
-  `wave_floor` = 8 s (1-10), 6 s (11-20), 4 s (21-30), minimum 2 s.
-  Vague nettoyée : `intermission = CLEAR_INTERMISSION` (7 s fixes, demande
-  utilisateur, remplace « temps restant + 5 s »). Vague non nettoyée : pas de
-  répit, la suivante démarre à `wave_timeout` par-dessus les survivants.
-  Vague avec un Colosse (`"boss"` dans la composition) : +`BOSS_EXTRA_TIME`
-  (10 s, demande utilisateur) ; délai effectif stocké dans `self.wave_limit`.
-  `INTERMISSION = 4` ne sert plus qu'avant la vague 1.
-- **Apparitions** : `_pick_spawn_point(radius)` renvoie `(x, y, angle)` à la
-  bouche du portail (`level.config["portal"]`, case bloquante) : distance
-  0,55/0,85/1,2 + rayon, 16 directions, `can_stand` ; < `SPAWN_MAX_DISTANCE`
-  (2 m), en choisissant au hasard parmi les bouches à >= 1,2 m de tout joueur
-  vivant (`SPAWN_PLAYER_CLEARANCE`, sinon la plus éloignée) : un joueur collé
-  au portail ne reçoit pas d'ennemi sur lui. Puis `enemy.emerge` pousse
-  l'ennemi vers l'extérieur
-  (`EMERGE_SPEED` 3,5 × `EMERGE_TIME` 0,6 s = 2,1 m). Les cases `S` de la carte
-  ne servent plus que de repli.
-- **Sprites** : `tools/clean_sprites.py` (+ `--check`, testé) retire les débris
-  de frames voisines touchant le bord et recentre la silhouette sur la pose
-  `idle` de même vue. Onze PNG corrigés (sniper, grunt, heavy, kamikaze, soldier,
-  ally). Les débris décalaient aussi les yeux de `assets.get_possessed`.
-- **Boss final** : conception seule dans `docs/boss-final-deferlement.md` ; le
-  test vérifie qu'aucun `FinalBoss` n'est codé.
-- Recette : 161 tests OK, Ruff OK, `tools/validate_gameplay.py --stage 10`
-  OK (assertion passée à 4 cartes ; datagramme max 718 octets). Captures
-  800×600 des cartes et de la glissade inspectées. Non testé : ressenti en jeu
-  réel, LAN multi-machines.
-- Passe bugs du 13 octobre : fuzz sans affichage (4 graines solo : 30 vagues
-  jusqu'à la victoire + 5 niveaux de campagne ; coop hôte+client UDP loopback :
-  30 vagues), entrées aléatoires (glissade, grenade, cartes F5–F8, tir) ;
-  contrôles position finie, hors carte, ennemi dans un mur, PV, grenades :
-  aucun défaut. Suite en `-X dev` sans avertissement, Ruff étendu (F, B, PLE,
-  PLW) : style seulement. Seul défaut trouvé et corrigé : apparition possible
-  sur un joueur collé au portail. Scripts de fuzz non versionnés.
-- Les sections plus bas qui parlent de « six choix », « deux niveaux par
-  bonus », roulade de 2,5 cases ou protocole v4 sont historiques.
+## Projet
 
-## Difficulté du Déferlement solo (12 octobre 2026)
+- FPS rétro Python 3.12 / pygame 2.6.1 (raycasting pseudo-3D façon
+  Wolfenstein 3D). Repo `BLKMLO/Call-Of-Python` (ex-`TempGPT`).
+- Version jeu **0.6.0**, protocole réseau **v5** (`version.py`). Les mentions
+  « six choix », « deux niveaux par bonus », roulade 2,5 cases, protocole
+  v3/v4 sont historiques.
+- Contenu : campagne 5 niveaux (Entrepôt → Métropole → Gouvernement → Base
+  militaire → Laboratoire, boss final « le Sceau » = Colosse) puis le
+  **Déferlement** (survie par vagues sur la Lune, `FINAL_WAVE = 30`), coop LAN
+  jusqu'à 4 joueurs. `README.md` documente le gameplay côté joueur ;
+  `docs/gameplay.md`, `docs/gameplay-validation.md`, `docs/network-protocol.md`
+  détaillent règles, preuves et protocole.
 
-`SurvivalGame.SOLO = True`, `CoopHostGame.SOLO = False`. En solo : aucun
-mutateur (`self.mutator = ""`) et aucun candidat élite dans la file ; le
-Commandant des vagues 5/15/25, les Colosses des vagues 10/20/30 et la montée
-`wave_multipliers` (vie +3 %/vague, dégâts +2,5 %/vague) sont conservés.
-Amélioration d'arme (+1 charge de grenade) toutes les `UPGRADE_EVERY_SOLO = 2`
-vagues nettoyées au lieu de 3 : les six choix (`MAX_CHOICES`, inchangé car
-`_offer_next` tire 3 cartes parmi les bonus non maxés : au-delà de 6 la
-pioche pourrait tomber à 2) arrivent aux vagues 2 à 12 au lieu de 3 à 18,
-si chaque vague paire est nettoyée avant submersion. Coop LAN strictement
-inchangée (mutateurs, élites dès 4, `UPGRADE_EVERY_COOP = 3`). Le test de
-submersion force `game.SOLO = False` pour garder la couverture des mutateurs.
-148 tests OK ; Ruff : une erreur E501 préexistante dans `settings.py`.
+## Workflow et consignes utilisateur
 
-## Évolution gameplay — état de réalisation
-
-Base GitHub : `c6ebc84` (PR #28 fusionnée). Branche `agent/gameplay-evolution`.
-Étapes 1 à 10 implémentées et validées localement ; Entrepôt solo et LAN.
-Version jeu 0.5.0, protocole v4. PR brouillon #29 ; CI à consulter sur GitHub.
-Suivi distant : workflow release préexistant invalide (`matrix.os` au niveau
-global). Groupe corrigé en `executables-${{ github.ref }}` ; matrice de jobs
-inchangée. Correctif de publication séparé après les dix étapes gameplay. Pas de changement de sauvegardes. Ne jamais annoncer une étape
-validée sans tests et recette. Rollback : réversion du commit de l'étape.
-
-Étape 10 : `scoring.py`, score commun autoritaire et grade par segment de niveau.
-Ennemi crédité une fois, objectif +500, vague nettoyée +200, victoire +500,
-mise à terre -150 par transition, secours +250 limité aux quatre premiers.
-Cible campagne = budget initial des ennemis + objectifs + victoire ; cible
-Déferlement 20 000. D/C/B à 0/25/50 %, A/S à 75/90 % avec victoire obligatoire.
-Le cumul suit la campagne, jamais une nouvelle partie ; grade segment local.
-`sc` réplique les cinq champs validés ; PID stables pour les transitions de vie.
-Grenades : tokens de ravitaillement séparés des six récompenses d’amélioration,
-pour continuer une charge chaque troisième vague nettoyée (déduplication bornée).
-Fin Entrepôt LAN : bouton retour LAN, pas de lancement de campagne solo.
-145 tests, couverture de branches incluse 78 %, Ruff OK, wheel 0.5.0 installé
-et démarré hors du clone. Recette 24 ennemis, deux résolutions, loopback réel,
-choix/timers déterministes : médiane/p95 6,324/7,579 ms et 10,761/15,582 ms ;
-UDP maximal observé 718 octets. Budget 1 200 contrôlé sur chaque envoi mesuré.
-`tools/validate_gameplay.py --stage 10` est aussi exécuté en CI sur les deux OS.
-Voir `docs/gameplay.md` et `docs/gameplay-validation.md` pour règles, preuves
-et limites : SDL dummy ne valide ni le ressenti humain ni le LAN multi-machine.
-Conserver toutes les gates demandées par l’utilisateur et mettre à jour README,
-CHANGELOG, architecture, réseau si nécessaire et ce contexte à chaque étape.
-
-Entrepôt : manifeste (25,5 ; 18,5), alarme (24,5 ; 3,5), extraction au spawn
-(1,5 ; 1,5), rayon 1,4 et maintien de 8 s consécutives. `Game.mission` impose
-cette victoire ; tous les autres niveaux utilisent encore l'élimination.
-Interaction E/remappable, LB, tactile ACT. Portée/ligne de vue/vie/roulade
-contrôlées ; pause et outcome bloquent l'action. HUD à y=160 pour éviter la
-minimap à 800×600 ; `mission_marker.py` dessine une balise sans modifier les PNG.
-La recette de fin de mission place le joueur aux objectifs pour isoler les
-contrats ; elle ne remplace pas un parcours humain ni un test matériel tactile.
-Recette étape 2 : 119 tests, Ruff OK, fin de mission en solo, coop Déferlement
-loopback et captures aux deux résolutions. 24 ennemis : médiane/p95 6,494/9,681 ms
-et 10,881/14,419 ms ; datagrammes <=530 octets, mêmes conditions que l'étape 1.
-
-Étape 3 : `CoopHostGame(mission_mode=True)` utilise `Game.update` pour
-l'Entrepôt ; sinon `SurvivalGame.update` demeure le pilote du Déferlement.
-Le menu LAN distingue les deux hébergements ; `welcome.mode` configure le
-monde local du client. Les ennemis initiaux reçoivent un ID réseau ; arsenal
-initial Entrepôt limité au pistolet. Fin LAN distincte des records de vagues.
-Protocole courant **v4** (remplace toutes les mentions historiques v3 ci-dessous).
-`ix=[séquence,index]`, `ia` et `ms` : voir `docs/network-protocol.md`.
-Ne jamais simuler les objectifs sur le client. Les portes incluent les joueurs
-distants. La purge des entrées annule les demandes d'interaction non acquittées.
-Recette étape 3 : 120 tests, Ruff OK, solo et coop des deux modes, retransmission
-et arrivée tardive ; captures client aux deux tailles. Benchmark 24 ennemis :
-médiane/p95 5,979/8,607 ms et 10,246/11,649 ms ; UDP observé <=538 octets.
-
-Étape 4 : `upgrades.py` / `upgrade_ui.py`. Six récompenses max, deux niveaux
-par bonus (dégâts +10 %, recharge -15 %, capacité +20 %, dispersion -20 %,
-cadence +8 % par niveau ; arrondis entiers sur dégâts/capacité). Récompenses
-après interactions Entrepôt et vagues multiples de 3 nettoyées, dédupliquées
-par token ; choix en file si une proposition est déjà ouverte. Graine isolée
-101 en solo, 101+pid pour clients. Délai 12 s, choix 1 par défaut, figé par
-pause hôte. F5/F6/F7 sont réservées ; manette croix gauche/haut/droite, clic,
-tactile. `uc` et `ub` portent les choix autoritaires (voir doc réseau).
-Ne pas modifier WEAPON_SPECS ni offrir de munitions via un bonus : les specs
-par arme sont dérivées idempotemment et conservent le ratio de rechargement.
-Le contexte survit au transfert du joueur entre niveaux, jamais à une nouvelle
-partie ; pas de persistance. 124 tests OK et Ruff OK. Recette étape 4, 24 ennemis,
-deux résolutions, choix coop répliqué : médiane/p95 6,044/11,856 ms et
-10,294/11,254 ms ; UDP observé <=550 octets. Captures des cartes inspectées.
-
-Étape 5 : `mutators.py`, trois variations connues (rapid, armored, crossfire).
-Rotation par groupes de trois vagues dès 4, graine isolée 101 ; 10/20/30 neutres.
-Vitesse +15 %, ou vie +20 %/vitesse -10 %, ou remplacement des miliciens à
-indices multiples de 4 par des soldats. Aucun boss modifié ; aucun ennemi ajouté
-par un mutateur. La file stocke `(kind,wave,mutator)` et conserve les effets
-d'origine en cas de submersion. `wv.mutator` répliqué, annonce HUD à y=195 pour
-éviter les panneaux boss. 127 tests et Ruff OK, captures aux deux résolutions.
-Recette étape 5 : 24 ennemis, médiane/p95 5,735/6,413 ms et 10,055/12,456 ms ;
-UDP observé <=567 octets. Pas de sauvegarde ni nouvelle version de protocole.
-Correction visuelle de l'étape 5 : la ligne de vague est placée à y=160 sous
-1000 px de large, sous les panneaux supérieurs ; largeur bornée à l'écran.
-
-Étape 6 : `coop_support.py` et `support_ui.py`. La réapparition automatique
-historique de 6 s est remplacée par 20 s de secours possible, puis 6 s avant
-spawn. Santé nulle = actions bloquées ; tous joueurs à terre = défaite.
-Interagir à <=1,4 m commence un secours de 3 s ; nouvel appui annule. Dégât,
-roulade, perte de vue ou éloignement annulent ; un helper supplémentaire
-n'accélère pas. Tir bloqué pendant le secours, retour 40 PV/2 s bouclier sans
-munitions offertes. Retour automatique 60 PV au spawn. Pause hôte fige tout ;
-pause locale/silence client >350 ms annulent son secours. `rr`, `pg`, `ga`, `lp`
-sont détaillés dans la doc réseau. Ping C/remappable, Back/View, tactile SIG.
-Portée 12 m calculée par l'hôte, 5 s, délai 2 s, quatre marqueurs maximum.
-132 tests OK, Ruff OK, recette solo/loopback et captures à terre 800/1280.
-Benchmark 24 ennemis : médiane/p95 5,745/6,162 ms et 10,907/20,968 ms ; mesures
-indicatives avec autres contrôles actifs. UDP observé <=597 octets. Pas de
-sauvegarde. Les captures ont conduit à déplacer le détail secours sous le titre.
-
-Étape 7 : `elites.py`, Résistant bulwark (+35 % HP, vitesse ×0,9), Traqueur
-hunter (vitesse ×1,15, délai de tir ×0,9). Maximum trois élites vivants ; boss
-et Commandant exclus. Commandant : 220 HP, aura portée 5 avec visibilité,
-délai de tir allié ×0,8 sans cumul, retrait immédiat à sa mort. Un maximum
-vivant ; un second spawn demandé devient soldat. Entrepôt : deux ennemis
-existants élites et dernier ennemi Commandant, aucun ajout au compte initial.
-Déferlement : deux candidats élites dès 4, Commandant à 5/15/25. File désormais
-`(kind,wave,mutator,elite)`. Champs `en[13:15]` visuels, santé max autoritaire.
-`Enemy.sprite_kind` évite de demander des PNG inexistants pour le Commandant.
-134 tests et Ruff OK, recette solo/loopback 24 ennemis dont 3 élites et un
-Commandant : médiane/p95 5,960/9,632 ms et 10,621/15,526 ms, UDP <=653 octets.
-
-Étape 8 : `boss_patterns.py` état idle/warn/charge/recover. Annonce 1,2 s,
-charge 0,65 s à 5,5 m/s, récupération 1,2 s, attente 4,5−0,5×phase. Cible
-verrouillée à l'annonce ; phase >=2 alterne charge et frappe de rayon 1,8 m.
-Dégâts 24 charge/28 frappe avant difficulté, une fois par victime. Murs et
-collisions arrêtent la charge, pas de dégâts de zone à travers les murs.
-L'IA standard ne tourne pas pendant les patterns ; les timers d'entité avancent.
-Ne pas casser les packs de seuils 2/3 et 1/3. Réplication `en[15]`, aucune
-simulation du pattern côté client. `hazards.py` projette un tracé au sol
-avec z-buffer, avant ADS ; remplace une première balise billboard trop grande.
-137 tests/Ruff OK. Recette étape 8 avec 24 ennemis, boss, élites et Commandant :
-médiane/p95 6,280/8,422 ms et 10,731/22,444 ms ; UDP observé <=697 octets.
-
-Étape 9 : grenade (`grenades.py`), G/remappable, clic stick droit, FRAG. tactile.
-Deux charges, cooldown 1 s, fusée 2 s, rayon 2,7, dégâts décroissants 90→31
-sur ennemis et 60→21 sur lanceur, alliés exempts du souffle direct. Les
-explosions de kamikazes restent celles du jeu. Collision en pas <=0,08 m,
-rebond amorti, souffle avec ligne de vue ; aucune explosion simulée côté client.
-Huit projectiles maximum. `gr`/`gm` acquittent le lancer ; un doublon ne dépense
-pas de charge. Pause purge les demandes non acquittées et fige la fusée hôte.
-Retirer un projectile avant détonation ; conserver les hooks des packs de phase.
-141 tests et Ruff OK. Recette étape 9 : 24 ennemis et grenade active,
-médiane/p95 6,133/6,930 ms et 10,387/10,812 ms ; UDP <=705 octets. Captures
-du projectile et du compteur inspectées aux deux tailles.
-
-Recette étape 1 : 118 tests, Ruff sans erreur, solo et UDP loopback aux deux
-résolutions ; 24 ennemis vivants. Médiane/p95 simulation+rendu : 5,977/6,426 ms
-à 800×600 et 10,501/12,402 ms à 1280×720 (SDL dummy, machine de travail,
-80 frames dont 20 de chauffe ; indicatif, pas une garantie matérielle).
-Datagramme maximal observé : 530 octets. Captures inspectées aux deux tailles.
-
-> **Ce fichier est l'unique source de contexte pour toutes les IA** (Claude,
-> GPT, Kimi, agents, etc.) travaillant sur ce dépôt. Les anciens fichiers
-> (`CLAUDE.md`, `GPT.md`, `AGENTS.md`) ne contiennent plus qu'une redirection
-> vers ici.
->
-> Règle de maintenance : après chaque changement notable, mettre à jour
-> **ce fichier et lui seul**. Ne jamais remettre de contenu dans les fichiers
-> d'origine, afin que toutes les IA partagent le même contexte et ne se
-> contredisent pas.
->
-> Consolidé le 25 juillet 2026 depuis : `CLAUDE.md`, `GPT.md`, `AGENTS.md`.
-
----
-
-<!-- ====== Contenu consolidé depuis `CLAUDE.md` ====== -->
-
-# Call of Python — contexte projet
-
-> Pour les corrections les plus récentes et leurs invariants, voir la section
-> « contexte de reprise GPT » plus bas.
-
-FPS rétro en Python 3.12 / pygame (raycasting pseudo-3D façon Wolfenstein
-3D), développé de bout en bout par itérations avec Claude Code. Ce fichier
-résume l'état du projet pour reprendre le travail sans tout redécouvrir.
-
-Repo GitHub : `BLKMLO/Call-Of-Python` (renommé depuis `BLKMLO/TempGPT`).
-La branche par défaut est `main` ; les évolutions partent d'une branche
-`agent/<description>` et reviennent par pull request.
-
-## Navigation et entrées (8 septembre 2026)
-
-- Branche `agent/menu-controls-render-fps`, base `main` au commit `cb48a335`.
-  Les PR #26 et #27 sont déjà intégrées : ne pas réappliquer leur contenu.
-- Menus : sélection par identifiant dans `MenuBase`, navigation haut/bas,
-  réglage gauche/droite, Entrée/Espace/A pour valider et Échap/B pour revenir.
-  Les séparateurs sont exclus. B ne ferme pas l'application depuis le menu
-  principal. La collision polygonale reste la référence pour la souris.
-- Le remappage clavier ignore les boutons manette sauf B pour annuler ; la
-  saisie IP accepte A/B pour valider/annuler mais reste au clavier. Ne jamais
-  injecter des touches manette dans `Settings.bind_key`.
-- Les listes compactes sont bornées au-dessus du pied de page : Retour reste
-  visible à 800×600. `_row_font` est partagé entre dessin et calcul des chevrons.
-- `reset_gameplay_input` (`gamepad.py`) centralise la purge souris/tactile,
-  des boutons manette et des tirs clients en attente. Les gâchettes doivent
-  être relâchées après pause/reprise/perte de focus/ouverture de contrôleur.
-  Un client ne peut pas lever `host_paused`; la réception réseau continue.
-- `main.py` possède le contrôleur des menus et le ferme avant d'ouvrir celui
-  de la partie. Les transitions de fin et retours au menu le rouvrent.
-- A passe la caméra de mort seulement après `DEATH_SKIP_LOCK`; Start/B
-  permettent de reprendre/quitter la pause. Le HUD distingue « PAUSE HÔTE ».
-- F3 affiche `Clock.get_fps()` de la boucle principale. Ne plus calculer les
-  FPS depuis le `dt` fixe dans `Game.update` ou `CoopClientGame.update`.
-- `tests/test_menu_controls.py` ajoute 13 tests (113 au total). Ses fixtures
-  vident `_FONT_CACHE` avant de fermer SDL pour ne pas transmettre des polices
-  natives invalides aux autres suites. Tests SDL factices et coop loopback ;
-  une manette physique et un LAN multi-machines restent à valider manuellement.
-- Pas de dépendance, migration, changement réseau ou équilibrage. Les
-  sauvegardes restent hors périmètre. Rollback : réversion du commit de cette
-  passe ; aucun changement de données utilisateur à annuler.
-- README, CHANGELOG et architecture actualisés à la demande de l'utilisateur.
-  Les fichiers de redirection AGENTS/CLAUDE/GPT restent des redirections.
-
-## Modernisation 0.4.0 (11 aout 2026)
-
-- Simulation a pas fixe 60 Hz via `runtime.FixedStepClock`; rendu jusqu'a
-  120 Hz et rattrapage limite a huit pas.
-- Protocole v3 strict centralise dans `version.py`. Une autre version recoit
-  `incompatible` et ne cree aucun joueur.
-- `network.UdpPeer` n'active plus `SO_REUSEADDR` sur POSIX. Les messages sont
-  compresses puis fragmentes en datagrammes de 1 200 octets, avec limites de
-  reassemblage, TTL, debit source et compteurs.
-- Difficultes Recrue/Soldat/Veteran, directeur de pression limite a la cadence,
-  FOV, secousses et ADS configurables.
-- `gamepad.py` fournit les mappings SDL Xbox/PlayStation, zone morte,
-  branchement a chaud et vibration.
-- `pyproject.toml`, licence MIT, wheel, PyInstaller et workflow d'artefacts.
-- Ruff complet, couverture minimale de 70 % et 113 tests.
-
-## Passe bugs et performances (15 aout 2026)
-
-- `EnemyAI.update()` appelle `update_timers()` AVANT de remettre `moving` à
-  False : sinon `anim_time` reste à zéro et aucun ennemi n'alterne ses deux
-  poses de marche. Ne jamais réinverser ces deux lignes.
-- Le comportement de l'état `cover` appartient à la chaîne d'états ; le test
-  de contact du kamikaze est un `if` indépendant placé après elle.
-- `GamepadInput.consume_actions()` ne touche plus à `_fire_was_held` : seul
-  `update()` possède l'état maintenu de la gâchette, faute de quoi les armes
-  semi-automatiques tiraient en rafale à la manette.
-- `cast_ray_layers(..., max_height=...)` s'arrête dès qu'un mur plus lointain
-  ne peut plus dépasser (`Raycaster.max_height`, recalculé dans `set_level`).
-  Tout nouveau niveau doit déclarer ses hauteurs dans `heights` : une hauteur
-  appliquée ailleurs qu'à travers ce dictionnaire ferait disparaître des
-  sommets de murs.
-- `has_line_of_sight` borne son rayon à `int(dist) + 2` croisements et saute
-  `first_cover_hit` quand `level.cover_circles` est vide.
-- `raycaster.rotate_zoom_screen()` remplace `pygame.transform.rotozoom` pour
-  la roulade et la caméra de mort (rotation entière puis agrandissement dans
-  un tampon réutilisé, ~3x moins cher). Ne pas revenir à `rotozoom`.
-- `entities._visible_bounds()` mémoïse `get_bounding_rect` par nom de sprite :
-  une vague du Déferlement créait des dizaines d'ennemis, chacun scannant deux
-  PNG entiers.
-- `HUD._text()` accepte désormais les compteurs bornés (PV, munitions,
-  contacts, éliminations, roulade) ; le cache monte à 512 entrées et reste
-  vidé dans `resize()`. Ne jamais y mettre une chaîne à cardinalité libre, et
-  ne jamais appeler `set_alpha` sur une surface qui en sort.
-- `TouchControls` compose son habillage (anneau, pastilles, libellés) une fois
-  par résolution dans `_build_overlay()` ; `draw()` ne blitte plus que le
-  pouce du stick et les pastilles enfoncées.
-- `tests/test_bugfix_perf.py` verrouille tout cela, dont deux comparaisons
-  différentielles (rayons en couches et lignes de vue) avec l'implémentation
-  d'origine recopiée dans le test : toute optimisation future du rayon doit
-  continuer à rendre exactement les mêmes murs.
+- Branche par défaut `main` ; travailler sur `agent/<description>` et revenir
+  par PR. Travail en cours : branche `agent/gameplay-evolution`, PR brouillon
+  #29 (CI à consulter sur GitHub).
+- Ne jamais annoncer une étape validée sans tests + recette. Conserver toutes
+  les gates demandées par l'utilisateur. Rollback = réversion du commit.
+- À chaque étape : mettre à jour README, CHANGELOG, architecture, doc réseau
+  si nécessaire, et ce fichier.
+- Pas de persistance/sauvegarde nouvelle sans demande ; les sauvegardes sont
+  hors périmètre des passes gameplay.
+- Historique Git : `main` contient le commit-pont `5a56c44` recréant l'arbre de
+  `67949e2` (branche `backup/force-pushed-main-67949e2`). Ne jamais
+  reconstruire cette filiation à la main ; `git diff --exit-code 67949e2
+  5a56c44` doit rester vide.
+- `settings.json` est gitignoré (normal qu'il apparaisse modifié).
 
 ## Lancer / tester
 
 ```bash
 pip install -r requirements.txt
 python main.py
-```
-
-La suite `unittest` est committée dans `tests/` et utilise les pilotes SDL
-factices pour fonctionner sans écran ni carte son :
-
-```bash
 UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   python -m unittest discover -s tests -v
 ```
 
-Le workflow `.github/workflows/ci.yml` rejoue compilation, Ruff complet,
-113 tests, couverture et construction du wheel sous Python 3.12 sur Ubuntu et
-Windows.
+- `--python 3.12` obligatoire (pas de wheel pygame 2.6.1 pour Python plus
+  récent). Tests en pilotes SDL factices (`SDL_VIDEODRIVER/SDL_AUDIODRIVER=dummy`).
+- État actuel : **164 tests OK**, Ruff OK (règles E, F, I, UP, B dans
+  `pyproject.toml`), couverture minimale 70 %.
+- `tools/validate_gameplay.py --stage 10` (exécuté aussi en CI) : assertion à
+  4 cartes, datagramme max observé 718 octets.
+- `tools/clean_sprites.py` (+ `--check`, testé) : nettoyage des sprites.
+- CI `.github/workflows/ci.yml` : PR vers `main`, push `main`, manuel ;
+  Ubuntu + Windows, Python 3.12 : compilation, Ruff, tests, couverture, wheel.
+  Actions épinglées par SHA, jeton `contents: read`. Workflow release : groupe
+  `executables-${{ github.ref }}`.
+- Packaging : `pyproject.toml`, licence MIT, wheel, PyInstaller.
+- Fixtures de `tests/test_menu_controls.py` : vider `_FONT_CACHE` avant de
+  fermer SDL. Port coop de test 15577 (≠ 5577 du jeu).
+- Tests qui infligent des dégâts juste après `Game(...)`/`SurvivalGame(...)` :
+  faire `player.shield = 0.0` d'abord (bouclier de spawn).
+- Non validé automatiquement : ressenti en jeu réel, manette physique,
+  tactile matériel, LAN multi-machines.
 
 ## Architecture
 
-| Fichier        | Rôle |
-|----------------|------|
-| `main.py`      | Point d'entrée, machine à états (menu / jeu / Sceau / Déferlement / fin), musique |
-| `runtime.py` / `version.py` | Horloge fixe 60 Hz et versions jeu/protocole |
-| `settings.py`  | Paramètres + persistance JSON (résolution, volumes effets/musique, sensibilité, souris inversée, plein écran F11, touches, progression, records) |
-| `menu.py`      | Menu principal, paramètres, fin de niveau, écran du Sceau, game over / victoire |
-| `game.py`      | Boucle de gameplay : entrées, tir hitscan, ramassages, alertes, portes, stats, caméra de mort |
-| `survival.py`  | Le Déferlement : vagues, délai de submersion dégressif, apparitions, ravitaillement |
-| `difficulty.py` | Profils Recrue/Soldat/Veteran et directeur de pression |
-| `network.py`   | Couche LAN : datagrammes UDP + JSON, sockets non bloquantes, sans thread |
-| `coop.py`      | Coop LAN : hôte autoritaire (`CoopHostGame`) et client répliqué (`CoopClientGame`) |
-| `level.py`     | Cartes ASCII + niveaux (thème, ennemis, armes, décors, difficulté) + portes coulissantes |
-| `raycaster.py` | Rendu : murs texturés en couches (DDA + z-buffer), portes, y-shearing, billboards, ciel étoilé, particules |
-| `entities.py`  | `Player` (arsenal, pitch, bouclier), `Grunt`/`Soldier`/`Heavy`/`Sniper`/`Kamikaze`/`Boss`, `Pickup`, `Prop` |
-| `ai.py`        | Machine à états des ennemis (idle / chase / attack / cover) + pathfinding BFS + tactiques (flanc, couverture) |
-| `weapons.py`   | Specs des armes + niveaux d'amélioration (Mk. II...) |
-| `hud.py`       | Arme FP, viseur dynamique, marqueurs, panneau de vagues, minimap, barre de boss, écran de mort |
-| `gamepad.py` / `touch_controls.py` | Entrees SDL manette et tactile |
-| `particles.py` | Particules 3D (sang, impacts, poussière, surgissements) |
-| `sounds.py`    | Effets + sept thèmes contextuels synthétisés en pur Python (+ overrides fichiers réels dans `assets/sound/`) |
-| `assets.py`    | Chargement des PNG (`assets/`) ; générateurs procéduraux de secours (`_BUILDERS`) si un PNG manque |
-
-`README.md` documente le gameplay côté joueur en détail — s'y référer pour
-la liste des features. Ce fichier se concentre sur les détails
-d'implémentation et les décisions techniques non triviales.
-
-## Conventions et pièges connus
-
-- **Monde y-vers-le-bas** : angle 0 = est (+x), angle croissant = tourner
-  à DROITE. `dx` souris positif → angle croissant → tourne à droite. Toute
-  la chaîne (rendu, soleil, étoiles, son stéréo, indicateurs de dégâts) a
-  été auditée et est cohérente — cf. commit `984b279`.
-- **Cache mural** (`raycaster.py`) : FIFO borné (`CACHE_LIMIT`), éviction
-  d'UNE seule entrée par insertion. Une éviction en bloc avait causé des
-  pics de lag (~200ms) lors des rotations dans des zones à géométrie
-  variée (rotonde du Gouvernement) — ne pas revenir à un cache généra-
-  tionnel/bulk-évict.
-- **Zoom de visée (ADS)** : `zoom_screen()` recadre + réagrandit l'image
-  déjà rendue (post-traitement), plutôt que de changer le FOV — changer
-  le FOV par frame invalidait tout le cache mural (gros pic de lag).
-- **Rendu des murs en couches** (`cast_ray_layers`, ajouté récemment) : un
-  raycaster classique s'arrête au premier mur et masque tout ce qui est
-  derrière, y compris plus haut (un gratte-ciel derrière une salle basse
-  disparaissait). La fonction traverse plusieurs murs et élague ceux qui
-  sont entièrement masqués (ne garde que ceux qui dépassent au-dessus de
-  tout ce qui est devant) pour rester aussi rapide qu'un rayon simple en
-  zone dégagée. Le z-buffer (occlusion des sprites) utilise toujours le
-  premier mur (le plus proche), pas les couches suivantes.
-- **Taille des billboards** : plafonnée via une distance de projection
-  plancher (`MIN_SPRITE_DIST`) pour éviter qu'un ennemi/décor grossisse à
-  l'infini de très près — ne change pas l'occlusion/le tri (qui utilisent
-  la vraie distance).
-- **Props (décors)** bloquent les déplacements et le pathfinding IA mais
-  PAS les balles ni les regards (`has_line_of_sight`/`cast_ray` ignorent
-  `prop_tiles`) — seuls les murs de la grille bloquent la ligne de vue.
-- **Portes** : ne doivent être placées que dans des murs de hauteur 1.0
-  (jamais dans un mur "haut", sinon vide visuel au-dessus).
-- **IA tactique** (`ai.py`) : hiérarchie par type d'ennemi.
-  `Soldier.FLANKS=True` (contourne pour attaquer par le flanc/les
-  arrières quand il perd le joueur de vue), `Soldier`/`Sniper.USES_COVER
-  =True` (alterne planque/sortie "peek" pendant le combat, avec grâce de
-  perte de vue via `LOSE_SIGHT_TIME` pour ne pas ressortir de l'état
-  "attack" dès qu'il se planque). `exposure_fraction()`
-  (`raycaster.py`) échantillonne la silhouette du joueur perpendiculai-
-  rement à la ligne de tir pour réduire la précision ennemie quand il
-  n'est que partiellement exposé (à couvert).
-- **Scancodes** (`SLOT_SCANCODES` dans `game.py`) pour les touches 1-4 :
-  indépendants de la disposition clavier (AZERTY/QWERTY).
-- **Molette** : gère `event.flipped` (défilement "naturel" Linux/macOS) ;
-  molette horizontale (`y=0`) ignorée.
-- **Souris inversée** : un seul réglage (`settings.invert_mouse`) inverse
-  les DEUX axes (horizontal ET vertical) en même temps.
-- **Boutons de réglage `< valeur >`** (menu Paramètres) : le point de
-  bascule gauche/droite se calcule entre les deux chevrons
-  (`MenuBase._bracket_split`), PAS au centre du texte entier — un libellé
-  à préfixe long (ex. "Sensibilité souris") décale sinon les deux
-  chevrons du même côté du centre, rendant un des deux clics inopérant.
-- **Bouclier de spawn** (`Player.activate_shield`) : invulnérabilité de
-  quelques secondes à l'arrivée sur un niveau/le Déferlement. Les tests
-  qui infligent des dégâts juste après un `Game(...)`/`SurvivalGame(...)`
-  doivent faire `player.shield = 0.0` avant `take_damage`, sinon le
-  dégât est silencieusement ignoré.
-- **Caméra de mort** : `Game.update` fige tout le gameplay dès
-  `outcome == "dead"` mais laisse tourner `death_time` (chute/bascule de
-  vue + assombrissement + texte, ~`DEATH_CAM_TIME` secondes) avant que
-  `finished` ne devienne vrai. Ne pas confondre avec l'ancien
-  `end_delay` (toujours utilisé pour "victory").
-- **Musique/son personnalisés** (`sounds.py`) : `assets/sound/` est
-  optionnel. `reload.<ext>` remplace le clic synthétisé ; `<n>.<ext>`
-  (n = numéro affiché du niveau, 1..5) ou `menu.<ext>`/`survival.<ext>`
-  remplacent la nappe procédurale. Extensions essayées dans l'ordre
-  `AUDIO_EXTENSIONS` (ogg, mp3, wav, flac). Sans fichier, chaque contexte
-  utilise son propre `MusicProfile` (racine, tempo, motif et timbre) et une
-  boucle déterministe de 12 secondes raccordée sans clic.
-  Depuis le 11 octobre 2026, les musiques réelles des niveaux 1 à 5 sont
-  committées (`assets/sound/1.mp3` … `5.mp3`, ~2 min 40 à 2 min 51 chacune,
-  44,1 kHz stéréo), ainsi que `assets/sound/survival.mp3` (Déferlement,
-  ~2 min 52, aussi joué en coop LAN) ; seul le menu reste synthétisé tant
-  qu'aucun `menu.<ext>` n'est fourni.
-  `SoundBank.play_music` ne garde en cache qu'une seule piste issue d'un
-  fichier (~15 Mo décodée) : les autres sont libérées à chaque changement,
-  y compris au retour au menu (`file_music_keys`, `_release_file_music`).
-  Les nappes synthétisées (~1 Mo) restent en cache. Le volume par défaut des
-  effets (`Settings.sound_volume`) passe de 0.7 à 0.4 pour laisser entendre
-  la musique (les réglages déjà sauvegardés ne sont pas modifiés).
-- **Coop LAN** : `CoopHostGame` hérite de `SurvivalGame` (hôte
-  autoritaire) ; `CoopClientGame` est une classe indépendante qui expose
-  la même interface (`handle_event`/`update`/`draw`/`finished`/`outcome`)
-  mais duplique une partie de l'init (spawn du joueur, armes de départ,
-  bouclier de spawn) plutôt que d'hériter de `Game` — à garder en tête si
-  on ajoute un champ à `Player`/`Game.__init__` : il faudra le répliquer
-  ici aussi.
-- **Textures (refonte graphique)** : les PNG d'`assets/` ont été refaits
-  à la main en art détaillé (via ChatGPT, branche `agent/refonte-graphique`),
-  bien plus riches que les générateurs procéduraux d'`assets.py` — ces
-  derniers ne servent plus que de secours si un PNG manque. `python assets.py`
-  ne complete que les fichiers absents ; seul `--force-procedural` ecrase les
-  textures detaillees. Ajout au passage : polices système (`SysFont`), fond de
-  menu (`assets/menu_background.png`), plein écran F11.
-- **Cadrage des décors (`prop_*`)** : la refonte a découpé une planche de
-  sprites aux mauvais décalages → certains décors contenaient des
-  fragments d'objets voisins et/ou étaient tronqués. Nettoyés en ne
-  gardant que la plus grande composante connexe puis en recadrant dessus.
-  La voiture a depuis été régénérée avec un avant complet et des marges ; le
-  banc du Gouvernement a été remplacé par un siège individuel plus compact.
-  Vérifier composantes et marges avant de committer tout nouveau décor.
-
-## Historique des sessions (dans l'ordre)
-
-1. FPS complet : menu, paramètres, map de test, ZQSD + souris + tir, IA
-   basique, vie/mort, code modulaire.
-2. Textures pixel-art "Minecraft", plusieurs niveaux/armes progressives.
-3. Passe d'amélioration libre.
-4. Portes coulissantes, sprites directionnels, mode survie (vagues)
-   après le boss — lore : le boss est "le Sceau".
-5. Coop LAN, kamikaze/sniper, stats, renommage en **Call of Python**,
-   packs de vie cachés.
-6. Optimisation (FPS, textures, animations, particules, sons).
-7. Campagne 5 niveaux (Entrepôt → Métropole → Gouvernement → Base
-   militaire → Laboratoire) + Déferlement sur la Lune.
-8. Fixes : gratte-ciel réellement hauts, visée clic droit (ADS), plus
-   d'ennemis/armes, cartes agrandies/variées, Lune plate avec portail.
-9. Fixes : bâtiments coupés, voiture bloquante, soleil dynamique
-   (8h→19h), anti-lag (cache FIFO), préparation numba (jamais implémentée).
-10. Passe libre + polish final (munitions, lueur de tir, cache mural).
-11. Audit gauche/droite souris (Windows/Linux) : inversion du défilement
-    des étoiles (seul vrai bug trouvé), molette `flipped`, mode relatif
-    souris optionnel.
-12. Option "souris inversée" dans les Paramètres.
-13. Fix bouton de sensibilité (calcul du point de bascule), inversion
-    souris étendue à l'axe vertical.
-14. Bouclier temporaire au changement de niveau, ancien sprint Maj
-    gauche/droite (remplacé depuis par la roulade).
-15. Son de rechargement réel (fichier fourni), musiques de niveau
-    personnalisables (`assets/sound/`), IA tactique (flanc, couverture,
-    exposition partielle), nerf sniper (-5% dégâts).
-16. Déferlement : packs de vie toutes les 2 vagues, délai de submersion
-    dégressif (30s, -10%/vague, plancher 3s), plafond de taille des
-    billboards de très près.
-17. Caméra de mort cinématique (façon Dark Souls), vie du Colosse x3
-    (550→1650), rendu des murs en couches (gratte-ciels visibles
-    derrière les salles basses).
-18. **Refonte graphique** (par ChatGPT, hors sessions Claude) : tous les
-    PNG refaits en art détaillé, fond de menu, polices système, plein
-    écran F11. Fusionnée dans `main`.
-19. Correction du cadrage des décors régénérés : suppression des fragments
-    parasites et des marges (plus grande composante connexe + recadrage),
-    reconstruction temporaire du banc du Gouvernement tronqué (miroir).
-20. Régénération définitive de la voiture et des sièges, suppression d'une
-    porte isolée du Laboratoire, couvert renforcé et télégraphie du sniper à
-    genou pendant 0,75 s (synchronisée en coop), tirs ennemis frontaux, murs
-    blancs du Laboratoire et nuages hors niveau lunaire. Contexte dans la
-    section « contexte de reprise GPT ».
-21. Milicien accéléré de 50 %, roulades joueur/soldat avec i-frames et synchro
-    coop, Lune texturée avec cristaux aliens de couverture, portail flottant
-    et menu principal cinématique lunaire. Contexte complet dans la section
-    « contexte de reprise GPT ».
-22. Nettoyage de robustesse : réglages bornés et atomiques, entrées maladroites
-    neutralisées, protocole UDP défensif, validation hôte des positions/
-    roulades/tirs, boucliers de réapparition coop et caches légers. Dix tests
-    dédiés dans `tests/test_cleanup.py`, invariants complets dans la section
-    « contexte de reprise GPT ».
-23. Équilibrage des roulades : fenêtre centrale de 0,30 s d'i-frames et aucun
-    cooldown pour le joueur/les coéquipiers (séquences LAN anti-paquets
-    retardés), soldat à 3 s de cooldown avec esquive réflexe après un impact
-    sans annuler les plombs simultanés. Écran de mort refait en panneau
-    tactique lisible et adaptatif. Contexte complet dans la section
-    « contexte de reprise GPT ».
-24. Passe libre Kimi (bugs, robustesse, perf, tests) : visée sniper annulée
-    sur toutes les transitions d'état, rechargement auto audible, roulade
-    gelée après victoire, textes « 50 vagues » alignés sur FINAL_WAVE=30,
-    settings immunisés contre RecursionError, double bind UDP interdit sous
-    Windows (SO_EXCLUSIVEADDRUSE), caches de polices/menu, icônes HUD,
-    textes statiques, minimap sans copie, tampon de zoom ADS réutilisé,
-    fondu des murs d'énergie mémoïsé (alpha quantifié), smoke tests enfin
-    commités (`tests/test_smoke.py`). 43 tests verts. CHANGELOG.md créé.
-25. Réparation de l'historique et lot gameplay/accessibilité : l'arbre du
-    commit racine `67949e2` a été recréé à l'identique dans `5019052`, avec
-    `ef9849d` comme parent, sur `agent/history-gameplay-repair`. Le Colosse
-    passe à trois phases et libère deux packs de vie ; le Déferlement utilise
-    des ennemis possédés ; Laboratoire, cratères et HUD sont recalibrés ; les
-    commandes multi-touch sont activées par détection SDL. Sept tests dédiés
-    portent la suite à 50 tests.
-26. Passe post-fusion de fiabilité : packs de phase du Colosse différés au
-    lieu d'être perdus en zone encombrée, cadavres exclus du placement,
-    commandes tactiles maintenues neutralisées à la reprise, roulade coop
-    interdite après l'issue et œil de profil possédé correctement miroir.
-    Pygame est fixé à 2.6.1 et une CI GitHub Actions Linux/Windows automatise
-    compilation, erreurs Python critiques et 54 tests.
-27. Animations de recharge et identité audio : quatre poses détaillées
-    `fp_<id>_reload` générées à partir des armes existantes, interpolation et
-    mouvements propres dans le HUD, progression normalisée dans `Weapon`.
-    Cinq thèmes de campagne, le Déferlement et le menu utilisent désormais
-    sept profils musicaux procéduraux distincts. Six tests portent la suite à
-    60 tests.
-28. Impacts typés et mixage séparé : sang rouge/blessure sourde pour les
-    organiques, éclats/choc métallique pour le lourd et le Colosse, sang vert/
-    extinction pour tout possédé. Chaque impact est répliqué séparément en
-    coop. Les volumes des effets et de la musique deviennent indépendants,
-    avec migration de l'ancien volume global. Sept tests portent la suite à
-    67 tests.
-29. Corrections P0/P1 de l'audit : cache de billboards LRU limité à 64 Mio,
-    protocole coop v2 séquencé et acquitté, compression UDP, inventaire
-    autoritaire, validation complète des armes/cadences/munitions, pause hôte
-    globale, budget de déplacement temporel et collisions joueurs/ennemis.
-    Dix tests adversariaux portent la suite à 77 tests.
-30. Équilibrage et polish UI : mise en joue du sniper réduite de 25 %
-    (`0,75` → `0,5625 s`), roulade du militaire raccourcie de 25 %
-    (`1,0` → `0,75 s`) avec portée et i-frames réduites ensemble, douze
-    nouvelles poses portant chaque arme à quatre keyframes de recharge,
-    boutons de menu latéraux en parallélogramme avec contour au survol et
-    écran de mort verrouillé 3 s avec titre gothique sanglant. Quatre
-    non-régressions supplémentaires portent la suite à 81 tests.
-31. Correction visuelle des huit poses de recharge du fusil à pompe et du
-    minigun : anatomie gauche/droite cohérente pour le chargement des
-    cartouches, et chaîne mécanique explicite ouverture du capot → engagement
-    de la bande → calage → fermeture pour le minigun. Dimensions, alpha,
-    keyframes, timings et cache HUD restent inchangés.
-32. Passe bugs et performances (15 août 2026) : animation de marche des
-    ennemis réparée, gâchette manette rendue semi-automatique, branche de
-    couverture replacée dans la chaîne d'états. Côté performances, traversée
-    des murs bornée par la hauteur maximale du niveau, `rotozoom` remplacé
-    pour la roulade et la caméra de mort, lignes de vue bornées, tranches de
-    billboards fusionnées, boîtes opaques et habillage tactile mémoïsés :
-    -11 à -18 % sur le rendu du monde, frames de mort/roulade deux fois plus
-    rapides, rendu identique au pixel près. Onze tests portent la suite à
-    113 tests.
-33. Difficulté Déferlement solo (12 octobre 2026) : plus de mutateurs ni
-    d'élites en solo, amélioration toutes les 2 vagues ; coop inchangée.
-
-## Dette / manques à connaître
-
-- **Couverture de tests encore partielle mais en progrès.** Cent
-  tests sont présents : `tests/test_requested_changes.py` (22
-  non-régressions), `tests/test_cleanup.py` (15 contrôles robustesse/UI) et
-  `tests/test_smoke.py` (8 tests de fumée généraux — boot, campagne,
-  survie, menus, coop loopback UDP, réglages, sons), qui remplacent les
-  anciens `smoke_test2..11.py` jamais commités, plus
-  `tests/test_gameplay_extensions.py` (11 tests Colosse, possédés, décors,
-  réseau étendu et tactile), `tests/test_reload_music.py` (8 tests sur les
-  poses, le HUD, la progression de recharge et les profils musicaux) et
-  `tests/test_impact_audio.py` (7 tests impacts, volumes, menu et coop), plus
-  `tests/test_p0_p1.py` (10 tests de mémoire, protocole, sécurité hôte,
-  collisions et pause coop), `tests/test_bugfix_perf.py` (11 tests de la passe
-  correctifs/performances) et `tests/test_modernization.py` (8 tests horloge,
-  MTU, port exclusif, version, difficulte, accessibilite, FOV et manette).
-- **Ruff complet** : la dette historique est corrigee et la CI execute toutes
-  les regles E, F, I, UP et B configurees dans `pyproject.toml`.
-- **numba** : évoqué comme piste d'optimisation si un jour nécessaire,
-  jamais implémenté (le cache FIFO a suffi à éliminer les pics de lag
-  observés).
-- **Multijoueur** : handshake et instantanés testés avec une vraie socket UDP
-  locale entre deux instances — toujours pas de test réseau multi-machines.
-- `settings.json` est gitignoré (contient les préférences locales/l'IP
-  du dernier hôte rejoint) — normal que `git status` le montre modifié
-  après une partie.
-
----
-
-<!-- ====== Contenu consolidé depuis `GPT.md` ====== -->
-
-# Call of Python — contexte de reprise GPT
-
-Dernière mise à jour : 11 aout 2026. Dépôt `BLKMLO/Call-Of-Python`,
-branche de travail `agent/p0-p2-modernization`.
-
-## Corrections P0/P1 de robustesse
-
-- `Raycaster._sprite_cache` est un LRU pondéré par la taille SDL réelle
-  (`pitch × hauteur`), limité à `64 Mio` et `512` surfaces. Une surface plus
-  grosse que le budget est rendue sans être conservée. Ne pas réutiliser la
-  limite historique de `4000` entrées pour les billboards ; elle autorisait
-  près de `940 Mio` de RSS supplémentaire dans le scénario d'audit.
-  `_wall_cache` conserve en revanche son FIFO à éviction unique, car ses
-  colonnes étroites et l'invariant anti-pic sont différents.
-- Le protocole coop courant vaut `PROTOCOL_VERSION = 3`. Le handshake refuse
-  explicitement toute autre version avant allocation. Il fournit
-  un `session_id`; chaque entrée possède `iq`, chaque instantané `sq`, et le
-  client rejette toute autre session ainsi que les séquences anciennes ou
-  dupliquées. Les événements fiables `rev` portent leur propre numéro, restent
-  dans un journal borné jusqu'à l'acquittement `ea`, et sont appliqués
-  strictement dans l'ordre. `eb` permet une reprise bornée si un client dépasse
-  exceptionnellement la fenêtre de `512` événements.
-- La position de réapparition et la santé sont déjà dans la ligne joueur ;
-  le client restaure donc aussi sa réapparition depuis cet état, sans dépendre
-  du seul événement `rs`. Chaque ligne joueur ajoute en fin de tableau
-  l'inventaire `[weapon_id, level]` et l'arme active : un événement `wpk` perdu
-  ne supprime plus définitivement une arme. Les anciens lecteurs ignorent ces
-  champs ajoutés en fin de ligne.
-- Les instantanes v3 sont compresses a partir de `900` octets quand utile,
-  puis fragmentes en datagrammes de `1200` octets maximum. La decompression et
-  la reconstitution restent bornees a `BUFFER_SIZE`; ne jamais accepter un
-  flux zlib incomplet, des donnees supplementaires ou une expansion illimitee.
-- Un tir client v2 est un déclenchement `[weapon_id, [angles...]]`. L'hôte
-  possède ses propres instances `Weapon` et dérive chargeur, cadence, recharge,
-  dégâts, rayon d'impact, dispersion et nombre exact de plombs. Les anciens
-  couples `[angle, dégâts]` sont volontairement refusés : un ancien client
-  peut lire les instantanés compatibles, mais doit être mis à jour pour tirer.
-- Le déplacement distant consomme un crédit alimenté par `net_time`, à
-  `Player.SPEED` hors roulade et `Player.ROLL_SPEED` pendant l'action, avec
-  seulement `0,15 s` de capacité et `0,03` case de marge. Plusieurs paquets
-  dans la même frame ne recréent aucun crédit. ADS applique aussi son
-  multiplicateur de vitesse.
-- `Player.move(..., blockers=...)` sous-échantillonne marche et roulade contre
-  les cercles vivants. Le solo, l'hôte et la prédiction cliente passent leurs
-  ennemis/coéquipiers comme obstacles ; `_separate_enemies()` résout aussi les
-  chevauchements créés par l'IA. Un joueur déjà chevauché reste autorisé à
-  s'éloigner.
-- L'instantané réplique `pa`. `CoopHostGame._handle_input()` conserve
-  séquences/acquittements pendant la pause mais refuse position, angle,
-  roulade, recharge et tir. Le client utilise `controls_paused`, purge les
-  actions maintenues et se recale sur la position hôte.
-- `Player.update()` met à jour toutes les armes possédées : une recharge
-  continue lorsque l'arme est rangée.
-
-## Impacts typés et volumes séparés
-
-- `Enemy.impact_type` vaut `flesh` pour `Grunt`, `Soldier`, `Sniper` et
-  `Kamikaze`, `armor` pour `Heavy` et `Boss`, et toujours `possessed` lorsque
-  `Enemy.possessed` est actif. Cette priorité garantit que les lourds et
-  Colosses du Déferlement gardent l'identité alien verte.
-- `ParticleSystem.spawn_impact()` produit une gerbe rouge, des fragments
-  métalliques ou une gerbe verte. Le paramètre `fatal=True` augmente la gerbe
-  sans mélanger les palettes ; `spawn_death()` accepte le même type.
-- `SoundBank` expose `flesh_hit`, `armor_hit` et `possessed_hit`, synthétisés
-  respectivement comme blessure sourde, résonance métallique et flamme
-  étouffée. Les sons sont positionnels et atténués comme les anciens impacts.
-- L'hôte coop ajoute un événement `["ei", net_id, fatal]` pour chaque balle
-  encaissée. Le client supprime l'effet de repli fondé sur la variation de vie
-  lorsqu'un tel événement existe, puis rejoue chaque événement séparément.
-  Un hôte ancien reste compatible grâce au repli sur l'instantané de santé.
-- `Settings.sound_volume` et `Settings.music_volume` sont indépendants.
-  L'ancienne clé JSON `volume` initialise les deux valeurs ; la propriété
-  `Settings.volume` reste un alias de compatibilité qui écrit les deux.
-
-## Animations de recharge et musiques contextuelles
-
-- Chaque arme dispose désormais de quatre poses de recharge réelles :
-  `fp_<id>_reload_1.png`, `_reload_2.png`, `_reload.png` et `_reload_3.png`.
-  Les douze nouvelles poses intermédiaires couvrent main d'appui, extraction,
-  insertion, cartouche/pompe et bande d'alimentation. Tous les fichiers restent
-  en `192x144`, avec alpha et coins transparents.
-- Les quatre poses du fusil à pompe gardent strictement la main droite sur la
-  poignée arrière et font venir la main gauche depuis la gauche de l'écran :
-  relâchement de la pompe, présentation d'une cartouche rouge, insertion dans
-  le port inférieur puis reprise de la pompe. Il ne doit jamais y avoir deux
-  mains droites, deux cartouches ou une cartouche introduite par la fenêtre
-  d'éjection.
-- Les quatre poses du minigun montrent désormais un mécanisme continu :
-  ouverture du capot d'alimentation latéral droit et plateau vide, présentation
-  de la bande depuis la droite, cartouches calées dans le plateau, puis capot
-  refermé avec bande engagée. La main gauche stabilise toujours la poignée
-  arrière gauche ; la main droite manipule le capot et la bande.
-- `Weapon.reload_progress` expose une progression bornée `[0, 1]` uniquement
-  pendant la recharge. `hud.reload_frames()` parcourt six points de passage
-  (repos inclus aux deux extrémités), soit cinq transitions mécaniques ;
-  `hud.reload_pose()` conserve les offsets propres à l'arme. Les fondus sont
-  quantifiés sur six niveaux et toutes les poses/combinaisons sont mises en
-  cache par résolution : aucune transformation d'image n'est effectuée à
-  chaque frame. Une pose intermédiaire absente replie sur `_reload`, puis sur
-  la pose normale si nécessaire.
-- Les temps de recharge, le remplissage du chargeur, le son, les contrôles
-  tactiles et la coop ne changent pas. La pose revient progressivement au
-  repos pendant les 18 % finaux afin que la remise à zéro du compteur ne
-  provoque aucun saut.
-- `sounds.MUSIC_PROFILES` définit sept identités : menu cinématique,
-  Entrepôt industriel, Métropole urbaine, Gouvernement solennel, Base
-  militaire martiale, Laboratoire expérimental et Déferlement alien.
-  `_music_loop()` synthétise chaque thème à la demande, de façon déterministe
-  et bouclable. Les fichiers `menu.*`, `1.*` à `5.*` et `survival.*` gardent
-  la priorité.
-- `tests/test_reload_music.py` contient huit non-régressions : progression,
-  intégrité des seize PNG de recharge, cinq transitions, mouvements distincts,
-  quatre étapes HUD réellement différentes par arme, couverture des profils
-  et déterminisme/raccord des boucles.
-
-## Équilibrage sniper/militaire et polish des menus/de la mort
-
-- `Sniper.AIM_DELAY = 0.5625` : la mise en joue avant le coup est réduite de
-  25 % par rapport aux `0,75 s` précédents. `FIRE_DELAY = 2.3` reste inchangé
-  et commence toujours après le tir ; il n'y a donc pas de double accélération
-  de la cadence.
-- `Soldier.ROLL_DURATION = 0.75` surcharge la valeur générique d'`Enemy`.
-  `ROLL_SPEED = 2.8` et `ROLL_COOLDOWN = 3.0` ne changent pas : portée,
-  animation et invincibilité diminuent ensemble de 25 %. Le client coop borne
-  aussi un ancien `roll_timer` d'une seconde à la durée courante.
-- Tous les boutons hérités de `MenuBase` sont placés dans le panneau latéral
-  gauche, dessinés comme des parallélogrammes et alignés à gauche. Le contour
-  vert et le liseré orange n'apparaissent qu'au survol. La collision suit le
-  polygone ; les coins transparents ne sont pas cliquables. Les surfaces
-  normales/survolées sont mises en cache par taille.
-- `DEATH_SKIP_LOCK = 3.0` interdit à Entrée, Espace, Échap, clic et tactile
-  d'écourter les trois premières secondes. La fermeture SDL reste gérée par
-  la boucle principale. `HUD.resize()` précalcule le titre serif gothique rouge
-  et ses coulures ; avant le déverrouillage, l'indication affiche
-  « LA MORT VOUS RETIENT... », puis les commandes de passage.
-
-## Réparation Git, Colosse, possédés, environnements et tactile
-
-- Le `main` force-poussé pointait sur le commit racine `67949e2`, détaché de
-  l'historique publié jusqu'à `ef9849d`. Son arbre a été recréé byte-identique
-  dans le commit-pont distant `5a56c44`, puis fusionné par la PR #22 dans
-  `da017a3`. La branche `backup/force-pushed-main-67949e2` conserve le commit
-  racine. Ne jamais reconstruire cette filiation en réappliquant manuellement
-  les fichiers : `git diff --exit-code 67949e2 5a56c44` doit rester vide.
-- Le Colosse a trois phases déterminées par sa vie : phase 1 au-dessus de
-  66 %, phase 2 entre 66 et 33 %, phase 3 sous 33 %. Les couples
-  vitesse/cadence sont `(1.15, 0.72)`, `(1.28, 0.58)` et `(1.42, 0.46)`.
-  Chaque seuil réellement franchi alimente une file d'événements que `Game`
-  matérialise en `lifepack` visible sur un flanc du boss. Si tous les
-  emplacements sont momentanément encombrés, l'événement est remis en tête et
-  retenté après la séparation des ennemis ; les cadavres ne bloquent pas le
-  placement. Un impact franchissant deux seuils libère bien deux packs ; un
-  boss tué net n'en libère pas inutilement.
-- Les packs du Colosse sont des `Pickup.dynamic` avec un `net_id`. En coop,
-  les booléens des objets statiques restent au début de `pk` ; les lignes
-  `[id, x, y, kind, taken]` sont ajoutées ensuite. Un ancien client les ignore
-  après son `zip`, tandis qu'un nouveau client les valide et les crée. Les
-  lignes ennemies ajoutent aussi `max_health` et `possessed` en fin de tableau,
-  ce qui corrige au passage la barre de vie des Colosses renforcés par les
-  vagues sans casser les formats historiques.
-- Tous les ennemis créés par `SurvivalGame.spawn_enemy()` sont possédés.
-  `assets.get_possessed()` dérive et met en cache aura, teinte et yeux verts
-  depuis chaque pose/orientation existante ; aucun PNG détaillé n'est écrasé.
-  Le `Soldier` possédé a `CAN_ROLL=False` et 72 % de sa vitesse de campagne ;
-  le `Grunt` possédé conserve 82 % de sa vitesse. Les autres archétypes
-  gardent leur mobilité.
-- Le Laboratoire utilise un sol de résine blanche `(232..176)` et laisse les
-  murs `1`, `2` et le panneau `4` à hauteur standard `1.0`. Seule l'enceinte
-  `3` du Colosse reste à `1.55`. Les cratères lunaires sont précalculés avec
-  un minimum de 30 et un espacement cible de 38 px : aucun coût par frame.
-- `touch_controls.py` détecte les périphériques via
-  `pygame._sdl2.touch.get_num_devices()` et s'active aussi au premier
-  `FINGERDOWN` (hot-plug). Stick gauche, glissement de visée, tir/ADS,
-  roulade, recharge, arme, pause et menu supportent plusieurs doigts. Les
-  événements souris synthétiques portant `touch=True` sont ignorés en jeu
-  pour éviter un double tir ; clavier et vraie souris restent parallèles.
-  Toute bascule pause/reprise remet aussi à zéro les doigts et boutons
-  maintenus, afin qu'une action posée pendant la pause ne parte pas à la
-  reprise.
-- `.github/workflows/ci.yml` s'exécute sur les PR vers `main`, les pushes sur
-  `main` et manuellement. Deux jobs Python 3.12 couvrent Ubuntu et Windows :
-  installation de Pygame 2.6.1, compilation, règles Ruff critiques et suite
-  `unittest`. Les actions GitHub sont épinglées par SHA et le jeton est limité
-  à `contents: read`.
-
-## Équilibrage des roulades et écran de mort
-
-- La roulade du joueur dure désormais `0.55 s` à `4.55` cases/s : sa portée
-  reste donc pratiquement inchangée (~`2.5` cases) et elle n'a plus aucun
-  cooldown. Une nouvelle roulade reste refusée tant que les `0.55 s` de la
-  précédente ne sont pas terminées. Elle n'est pas une parade instantanée
-  pendant toute l'animation : `0.08 s` d'amorce vulnérable,
-  `0.30 s` d'i-frames (`0.08 <= elapsed < 0.38`), puis `0.17 s` de
-  récupération vulnérable. Même en les enchaînant, ces deux fenêtres exposées
-  empêchent donc une invincibilité continue. `Player.roll_invulnerable` est
-  l'autorité ; `roll_invuln` reste à zéro pour préserver la forme de l'ancien
-  état.
-- `RemotePlayer` applique exactement la même fenêtre côté hôte et côté client.
-  Une évolution future de la roulade joueur doit donc maintenir ensemble les
-  constantes de `Player`, leur reprise dans `RemotePlayer`, le clamp réseau
-  de `rt` et l'allocation anti-téléportation basée sur `ROLL_SPEED`. Chaque
-  déclenchement client incrémente aussi `Player.roll_sequence`, envoyé sous
-  `rs` : l'hôte accepte une séquence strictement plus récente et rejette les
-  vieux datagrammes UDP. Pour un ancien client sans `rs`, un front `rt=0` puis
-  `rt>0` est exigé. Sans cela, retirer le cooldown permettrait à un paquet
-  retardé de relancer une roulade fantôme.
-- Le cooldown du soldat passe de `5.0` à `3.0 s`. Avec un cooldown prêt, un
-  projectile réellement encaissé pose `Enemy.hit_roll_request` et l'IA roule
-  latéralement par rapport à la source au pas d'IA suivant. La demande est
-  volontairement consommée après résolution du coup complet : tous les plombs
-  simultanés d'un fusil à pompe infligent leurs dégâts avant l'esquive. Un
-  espace trop étroit conserve la courte nouvelle tentative de `0.35 s`.
-  `EnemyAI.proactive_roll_delay` décale seulement les roulades spontanées au
-  premier contact (`0.6..1.8 s`) ; il ne pollue pas `roll_cooldown` et ne peut
-  donc pas empêcher la première réaction à une balle.
-- L'écran de mort ne recrée aucune surface ni aucun glyphe par frame.
-  `HUD.resize()` prépare le panneau sombre, le titre serif rouge avec coulures,
-  l'état vital et les deux indications verrouillée/déverrouillée. Les tailles
-  se recalibrent à la résolution ; le fondu et l'indication animée utilisent
-  `death_time`, puisque `HUD.update()` est figé pendant la cinématique.
-  Entrée/Espace/Échap/clic/tactile sont ignorés avant
-  `DEATH_SKIP_LOCK = 3.0`, puis peuvent avancer vers l'écran de fin.
-
-## Passe de nettoyage, robustesse et sécurité LAN
-
-- `settings.py` ne fait plus confiance au JSON local : lecture limitée à
-  `64 KiB`, racine obligatoirement objet, nombres finis et bornés, booléens
-  stricts, progression plafonnée et IPv4 validée. Les keycodes inconnus,
-  `Échap` et `F11` sont rejetés ; les doublons chargés sont réparés et un
-  remappage en conflit échange les deux touches au lieu de rendre une action
-  inaccessible. La sauvegarde passe par `settings.json.tmp`, `fsync`, puis
-  `os.replace` : une interruption ne tronque plus le dernier fichier valide.
-- Le menu LAN refuse une IPv4 mal formée avant la connexion. Le menu des
-  touches rappelle que `F11` est global et qu'`Échap` annule la capture. En
-  jeu, rechargement, changement d'arme et molette sont ignorés pendant la
-  pause ou après la fin ; perdre le focus met en pause et libère la visée afin
-  d'éviter un clic droit ou un mouvement de souris « coincé » au retour.
-- `network.UdpPeer.receive()` n'accepte que des objets JSON, ignore aussi les
-  imbrications invalides et ne traite jamais plus de `128` datagrammes dans
-  une image. Cela empêche une liste JSON ou un flot UDP de faire planter ou
-  d'affamer la boucle de rendu.
-- La coop reste hôte-autoritaire : quatre joueurs maximum (hôte + 3), adresse
-  source et session exactes, séquence `iq`, coordonnées/angles finis, crédit
-  de déplacement alimenté uniquement par l'horloge hôte, collisions dynamiques
-  sous-échantillonnées et roulade/i-frames démarrées par l'hôte. `rs` identifie
-  toujours chaque roulade, en plus de la séquence générale du paquet.
-- Les tirs distants sont bornés à `32` déclenchements par paquet, mais le vieux
-  seau générique de crédits/dégâts déclarés est remplacé par les instances
-  `Weapon` de l'hôte. Une reconnexion ne rejoue toujours pas cinq secondes de
-  minigun d'un coup. Ce n'est pas un système anti-triche Internet, mais les
-  téléportations, dégâts arbitraires, munitions infinies, cadences falsifiées
-  et dénis de service LAN les plus évidents ne sont plus acceptés.
-- Tous les instantanés reçus sont vérifiés avant indexation : lignes trop
-  courtes, types d'ennemis inconnus, `NaN`/infinis, événements incomplets,
-  santé, vague et positions hors bornes sont ignorés. La santé et la mort
-  envoyées par l'hôte restent autoritaires même si le client affiche encore
-  un bouclier ou une roulade. Les coéquipiers reçoivent côté hôte le même
-  bouclier de spawn/réapparition de `3 s` que le joueur local.
-- Optimisations sans changement de gameplay : sprite d'arme HUD redimensionné
-  une fois par résolution/arme, volume du canal musical écrit seulement lors
-  d'un changement, file d'apparitions du Déferlement passée de `list.pop(0)`
-  à `deque.popleft()`, et un seul appel horloge par frame de portail.
-
-## Passe roulades, Lune et menu
-
-- Le milicien `Grunt`, seul ennemi du premier niveau, passe de `SPEED = 1.7`
-  à `2.55` (+50 %). Sa cadence reste strictement `FIRE_DELAY = 1.3` : ne pas
-  confondre mobilité et fréquence de tir lors d'un futur équilibrage.
-- Le militaire `Soldier` possède `CAN_ROLL = True`. En combat et avec un côté
-  praticable, l'IA effectue une roulade latérale de `0.75 s`, à `2.8` cases/s,
-  avec invincibilité pendant toute l'animation et cooldown de `3.0 s` entre
-  deux déclenchements. Durée, portée et i-frames sont donc 25 % plus courtes
-  que dans la version à une seconde. Il ne navigue, ne vise et ne tire pas
-  pendant l'action. Les trois frames sont
-  `assets/enemy_soldier_roll_0..2.png` (`64x96`).
-- Le sprint a été supprimé. La touche configurable `roulade` (Maj par défaut)
-  déclenche une roulade joueur de `0.55 s`, vitesse `4.55`, i-frames centrales
-  de `0.30 s` et aucun cooldown après l'animation. La direction suit ZQSD, ou
-  avance par défaut. Les longues impulsions sont sous-échantillonnées : un pic
-  de `dt` ne traverse pas un mur. Tir, ADS et rotation de vue sont suspendus ;
-  la caméra bascule et l'arme s'abaisse. Le HUD indique « en cours » ou
-  « prête ». Les anciens `settings.json` contenant `sprint` sont migrés
-  automatiquement vers `roulade`.
-- La coop ajoute roulade/temps restant après les anciens champs des joueurs
-  et des ennemis. Les formats historiques 7 champs (joueurs), 8 champs
-  (ennemis) et 9 champs (ennemis avec `aiming`) restent acceptés. L'hôte
-  applique les i-frames des clients distants : la protection n'est pas
-  seulement cosmétique côté client.
-- Dans `MAP_MOON`, toutes les crevasses `V` sont remplacées par des cristaux
-  `k` / `prop_alien_crystal` (`96x112`, largeur monde `0.88`) montrant un alien
-  emprisonné. Chaque cristal bloque déplacement/pathfinding par sa case et
-  balles/perception par un cercle de rayon `0.46`; le rendu reste un billboard
-  irrégulier qui masque naturellement ce qui est derrière par ordre de
-  profondeur. Le régolithe utilise `moon_ground`: grain et cratères gris sont
-  précalculés au changement de résolution, sans primitives ajoutées par frame.
-- Le portail lunaire n'a plus de pied ni de support : anneau ovale complet,
-  vortex animé conservé, `v_offset` oscillant autour de `0.11` pour la
-  lévitation. Les quatre frames restent en `79x117` et partagent une boîte
-  opaque `71x108` en `(4, 2)`.
-- Le menu principal utilise un nouveau fond `1280x720`: soldat seul sur la
-  Lune, arme abaissée, face à un portail gigantesque. Le panneau et les
-  boutons occupent le tiers gauche laissé sombre par la composition ; police,
-  libellés, records et pied de page ont été recalibrés à `1280x720` et
-  `800x600`. Les autres menus restent centrés et leur mode compact a été
-  resserré pour ne pas déborder après le changement de police.
-
-## Corrections de la passe combat et environnements
-
-- Le sniper conserve sa pose de mise en joue à genou. Son anticipation,
-  d'abord passée de `1.25` à `0.75` seconde, vaut désormais `0.5625 s`
-  (`Sniper.AIM_DELAY`, nouvelle réduction de 25 %). Le cooldown de `2.3`
-  secondes commence toujours après le tir : seule la télégraphie avant le
-  coup est raccourcie.
-- Les frames de tir de `grunt`, `soldier`, `heavy`, `boss` et du coéquipier
-  `ally` ont été régénérées en vue strictement frontale. Arme et flash sont
-  orientés vers le joueur ; chaque silhouette reste alignée au sol et garde
-  une hauteur proche de sa frame `idle`, pour éviter tout pivot ou saut
-  d'échelle au tir. Le kamikaze n'est pas concerné car il ne tire jamais.
-- Le Laboratoire emploie trois textures dédiées claires :
-  `wall_lab_tech.png`, `wall_lab_metal.png` et
-  `wall_lab_reinforced.png`. Elles ne remplacent pas les murs historiques
-  partagés avec les autres niveaux. `wall_sealed_portal.png` est lui aussi
-  intégré à cette enceinte blanche, tout en gardant sa brèche verte enchaînée.
-- Les niveaux terrestres ont désormais un panorama de nuages teinté par leur
-  horizon. Il est généré une seule fois par niveau/résolution, boucle avec la
-  rotation de la caméra et ne demande que deux blits par frame. Tout niveau
-  dont la configuration contient `stars` — actuellement la Lune — le
-  désactive automatiquement. La clé optionnelle `clouds: false` permet aussi
-  de le couper explicitement dans un futur niveau.
-- Vérification visuelle effectuée à `960x540` sur les cinq tirs, le
-  Laboratoire et la Lune. La mesure SDL factice sur 120 frames n'a montré
-  aucun coût marginal mesurable du panorama nuageux.
-
-## Corrections de la passe précédente
-
-- `assets/prop_car.png` a été régénéré : berline complète, avant droit non
-  tronqué, contenu opaque `176x67` dans une toile transparente `192x80` avec
-  marge sur les quatre côtés. La largeur monde reste `1.10`.
-- `assets/prop_bench.png` est désormais un siège parlementaire individuel
-  avec pupitre, et non une banquette double massive. Sa largeur monde passe de
-  `0.97` à `0.46` dans `entities.PROP_SPECS`.
-- Dans `MAP_LAB`, l'ancienne porte `(23, 14)` n'était reliée à une cloison que
-  par son côté gauche. Elle est remplacée par un mur métallique `2` : toutes
-  les portes restantes sont encadrées par des murs sur un axe.
-- `ai.cover_adjusted_chance()` conserve la précision normale à exposition
-  complète, mais renforce légèrement le couvert : facteur
-  `0.28 + 0.72 * exposure` au lieu de `0.35 + 0.65 * exposure`.
-- Le sniper possède `AIM_DELAY = 0.5625`. Lorsque son arme est prête, il passe
-  en `aiming`, s'immobilise et utilise `assets/enemy_sniper_aim.png` (un genou
-  au sol). Le tir part à la première frame après 0,5625 s. Perdre la ligne de
-  vue, se replier au corps à corps, changer d'état, mourir ou perdre la cible
-  annule la visée ; aucun tir ne reste stocké derrière un mur.
-- La pose à genou a été régénérée pour corriger l'anatomie puis replacée en
-  vue strictement frontale : genou gauche au sol, pied droit planté, épaules
-  face caméra et canon raccourci pointé vers le joueur. La frame
-  `enemy_sniper_fire.png` a été refaite dans la même pose avec un flash centré,
-  afin d'éviter un pivot de profil au moment du tir. Ne pas réutiliser les
-  versions intermédiaires avec deux pieds droits ou un long canon latéral.
-- La coop transmet `aiming` comme neuvième champ de chaque ennemi. Le client
-  accepte toujours les anciens instantanés à huit champs et affiche la pose
-  du sniper sur les deux machines.
-- Le fallback procédural `enemy_sniper_aim` est enregistré dans `assets.py` ;
-  il ne remplace jamais le PNG livré tant que celui-ci existe.
-
-## Invariants à préserver
-
-- Les seuils du Colosse se calculent depuis `health / max_health`, jamais
-  depuis ses PV bruts : les multiplicateurs de niveau/vague doivent rester
-  compatibles. `Boss.take_damage()` produit les événements, mais seul `Game`
-  choisit une case praticable et crée les packs. Après réplication directe de
-  santé, le client appelle `sync_phase_from_health()` sans créer d'objet local.
-  Un placement impossible doit remettre la phase en attente ; les ennemis
-  morts ne font jamais partie des positions occupées.
-- Les objets dynamiques coop sont ajoutés APRÈS les booléens statiques de
-  `pk`. Ne jamais transformer rétroactivement `pk` en dictionnaire ou déplacer
-  les lignes dynamiques devant les booléens : les anciens clients dépendent
-  de cet ordre. Toute valeur réseau reste validée et bornée avant création.
-- `Enemy.set_possessed()` doit précéder la construction de `EnemyAI` sur tout
-  nouveau chemin d'apparition, afin que l'IA ne prépare pas de roulade pour un
-  `Soldier` possédé. Les variantes visuelles restent des surfaces mises en
-  cache et de même taille que la pose source.
-- Le tactile ne doit jamais se fier à l'état global du bouton gauche SDL :
-  un doigt peut émuler une souris. Le tir maintenu utilise uniquement
-  `_mouse_fire_held` pour une vraie souris et `TouchControls.fire_held` pour
-  les doigts. Une perte de focus et chaque bascule pause/reprise libèrent les
-  deux états et tous les doigts.
-- Les dimensions physiques des props reposent sur la boîte opaque, via
-  `_height_for_visible_width`; ne pas compenser les marges transparentes en
-  augmentant arbitrairement `SPRITE_HEIGHT`.
-- Les poses à genou `aim` et `fire` sont contenues dans une toile `64x96`, avec
-  une silhouette opaque plus basse (`44x74`, alignée au sol). Le moteur garde
-  donc les pieds au sol et le personnage paraît réellement agenouillé sans
-  modifier le raycaster.
-- Le délai de 0,5625 s s'ajoute au temps entre deux tirs
-  (`FIRE_DELAY = 2.3`) : le cooldown commence après le tir, pas au début de
-  la mise en joue.
-- Une exposition de `1.0` ne doit jamais être pénalisée par le bonus de
-  couvert. L'exposition est bornée entre `0.0` et `1.0`.
-- Le joueur n'a aucun cooldown mais `Player.start_roll()` doit toujours refuser
-  un redéclenchement pendant `rolling`. Le cooldown soldat de `3.0 s` se mesure
-  de déclenchement à déclenchement et inclut ses `0.75 s` de roulade. Ne
-  jamais remplacer le déplacement sous-échantillonné par un unique grand pas
-  collisionné. Les instantanés coop historiques peuvent annoncer jusqu'à
-  `1.0 s`, mais le client les borne à `Soldier.ROLL_DURATION`.
-- `MAP_MOON`, `PROP_CHARS`, `cover_circles`, le test de ligne de vue et le
-  hitscan doivent rester cohérents : retirer seulement l'un d'eux rendrait un
-  cristal traversable, invisible à l'IA ou perméable aux balles.
-- Toute évolution de l'état réseau joueur/ennemi doit ajouter ses champs en
-  fin de ligne et rester tolérante aux instantanés plus courts afin qu'un
-  client mis à jour ne plante pas avec un hôte plus ancien.
-- Toute donnée UDP est non fiable, même en LAN : ne jamais indexer un paquet
-  avant validation, accepter `NaN`/`inf`, ou réintroduire une position, une
-  invincibilité, des dégâts ou une cadence décidés sans borne par le client.
-  La compatibilité des anciens instantanés concerne leur lecture, pas le
-  relâchement des contrôles de l'hôte.
-- Le protocole v3 exige `session_id`, `iq` et `sq`; les événements `rev` ne
-  sont consommés qu'en séquence contiguë puis acquittés par `ea`. Ne jamais
-  vider le journal après un seul envoi ni réaccepter `[angle, dégâts]`.
-- `_sprite_cache_bytes` doit toujours rester inférieur ou égal à
-  `_sprite_cache_budget`. Toute insertion ou nouvelle forme de surface mise
-  en cache doit comptabiliser `get_pitch() * get_height()` et maintenir
-  l'ordre LRU. Cette règle ne modifie pas le FIFO mural.
-- `RemotePlayer.shield` est simulé par l'hôte. Une réapparition doit remettre
-  santé, roulade, cooldown et bouclier ensemble ; côté client, un instantané
-  de mort doit d'abord annuler bouclier/i-frames avant de poser le cadavre.
-- Le cache `_weapon_scale_cache` appartient à une résolution HUD et doit être
-  vidé dans `HUD.resize()`. La file `spawn_queue` est un `deque` : employer
-  `extend` / `popleft`, jamais réintroduire `pop(0)` dans la boucle de vague.
-
-## Validation disponible
-
-La suite contient 113 tests. `tests/test_requested_changes.py` conserve les
-22 non-régressions graphiques et de gameplay : marges de la
-voiture, conception et échelle du siège, topologie des portes et blancheur des
-murs du laboratoire, courbe de couvert, délai/annulation/pose du sniper,
-compatibilité coop 8/9 champs, stabilité d'échelle des cinq tirs frontaux et
-présence/absence correcte des nuages sur Terre/la Lune, vitesse du milicien,
-roulades joueur/soldat (direction, i-frames, enchaînement/cooldown, collision,
-frames et IA), compatibilité réseau de la roulade, cristaux de couverture et
-nouveau fond de menu.
-
-`tests/test_cleanup.py` ajoute 15 contrôles : paquets UDP bornés et non-objets,
-réglages malformés/sauvegarde atomique/JSON imbriqué (RecursionError), IPv4,
-conflits et touches réservées, téléportation/`NaN`/spam de roulade, séquences
-de roulades enchaînées et paquets retardés, validation autoritaire des armes,
-bouclier et mort en coop, commandes ignorées en pause, cache du sprite
-d'arme, mise en page gothique de mort à basse résolution, verrou non skippable
-de trois secondes, géométrie/collision des boutons parallélogrammes et file
-d'apparitions en temps constant.
-
-`tests/test_smoke.py` (session 24) ajoute 8 tests de fumée généraux : boot
-(réglages + SoundBank avec/sans mixer), campagne (frames complètes, mort
-avec caméra jusqu'à `finished`, victoire), Déferlement (vagues, `spawn_queue`
-deque, `survival_info`), rendu/clic de tous les menus aux résolutions
-extrêmes, coop réelle en loopback UDP (join → `synced`, draw des deux côtés,
-sockets refermées — port de test 15577 ≠ 5577), round-trip des réglages avec
-JSON tronqué, et lecture de tous les effets/musiques.
-
-`tests/test_gameplay_extensions.py` ajoute 11 contrôles : règles/cache et
-miroir des possédés, trois phases/deux packs et reprise d'un placement différé
-du Colosse, extension coop des ennemis/objets dynamiques, sol/hauteurs du
-Laboratoire, densité des cratères, multi-touch, rejet du clic souris
-synthétique, reprise de pause sans action maintenue et blocage de la roulade
-coop après l'issue.
-
-`tests/test_reload_music.py` ajoute 8 contrôles : progression normalisée de
-la recharge, dimensions/alpha des seize poses, cinq transitions, mouvements
-distincts, quatre étapes HUD réellement différentes par arme, couverture des
-sept profils musicaux et génération déterministe/distincte/raccordée.
-
-`tests/test_impact_audio.py` ajoute 7 contrôles : classification et priorité
-des matières, palettes de particules non mélangées, migration/persistance des
-deux volumes, lignes du menu, gains indépendants, réplication exacte des
-impacts coop et rejet des événements réseau malformés.
-
-`tests/test_p0_p1.py` ajoute 10 contrôles adversariaux : budget mémoire LRU,
-collision joueur/ennemi avec grand `dt`, débit distant alimenté par l'horloge
-hôte, pause globale, séquence d'entrée, retransmission jusqu'à acquittement,
-session/ordre des instantanés, réparation de l'inventaire, compression UDP et
-recharge d'une arme rangée.
-
-`tests/test_modernization.py` ajoute 8 controles : horloge fixe, fragmentation
-et reassemblage sous MTU, exclusivite du port, refus de version, profils et
-directeur, persistance accessibilite, FOV et zone morte manette.
-
-Commande utilisée :
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
-  python -m unittest discover -s tests -v
-```
-
-(`--python 3.12` est nécessaire : pygame 2.6.1 n'a pas de wheel pour les
-Python plus récents et tenterait de se compiler depuis les sources.)
-
-## Passe libre Kimi (25 juillet 2026) — bugs, robustesse, perf, tests
-
-Détails complets dans `CHANGELOG.md`. Points à connaître pour la suite :
-
-- `Enemy.cancel_aim()` est appelé sur TOUTES les transitions d'état de l'IA
-  (attack→cover, cover→chase, chase→idle, et l'historique attack→chase) :
-  toute nouvelle transition doit l'appeler aussi, sinon le sniper tire sans
-  télégraphie et patrouille à genou.
-- Le son de rechargement est joué aux DEUX endroits où un rechargement
-  démarre : touche R ET rechargement automatique en fin de chargeur
-  (`game.py` + `coop.py`).
-- Sous Windows, la socket hôte utilise `SO_EXCLUSIVEADDRUSE` (jamais
-  `SO_REUSEADDR`, qui y autorise un double bind UDP silencieux) ; ailleurs,
-  `SO_REUSEADDR` est désormais désactivé (modernisation v3).
-- Nouveaux caches à respecter : `_sysfont` (menu.py, durée de vie process),
-  `HUD._text_cache` (borné à `HUD.TEXT_CACHE_LIMIT` = 512, libellés statiques
-  ET compteurs bornés, vidé dans `resize()` avec les polices),
-  `HUD._slot_icon_cache`, `raycaster._zoom_scratch`
-  (tampon ADS unique, réalloué au changement de taille), variantes alpha des
-  murs d'énergie mémoïsées dans `_wall_cache` sous une clé `(*clé, alpha)`
-  avec alpha quantifié par pas de 16 — la surface du chemin opaque (255) n'est
-  JAMAIS mutée par `set_alpha`. La politique FIFO à éviction unique reste
-  inchangée pour toute insertion.
-- `zoom_screen` blitte désormais depuis l'écran via un `area` plutôt que
-  `subsurface().copy()` ; le post-traitement ADS lui-même est inchangé
-  (invariant FOV toujours valable).
-- Minimap : la base statique est blittée directement et les points mobiles
-  dessinés sur l'écran à l'offset (10, 10) — plus de `.copy()` par frame.
-
-## Portails (20 juillet 2026)
-
-- Le portail lunaire utilise quatre PNG `assets/prop_portal_0..3.png`. La
-  classe `Prop` sélectionne une frame toutes les `110 ms` avec
-  `pygame.time.get_ticks()`. Les surfaces et leurs mises à l'échelle sont
-  mises en cache : aucune rotation/composition n'est faite pendant le rendu.
-- Les quatre frames font `79x117`, partagent la même boîte opaque (`71x108`,
-  en `(4, 2)`) et gardent l'anneau immobile ; seul le vortex vert tourne et
-  pulse. L'anneau est fermé, sans support, et lévite. Le portail ne doit pas
-  être retourné selon la parité de sa case.
-- Dans `MAP_LAB`, le mur `(28, 18)`, derrière l'épaule du Colosse placé en
-  `(25, 19)`, devient le caractère `4` / `wall_sealed_portal`. La texture
-  montre un petit trou vert barré de chaînes : le Colosse est visuellement le
-  Sceau qui retient le futur Déferlement. Ne pas le remettre en `(28, 19)` :
-  dans l'axe central, le billboard du boss le masque entièrement.
-- Ce mur spécial reste solide pour déplacements, tirs et pathfinding. Sa
-  hauteur volontairement standard (`1.0`) en fait un panneau en retrait devant
-  le mur technique extérieur et évite de répéter verticalement le petit sceau.
-- Les animations de props sont locales et purement visuelles ; elles ne sont
-  pas ajoutées aux instantanés coop.
-
----
-
-<!-- ====== Contenu consolidé depuis `AGENTS.md` ====== -->
-
-# AGENTS.md — Contexte projet Call of Python (synthèse)
-
-> Synthèse (dernière source : 23 juillet 2026), destinée aux agents IA qui
-> lisaient `AGENTS.md` (ex. Kimi Code). Les sections détaillées ci-dessus
-> restent la référence.
-
-FPS rétro Python 3.12 / pygame (raycasting pseudo-3D façon Wolfenstein 3D).
-Repo : `BLKMLO/Call-Of-Python` (renommé depuis `TempGPT`).
-
-## Lancer / tester
-
-```bash
-pip install -r requirements.txt
-python main.py
-```
-
-113 tests dans `tests/` (`test_requested_changes.py` : 22 non-régressions
-gameplay/graphiques ; `test_cleanup.py` : 15 contrôles robustesse/réseau/UI ;
-`test_smoke.py` : 8 tests de fumée généraux ;
-`test_gameplay_extensions.py` : 11 tests Colosse/tactile ;
-`test_reload_music.py` : 8 tests recharge/audio ;
-`test_impact_audio.py` : 7 tests impacts/volumes/menu/coop ;
-`test_p0_p1.py` : 10 tests mémoire/protocole/collisions/sécurité ;
-`test_modernization.py` : 8 tests moteur/reseau/accessibilite/manette) :
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
-  python -m unittest discover -s tests -v
-```
-
-Smoke tests commités dans `tests/test_smoke.py` avec
-`SDL_VIDEODRIVER=dummy` / `SDL_AUDIODRIVER=dummy` (boot, campagne, survie,
-menus, coop loopback UDP réel hôte↔client, réglages, sons).
-
-## Architecture (un fichier = un rôle)
-
 | Fichier | Rôle |
 |---|---|
-| `main.py` | Point d'entrée, machine à états (menu / jeu / Sceau / Déferlement / fin), musique |
-| `settings.py` | Paramètres + persistance JSON (bornée, atomique via `.tmp`+`os.replace`) |
-| `menu.py` | Menus, paramètres, fins de niveau, game over / victoire |
-| `game.py` | Boucle gameplay : entrées, tir hitscan, ramassages, portes, caméra de mort |
-| `survival.py` | Le Déferlement : vagues, submersion dégressive, ravitaillement |
-| `network.py` | LAN : UDP + JSON, non bloquant, sans thread, défensif (max 128 datagrammes/frame, objets JSON uniquement) |
-| `coop.py` | Coop LAN : hôte autoritaire (`CoopHostGame` hérite `SurvivalGame`), client répliqué (`CoopClientGame`, init dupliquée — répliquer tout nouveau champ `Player`/`Game.__init__`) |
-| `level.py` | Cartes ASCII + niveaux + portes coulissantes |
-| `raycaster.py` | Rendu : murs texturés en couches (DDA + z-buffer), y-shearing, billboards, ciel, nuages |
-| `entities.py` | `Player`, `Grunt`/`Soldier`/`Heavy`/`Sniper`/`Kamikaze`/`Boss`, `Pickup`, `Prop` |
-| `ai.py` | États ennemis (idle/chase/attack/cover), BFS, flanc, couverture |
+| `main.py` | Point d'entrée, machine à états (menu/jeu/Sceau/Déferlement/fin), musique, contrôleur manette des menus |
+| `runtime.py` / `version.py` | `FixedStepClock` 60 Hz (rendu ≤120 Hz, ≤8 pas de rattrapage) ; versions jeu/protocole |
+| `settings.py` | Paramètres + JSON (borné, atomique) |
+| `menu.py` | Menus, paramètres, LAN, fins de niveau, game over/victoire |
+| `game.py` | Boucle gameplay solo : entrées, hitscan, ramassages, portes, mission, caméra de mort |
+| `survival.py` | Déferlement : vagues, submersion, apparitions, ravitaillement |
+| `difficulty.py` | Profils Recrue/Soldat/Vétéran + directeur de pression (limité à la cadence) |
+| `scoring.py` | Score commun autoritaire et grades |
+| `upgrades.py` / `upgrade_ui.py` | Cartes d'amélioration et perks |
+| `mutators.py` | Mutateurs de vagues (coop) |
+| `elites.py` | Élites et Commandant |
+| `boss_patterns.py` / `hazards.py` | Patterns du Colosse ; tracé au sol télégraphié |
+| `grenades.py` | Grenades |
+| `coop_support.py` / `support_ui.py` | Mise à terre, secours, pings |
+| `mission_marker.py` | Balises d'objectifs (sans modifier les PNG) |
+| `network.py` | UDP + JSON non bloquant, sans thread, défensif |
+| `coop.py` | `CoopHostGame` (hérite `SurvivalGame`, hôte autoritaire) ; `CoopClientGame` (indépendant, init dupliquée) |
+| `level.py` | Cartes ASCII, niveaux, portes coulissantes |
+| `raycaster.py` | Murs texturés en couches (DDA + z-buffer), y-shearing, billboards, ciel, nuages, particules |
+| `entities.py` | `Player`, `RemotePlayer`, ennemis, `Pickup`, `Prop` |
+| `ai.py` | États idle/chase/attack/cover, BFS, flanc, couverture |
 | `weapons.py` | Specs armes + niveaux Mk. II…IV |
-| `hud.py` | Arme FP, viseur, minimap, barre de boss, écran de mort tactique |
-| `particles.py`, `sounds.py`, `assets.py` | Particules 3D ; sons synthétisés (+ overrides `assets/sound/`) ; PNG + générateurs procéduraux de SECOURS |
+| `hud.py` | Arme FP, viseur, minimap, barre de boss, écran de mort |
+| `gamepad.py` / `touch_controls.py` | Manette SDL (Xbox/PS, zone morte, hot-plug, vibration) ; multi-touch |
+| `particles.py`, `sounds.py`, `assets.py` | Particules 3D ; sons/musiques synthétisés + overrides ; PNG + générateurs de secours |
 
-## Invariants critiques (ne pas casser)
+## Conventions et pièges (rendu / moteur)
 
-- **Monde y-vers-le-bas** : angle 0 = est, angle croissant = tourner à DROITE.
-  Toute la chaîne (rendu, soleil, étoiles, stéréo) est cohérente (commit `984b279`).
-- **Caches de rendu** : cache mural FIFO, éviction d'UNE entrée par insertion
-  — jamais en bloc (pics de lag ~200 ms). Cache de billboards LRU pondéré par
-  `pitch × hauteur`, strictement limité à 64 Mio et 512 entrées.
-- **ADS** : `zoom_screen()` recadre l'image rendue (post-traitement) — ne pas
-  changer le FOV par frame (invalide le cache).
-- **Murs en couches** (`cast_ray_layers`) : traverse plusieurs murs, n'élague que
-  les entièrement masqués ; le z-buffer des sprites utilise le PREMIER mur.
+- **Monde y-vers-le-bas** : angle 0 = est (+x), angle croissant = tourner à
+  DROITE ; `dx` souris > 0 → droite. Chaîne entière cohérente (rendu, soleil,
+  étoiles, stéréo, indicateurs de dégâts).
+- **Cache mural** (`_wall_cache`) : FIFO borné (`CACHE_LIMIT`), éviction d'UNE
+  entrée par insertion — jamais en bloc (pics ~200 ms). Variantes alpha des
+  murs d'énergie sous clé `(*clé, alpha)`, alpha quantifié par 16 ; la surface
+  opaque n'est JAMAIS mutée par `set_alpha`.
+- **Cache billboards** (`_sprite_cache`) : LRU pondéré `get_pitch() *
+  get_height()`, ≤ 64 Mio et ≤ 512 surfaces ; `_sprite_cache_bytes <=
+  _sprite_cache_budget` toujours ; surface trop grosse rendue sans cache.
+- **ADS** : `zoom_screen()` recadre/agrandit l'image rendue (blit avec `area`,
+  tampon `_zoom_scratch` réutilisé) — ne jamais changer le FOV par frame.
+- **`cast_ray_layers(..., max_height=...)`** traverse plusieurs murs, élague
+  les masqués, s'arrête selon `Raycaster.max_height` (recalculé dans
+  `set_level`). Tout niveau doit déclarer ses hauteurs dans `heights`. Le
+  z-buffer utilise le PREMIER mur. Les tests différentiels de
+  `tests/test_bugfix_perf.py` exigent des murs identiques après optimisation.
+- `has_line_of_sight` : borné à `int(dist) + 2` croisements ; saute
+  `first_cover_hit` si `cover_circles` vide.
+- `raycaster.rotate_zoom_screen()` remplace `rotozoom` (glissade, mort) — ne
+  pas revenir à `rotozoom`.
 - **Billboards** : taille plafonnée par `MIN_SPRITE_DIST` (projection seule ;
-  occlusion/tri = vraie distance).
-- **Props** : bloquent déplacement/pathfinding, PAS les balles ni la ligne de vue.
+  occlusion/tri = vraie distance). `entities._visible_bounds()` mémoïse
+  `get_bounding_rect` par sprite.
+- **Props** : bloquent déplacement/pathfinding, PAS balles ni ligne de vue.
   Dimensions physiques = boîte opaque via `_height_for_visible_width` (ne pas
-  compenser les marges transparentes).
-- **Portes** : uniquement dans des murs de hauteur 1.0.
-- **Textures** : PNG d'`assets/` refaits en art détaillé — `python assets.py`
-  complète uniquement les fichiers absents ; seul `--force-procedural` écrase
-  les visuels existants. Vérifier composantes
-  connexes et marges avant de committer un décor.
-- **Colosse** : phases par ratios 66/33 %, pas par PV absolus ; chaque seuil
-  vivant produit exactement un pack dynamique placé hors de la ligne de tir.
-  En coop, `max_health`/`possessed` restent en fin de ligne ennemie et les
-  objets dynamiques restent après les booléens statiques de `pk`.
-- **Possédés** : uniquement les apparitions de `SurvivalGame`; `Soldier`
-  sans roulade à 72 % de vitesse, `Grunt` à 82 %. Aura/yeux dérivés et mis en
-  cache depuis les poses existantes, sans nouveau PNG.
-- **Tactile** : activation SDL ou premier `FINGERDOWN`; l'état souris global
-  n'est jamais utilisé pour le tir maintenu, afin d'éviter le double clic
-  synthétique. Focus perdu = tous les doigts et boutons libérés.
-- **Roulade joueur** : 0,55 s à 4,55 cases/s, sans cooldown, mais fenêtre
-  d'i-frames centrale de 0,30 s (0,08 s amorce + 0,17 s récupération vulnérables).
-  `Player.roll_invulnerable` est l'autorité ; refus de redéclenchement pendant
-  `rolling`. Déplacement sous-échantillonné (jamais un grand pas collisionné).
-  Toute évolution doit maintenir ensemble : constantes `Player`, reprise dans
-  `RemotePlayer`, clamp réseau `rt`, allocation anti-téléportation `ROLL_SPEED`,
-  séquence `rs` (l'hôte rejette les datagrammes UDP retardés ; front `rt=0`→`rt>0`
-  pour les anciens clients).
-- **Roulade soldat** (`CAN_ROLL`) : 0,75 s à 2,8 cases/s, cooldown 3,0 s de
-  déclenchement à déclenchement. Portée et i-frames ont diminué ensemble de
-  25 %. `hit_roll_request` est posé après résolution complète d'un coup (tous
-  les plombs d'un fusil à pompe passent avant l'esquive).
-- **Sniper** : `AIM_DELAY = 0,5625 s` (télégraphie à genou,
-  `enemy_sniper_aim.png`), puis `FIRE_DELAY = 2,3 s` APRÈS le tir. Toute perte
-  de vue/cible annule la visée.
-- **Couvert** : `cover_adjusted_chance()` = `0,28 + 0,72 * exposure` ; une
-  exposition de 1,0 n'est jamais pénalisée. `exposure` bornée [0, 1].
-- **Grunt** : `SPEED = 2,55` (+50 %), cadence inchangée `FIRE_DELAY = 1,3`.
-- **Bouclier de spawn** (3 s, aussi pour les coéquipiers en coop) : les tests de
-  dégâts doivent faire `player.shield = 0.0` d'abord.
+  gonfler `SPRITE_HEIGHT`). Vérifier composantes connexes et marges avant de
+  committer un décor. `prop_car` largeur monde 1,10 ; `prop_bench` (siège
+  individuel) 0,46.
+- **Portes** : uniquement dans des murs de hauteur 1,0, encadrées par des murs
+  sur un axe.
+- **Textures** : PNG détaillés dans `assets/` ; `python assets.py` ne complète
+  que les absents, seul `--force-procedural` écrase. Fallbacks procéduraux
+  (`_BUILDERS`, dont `enemy_sniper_aim`) jamais prioritaires sur un PNG.
+- **Nuages** : panorama par niveau/résolution, 2 blits/frame ; désactivé si
+  `stars` dans la config (Lune) ou `clouds: false`.
+- **HUD** : `_text()` cache ≤ 512 (`TEXT_CACHE_LIMIT`), libellés statiques et
+  compteurs bornés uniquement, jamais `set_alpha` sur une sortie. Vider dans
+  `HUD.resize()` : polices, `_text_cache`, `_weapon_scale_cache`,
+  `_reload_blend_cache`, `_reload_sprite_cache`. Minimap : base blittée,
+  points dessinés à l'offset (10, 10), pas de `.copy()`.
+- `TouchControls` compose l'habillage une fois par résolution
+  (`_build_overlay()`).
+- F3 affiche `Clock.get_fps()` de la boucle principale (ne pas le dériver du
+  `dt` fixe).
+- Caches à respecter : `_sysfont` (menu, durée process), `_FONT_CACHE`,
+  `HUD._slot_icon_cache`.
+
+## Entrées, menus, réglages
+
+- `SLOT_SCANCODES` (touches 1-4 indépendantes AZERTY/QWERTY) ; molette gère
+  `event.flipped`, horizontale ignorée ; `invert_mouse` inverse les DEUX axes.
+- Menus : sélection par identifiant dans `MenuBase`, haut/bas, gauche/droite
+  pour régler, Entrée/Espace/A valider, Échap/B retour ; séparateurs exclus ;
+  B ne quitte pas depuis le menu principal. Boutons via
+  `MenuBase._button_surface()`/`_button_contains()` : parallélogrammes,
+  panneau latéral gauche, contour seulement au survol, collision polygonale
+  (souris). Bascule `< valeur >` entre chevrons (`_bracket_split`, `_row_font`
+  partagé). Listes compactes bornées : Retour visible à 800×600.
+- Remappage clavier : ignore les boutons manette sauf B (annuler) ; ne jamais
+  injecter de touches manette dans `Settings.bind_key`. Échap/F11 non
+  remappables ; conflit = échange. Touches réservées F5–F8. Ancien `sprint`
+  migré vers `roulade`.
+- `reset_gameplay_input` (`gamepad.py`) purge souris/tactile/boutons/tirs
+  clients en attente ; gâchettes à relâcher après pause/reprise/focus/
+  ouverture de contrôleur. `main.py` ferme le contrôleur des menus avant
+  d'ouvrir celui de la partie et le rouvre aux retours menu.
+- `GamepadInput.consume_actions()` ne touche pas `_fire_was_held` (seul
+  `update()` le possède, sinon semi-auto en rafale).
+- Tactile : activation SDL (`get_num_devices`) ou premier `FINGERDOWN` ;
+  événements souris `touch=True` ignorés ; tir maintenu = `_mouse_fire_held`
+  (vraie souris) et `TouchControls.fire_held` — jamais l'état global SDL.
+  Focus perdu et toute bascule pause/reprise libèrent doigts et boutons.
+- En pause/après fin : recharge, changement d'arme, molette ignorés ; perte de
+  focus = pause.
+- `settings.py` : JSON ≤ 64 KiB, racine objet, nombres finis bornés, booléens
+  stricts, progression plafonnée, IPv4 validée ; sauvegarde
+  `settings.json.tmp` + `fsync` + `os.replace`. `sound_volume` (défaut 0,4) et
+  `music_volume` indépendants ; ancienne clé `volume` initialise les deux,
+  propriété `volume` = alias.
+
+## Joueur
+
+- **Glissade** (remplace la roulade ; noms `roll_*`, touche `roulade` (Maj),
+  champs réseau `rt`/`rs` conservés) : `ROLL_DURATION = 0.8`, `ROLL_SPEED =
+  7.5`, `SLIDE_DECEL = 0.5`, vitesse décroissante `slide_speed`, distance
+  ≈ 4,5 cases. Direction ZQSD (avant par défaut). Pas de cooldown mais
+  `start_roll()` refuse un redéclenchement pendant `rolling`.
+- I-frames 0,08–0,38 s (`Player.roll_invulnerable` = autorité, `roll_invuln`
+  reste 0). Perk `ghost_slide` → `slide_ghost` = toute la glissade (aussi sur
+  `RemotePlayer`).
+- Pendant la glissade : tir (`_player_fire`, auto, tirs distants hôte) et
+  rotation autorisés ; ADS coupé ; grenade et interaction bloquées. Caméra
+  `_player_roll_camera` : image remontée 4 %, inclinaison 3°. Libellés
+  « GLISSADE » / « GLIS. ».
+- Déplacement sous-échantillonné (jamais un grand pas collisionné).
+  `Player.move(..., blockers=...)` collisionne contre ennemis/coéquipiers ;
+  `_separate_enemies()` ; un joueur déjà chevauché peut s'éloigner.
+- Toute évolution de la glissade doit maintenir ensemble : constantes
+  `Player`, reprise `RemotePlayer`, clamp réseau `rt`, crédit
+  anti-téléportation basé sur `ROLL_SPEED`, séquence `rs`.
+- `Player.update()` met à jour toutes les armes (recharge d'arme rangée).
+  Son de recharge joué sur R ET recharge auto (`game.py` + `coop.py`).
+- Bouclier de spawn 3 s (`activate_shield`), aussi pour les coéquipiers.
 - **Caméra de mort** : gameplay figé à `outcome == "dead"`, `death_time` tourne
-  (~`DEATH_CAM_TIME`) avant `finished`. Aucune entrée ne peut passer la mort
-  avant `DEATH_SKIP_LOCK = 3.0`. HUD et titre sanglant préparés dans
-  `HUD.resize()` ; vider `_weapon_scale_cache`, `_reload_blend_cache` et
-  `_reload_sprite_cache` dans `resize()`.
-- **Menus** : tous les boutons passent par `MenuBase._button_surface()` et
-  `_button_contains()` ; conserver la forme parallélogramme, le placement
-  latéral gauche, le contour uniquement au survol et la collision polygonale.
-- **Recharges** : `RELOAD_KEYFRAMES` garde les six points de passage repos →
-  `_reload_1` → `_reload_2` → `_reload` → `_reload_3` → repos. Les PNG sont
-  `192x144` transparents ; tout asset manquant doit continuer à replier vers
-  `_reload`, puis la pose normale, sans création par frame. Le fusil garde une
-  main droite arrière et une main gauche pour charger par le dessous ; le
-  minigun garde l'ordre capot ouvert → bande présentée → bande calée → capot
-  fermé.
-- **Cristaux lunaires** (`MAP_MOON`, `k`/`prop_alien_crystal`) : bloquent
-  déplacement/pathfinding par la case ET balles/perception par un cercle rayon
-  0,46 — `PROP_CHARS`, `cover_circles`, ligne de vue et hitscan doivent rester
-  cohérents ensemble.
-- **Portail lunaire** : 4 frames `prop_portal_0..3.png` (79x117, boîte opaque
-  71x108 en (4,2)), anneau fermé sans support, vortex animé (110 ms/frame),
-  `v_offset` ~0,11. Mur `wall_sealed_portal` en `(28,18)` de MAP_LAB (pas (28,19)).
-  Animations de props = locales, jamais dans les instantanés coop.
-- **Réseau** : UDP non fiable même en LAN — valider AVANT d'indexer (pas de
-  NaN/inf, positions/dégâts/i-frames/cadence décidés par le client). Protocole
-  v3 strict : session, `iq`/`sq`, événements `rev` contigus acquittés par `ea`,
-  compression `Z1` bornée. Nouveaux champs ajoutés EN FIN de ligne, tolérance
-  aux instantanés plus courts. Tirs : ≤32 déclenchements/paquet, instances
-  `Weapon` hôte, vieux `[angle, dégâts]` refusés. Réapparition = santé +
-  roulade + cooldown + bouclier ensemble ; un instantané de mort annule
-  d'abord bouclier/i-frames. `spawn_queue` = `deque` (`extend`/`popleft`,
-  jamais `pop(0)`).
-- **Settings** : JSON ≤ 64 KiB, types stricts, progression plafonnée, IPv4
-  validée ; Échap/F11 non remappables ; conflit de touches = échange.
-- **Divers** : `SLOT_SCANCODES` (AZERTY/QWERTY) ; molette `event.flipped` ;
-  `invert_mouse` inverse les DEUX axes ; point de bascule des boutons `< valeur >`
-  entre les chevrons (`MenuBase._bracket_split`) ; sprint supprimé (touche
-  `roulade`, Maj par défaut, migration auto des anciens `settings.json`) ;
-  `settings.json` est gitignoré (normal qu'il apparaisse modifié).
+  (~`DEATH_CAM_TIME`) avant `finished` (`end_delay` reste pour la victoire).
+  `DEATH_SKIP_LOCK = 3.0` : aucune entrée ne passe avant ; A passe ensuite.
+  Écran de mort entièrement précalculé dans `HUD.resize()` ; « LA MORT VOUS
+  RETIENT... » avant déverrouillage. Start/B reprennent/quittent la pause ;
+  HUD distingue « PAUSE HÔTE ».
+- Recharge : 4 poses `fp_<id>_reload_1/_2/(rien)/_3.png` 192×144 alpha ;
+  `RELOAD_KEYFRAMES` repos → _1 → _2 → _reload → _3 → repos ;
+  `Weapon.reload_progress` ∈ [0,1] ; fondus quantifiés à 6 niveaux en cache,
+  retour au repos sur les 18 % finaux ; repli `_reload` puis pose normale.
+  Fusil : main droite arrière, main gauche charge par-dessous. Minigun : capot
+  ouvert → bande présentée → calée → capot fermé.
+- Ne pas modifier `WEAPON_SPECS` ni offrir de munitions via un bonus.
+
+## Ennemis et IA
+
+- `EnemyAI.update()` appelle `update_timers()` AVANT `moving = False` (sinon
+  pas d'animation de marche). L'état `cover` est dans la chaîne d'états ; le
+  contact kamikaze est un `if` indépendant après.
+- `Enemy.cancel_aim()` sur TOUTES les transitions d'état (toute nouvelle
+  transition aussi).
+- Tactiques : `Soldier.FLANKS`, `Soldier`/`Sniper.USES_COVER` (grâce
+  `LOSE_SIGHT_TIME`). `exposure_fraction()` ∈ [0,1] ;
+  `ai.cover_adjusted_chance()` = `0.28 + 0.72 * exposure` (exposition 1 jamais
+  pénalisée).
+- **Grunt** : `SPEED = 2.55`, `FIRE_DELAY = 1.3`.
+- **Sniper** : `AIM_DELAY = 0.5625` à genou (`enemy_sniper_aim.png`, toile 64×96,
+  silhouette 44×74 au sol), puis `FIRE_DELAY = 2.3` APRÈS le tir. Perte de
+  vue/cible/état/mort annule la visée. Dégâts −5 % (nerf).
+- **Soldier** : `CAN_ROLL`, roulade latérale `ROLL_DURATION = 0.75`,
+  `ROLL_SPEED = 2.8`, `ROLL_COOLDOWN = 3.0` (déclenchement à déclenchement),
+  i-frames toute l'animation, frames `enemy_soldier_roll_0..2.png`.
+  `hit_roll_request` consommé après résolution complète du coup (tous les
+  plombs passent) ; retentative 0,35 s si trop étroit ; `proactive_roll_delay`
+  0,6–1,8 s n'affecte pas `roll_cooldown`. Client borne un ancien `roll_timer`
+  à `Soldier.ROLL_DURATION`.
+- `Enemy.impact_type` : `flesh` (Grunt/Soldier/Sniper/Kamikaze), `armor`
+  (Heavy/Boss), `possessed` prioritaire. Particules/sons distincts
+  (`flesh_hit`, `armor_hit`, `possessed_hit`).
+- **Possédés** : tous les ennemis de `SurvivalGame.spawn_enemy()`.
+  `set_possessed()` AVANT la construction d'`EnemyAI`. Soldier possédé :
+  `CAN_ROLL=False`, 72 % vitesse ; Grunt 82 %. `assets.get_possessed()` dérive
+  aura/yeux en cache (même taille que la source).
+- `Enemy.sprite_kind` évite de demander des PNG inexistants (Commandant).
+- Tirs ennemis en vue frontale (grunt, soldier, heavy, boss, ally).
+
+### Colosse (Boss)
+
+- Trois phases par `health / max_health` (jamais PV bruts) : >66 %, 66–33 %,
+  <33 % ; vitesse/cadence `(1.15, 0.72)`, `(1.28, 0.58)`, `(1.42, 0.46)`. Vie
+  1650.
+- Chaque seuil franchi → événement ; seul `Game` place un `lifepack`
+  dynamique (`net_id`) sur un flanc ; placement impossible = remis en tête et
+  retenté ; cadavres ignorés. Client : `sync_phase_from_health()` sans objet
+  local. Ne pas casser ces packs 2/3 et 1/3.
+- `boss_patterns.py` idle/warn/charge/recover : annonce 1,2 s, charge 0,65 s
+  à 5,5 m/s, récupération 1,2 s, attente `4.5 − 0.5 × phase`. Cible verrouillée
+  à l'annonce ; phase ≥ 2 alterne charge et frappe rayon 1,8 m. Dégâts 24
+  (charge) / 28 (frappe) avant difficulté, une fois par victime ; murs
+  arrêtent la charge, pas de dégâts à travers les murs. IA standard suspendue
+  pendant les patterns. Réplication `en[15]`, aucune simulation client.
+  `hazards.py` : tracé au sol avec z-buffer, avant ADS.
+- Boss final du Déferlement : conception seule (`docs/boss-final-deferlement.md`) ;
+  un test vérifie qu'aucun `FinalBoss` n'est codé.
+
+### Élites et Commandant (`elites.py`)
+
+- Bulwark : +35 % PV, vitesse ×0,9. Hunter : vitesse ×1,15, délai de tir ×0,9.
+  Max 3 élites vivantes ; boss et Commandant exclus.
+- Commandant : 220 PV, aura portée 5 avec visibilité, délai de tir allié ×0,8
+  sans cumul, retiré à sa mort ; un seul vivant (second spawn → soldat).
+- Entrepôt : deux ennemis existants élites + dernier ennemi Commandant.
+- Champs `en[13:15]` visuels, santé max autoritaire.
+
+## Niveaux
+
+- **Entrepôt** (mission) : manifeste (25,5 ; 18,5), alarme (24,5 ; 3,5),
+  extraction au spawn (1,5 ; 1,5), rayon 1,4, maintien 8 s consécutives.
+  `Game.mission` ; autres niveaux = élimination. Interaction E/remappable, LB,
+  tactile ACT (portée/ligne de vue/vie/glissade contrôlées ; pause/outcome
+  bloquent). HUD mission à y=160. Arsenal initial Entrepôt LAN : pistolet.
+- **Laboratoire** : sol résine blanche, textures `wall_lab_tech/metal/
+  reinforced` ; murs 1, 2, 4 à 1,0, enceinte `3` du Colosse à 1,55.
+  `wall_sealed_portal` (`4`) en `(28, 18)` — pas `(28, 19)` (masqué par le
+  boss en `(25, 19)`).
+- **Lune** (`MAP_MOON`) : cristaux `k`/`prop_alien_crystal` (96×112, largeur
+  0,88) bloquent la case + balles/perception par cercle rayon 0,46 —
+  `PROP_CHARS`, `cover_circles`, ligne de vue, hitscan cohérents ensemble.
+  Cratères précalculés (min 30, espacement 38 px). Portail : 4 frames
+  `prop_portal_0..3.png` 79×117 (boîte opaque 71×108 en (4,2)), 110 ms/frame,
+  anneau fermé sans support, `v_offset` ~0,11, jamais retourné selon la
+  parité ; animations de props locales, jamais répliquées.
+- Fond de menu lunaire 1280×720 (panneau sur le tiers gauche).
+
+## Déferlement (`survival.py`)
+
+- `SurvivalGame.SOLO = True`, `CoopHostGame.SOLO = False`. Solo : aucun
+  mutateur (`self.mutator = ""`), aucune élite. Conservés partout : Commandant
+  vagues 5/15/25, Colosses 10/20/30, `wave_multipliers` (vie +3 %/vague,
+  dégâts +2,5 %/vague). Le test de submersion force `game.SOLO = False`.
+- `wave_timeout = max(wave_floor, 30 × 0.9^(n-1))`, `wave_floor` = 8 s (1–10),
+  6 s (11–20), 4 s (21–30), minimum 2 s. Vague avec `"boss"` :
+  +`BOSS_EXTRA_TIME` (10 s, demande utilisateur). Délai effectif dans
+  `self.wave_limit`.
+- Vague nettoyée : `intermission = CLEAR_INTERMISSION` (7 s fixes, demande
+  utilisateur). Non nettoyée : pas de répit, la suivante démarre par-dessus
+  les survivants. `INTERMISSION = 4` seulement avant la vague 1.
+- Packs de vie toutes les 2 vagues.
+- **Apparitions** : `_pick_spawn_point(radius)` → `(x, y, angle)` à la bouche
+  du portail (`level.config["portal"]`, case bloquante) : distances
+  0,55/0,85/1,2 + rayon, 16 directions, `can_stand`, < `SPAWN_MAX_DISTANCE`
+  (2 m) ; hasard parmi les bouches ≥ `SPAWN_PLAYER_CLEARANCE` (1,2 m) de tout
+  joueur vivant, sinon la plus éloignée. Puis `enemy.emerge`
+  (`EMERGE_SPEED` 3,5 × `EMERGE_TIME` 0,6 s = 2,1 m). Cases `S` = repli.
+- `spawn_queue` est un `deque` (`extend`/`popleft`, jamais `pop(0)`) ; entrées
+  `(kind, wave, mutator, elite)`, effets d'origine conservés en submersion.
+- **Mutateurs** (coop seulement) : rapid (vitesse +15 %), armored (vie +20 %,
+  vitesse −10 %), crossfire (miliciens d'indice multiple de 4 → soldats).
+  Rotation par groupes de 3 vagues dès 4, graine 101 ; 10/20/30 neutres ;
+  aucun boss modifié, aucun ennemi ajouté. `wv.mutator` répliqué ; annonce HUD
+  à y=195 (y=160 sous 1000 px de large). Coop : deux candidats élites dès 4.
+
+## Améliorations (`upgrades.py`)
+
+- Plus de `MAX_CHOICES` ; plafond par bonus `CAPS`. Effets par niveau :
+  dégâts +10 %, recharge −15 %, capacité +20 %, dispersion −20 %, cadence
+  +8 % (arrondis entiers dégâts/capacité). Specs par arme dérivées de façon
+  idempotente, ratio de rechargement conservé.
+- Offre (`valid_offers`) = `rng.sample` de 3 `WEAPON_UPGRADES` + 1 `PERKS` en
+  dernière position. Perks : `grenade` (+1 max et plein, `grenade_capacity`,
+  `MAX_GRENADES = 6`), `ghost_slide`, `vitality` (+20 PV max et rendus),
+  `momentum` (+25 % `slide_boost`).
+- `apply_player` idempotent (`vitality_applied`, `grenade_applied`, copiés au
+  changement de niveau), renvoie les niveaux d'Artificier gagnés →
+  `Game._apply_upgrades` / `CoopHostGame._apply_client_upgrades` remplissent
+  les grenades.
+- Cadence : toutes les `UPGRADE_EVERY_SOLO = 2` vagues nettoyées en solo,
+  `UPGRADE_EVERY_COOP = 3` en coop ; aussi après interactions Entrepôt.
+  Dédupliquées par token ; file si une offre est ouverte. Tokens de
+  ravitaillement grenade séparés (déduplication bornée).
+- Graine isolée 101 (solo), 101+pid (clients). Délai 12 s, choix 1 par défaut,
+  figé par pause hôte. UI : 4 cartes, F5–F8, croix gauche/haut/droite/bas,
+  clic, tactile ; perk bordé d'ambre. `uc`/`ub` portent les choix autoritaires.
+- Contexte conservé entre niveaux, jamais sur nouvelle partie ; pas de
+  persistance.
+
+## Grenades (`grenades.py`)
+
+- G/remappable, clic stick droit, tactile FRAG. 2 charges de base (max 6 via
+  perk), cooldown 1 s, fusée 2 s, rayon 2,7, dégâts décroissants 90→31
+  (ennemis), 60→21 (lanceur), alliés exempts. Collision pas ≤ 0,08 m, rebond
+  amorti, souffle avec ligne de vue. 8 projectiles max. Aucune explosion
+  simulée côté client. `gr`/`gm` acquittent (doublon = pas de dépense). Pause
+  purge les demandes non acquittées et fige la fusée hôte. Explosions
+  kamikazes inchangées.
+
+## Score (`scoring.py`)
+
+- Ennemi crédité une fois ; objectif +500 ; vague nettoyée +200 ; victoire
+  +500 ; mise à terre −150 par transition ; secours +250 (4 premiers).
+- Cible campagne = budget initial ennemis + objectifs + victoire ; cible
+  Déferlement 20 000. Grades D/C/B à 0/25/50 %, A/S à 75/90 % avec victoire
+  obligatoire. Cumul sur la campagne, grade par segment. `sc` réplique les 5
+  champs ; PID stables.
+
+## Coop LAN
+
+- Hôte autoritaire, 4 joueurs max. `CoopHostGame(mission_mode=True)` utilise
+  `Game.update` (Entrepôt), sinon `SurvivalGame.update`. `welcome.mode`
+  configure le client. Fin Entrepôt LAN : retour LAN, pas de campagne solo ;
+  fin LAN distincte des records de vagues.
+- `CoopClientGame` duplique l'init de `Game` : tout nouveau champ
+  `Player`/`Game.__init__` doit y être répliqué.
+- Ne jamais simuler objectifs, patterns boss, explosions côté client. Les
+  portes incluent les joueurs distants.
+- **Mise à terre / secours** (`coop_support.py`) : 20 s de secours possible
+  puis 6 s avant spawn (retour auto 60 PV). Tous à terre = défaite. Secours à
+  ≤ 1,4 m, 3 s, nouvel appui annule ; dégât, glissade, perte de vue,
+  éloignement annulent ; pas d'accélération multi-helpers ; tir bloqué ; retour
+  40 PV + 2 s bouclier sans munitions. Pause hôte fige tout ; pause locale ou
+  silence client > 350 ms annule. Ping C/remappable, Back/View, tactile SIG :
+  portée 12 m (hôte), 5 s, délai 2 s, 4 marqueurs max.
+- Réapparition : santé + glissade + cooldown + bouclier ensemble ; un
+  instantané de mort annule d'abord bouclier/i-frames. `RemotePlayer.shield`
+  simulé par l'hôte.
+
+### Réseau / protocole
+
+- Protocole strict (`version.py`, v5) : autre version → `incompatible`, aucun
+  joueur créé. `session_id`, `iq` (entrées), `sq` (instantanés), événements
+  fiables `rev` contigus acquittés par `ea`, journal borné 512, reprise `eb`.
+  Ne jamais vider le journal après un envoi. `ix=[séquence,index]`, `ia`, `ms`,
+  `rr`, `pg`, `ga`, `lp`, `uc`, `ub`, `gr`, `gm`, `sc` : voir
+  `docs/network-protocol.md`. Purge des entrées = annule les interactions non
+  acquittées.
+- UDP : messages compressés (`Z1`, dès 900 o) puis fragmentés à 1 200 o ;
+  décompression/réassemblage bornés (`BUFFER_SIZE`, TTL, débit), jamais de
+  zlib incomplet/expansion illimitée. Budget 1 200 o contrôlé à chaque envoi.
+  ≤ 128 datagrammes/frame, objets JSON uniquement.
+- Sockets : pas de `SO_REUSEADDR` sur POSIX ; `SO_EXCLUSIVEADDRUSE` sous
+  Windows.
+- Valider AVANT d'indexer : pas de NaN/inf, lignes courtes, types inconnus,
+  hors bornes ignorés. Aucune position/invincibilité/dégât/cadence décidée
+  sans borne par le client.
+- Tirs client : `[weapon_id, [angles...]]`, ≤ 32 par paquet, instances
+  `Weapon` côté hôte ; `[angle, dégâts]` refusé.
+- Déplacement distant : crédit alimenté par `net_time` (`Player.SPEED` ou
+  `ROLL_SPEED`, ×ADS), capacité 0,15 s, marge 0,03 case. Glissade : `rs`
+  strictement croissant (rejette les paquets retardés) ; ancien client sans
+  `rs` : front `rt=0` → `rt>0`.
+- Nouveaux champs TOUJOURS en fin de ligne ; tolérer les instantanés plus
+  courts. Joueur : inventaire `[weapon_id, level]` + arme active en fin.
+  Ennemi : `max_health`, `possessed`, `aiming`, etc. en fin. `pk` : booléens
+  statiques d'abord puis lignes dynamiques `[id, x, y, kind, taken]` — jamais
+  dict ni réordonnancement. Impacts : événement `["ei", net_id, fatal]`.
+- Pause : `pa` répliqué ; l'hôte garde séquences/acks mais refuse position,
+  angle, glissade, recharge, tir ; client `controls_paused`. Un client ne peut
+  pas lever `host_paused`.
+
+## Audio
+
+- `assets/sound/` : `reload.<ext>`, `1..5.<ext>` (niveaux),
+  `menu.<ext>`, `survival.<ext>` (Déferlement + coop) ; ordre
+  `AUDIO_EXTENSIONS` (ogg, mp3, wav, flac). Committés : `1.mp3`…`5.mp3`,
+  `survival.mp3` ; menu synthétisé.
+- Sinon 7 `MUSIC_PROFILES` procéduraux déterministes (boucles 12 s sans clic).
+- `play_music` ne garde qu'une piste fichier en cache (`file_music_keys`,
+  `_release_file_music`, aussi au retour menu) ; nappes synthétisées en cache.
+
+## Performances de référence
+
+- 24 ennemis, SDL dummy : ~6 ms médiane à 800×600, ~10–11 ms à 1280×720
+  (indicatif, pas une garantie matérielle).
 
 ## Dette / manques
 
+- Pas de test LAN multi-machines, manette physique ni tactile matériel.
 - numba évoqué, jamais implémenté (le cache FIFO a suffi).
-- Multijoueur testé en UDP local seulement, pas multi-machines.
+- Ressenti en jeu réel de la glissade/cartes 0.6.0 non testé.
+- Boss final du Déferlement non implémenté (conception seule).
