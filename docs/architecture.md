@@ -8,7 +8,7 @@ et une nouvelle exécution de la même référence remplace l’ancienne.
 objectifs et victoire. L’hôte détient le score commun ; les clients lisent `sc`.
 Les PID stables évitent une pénalité erronée lors d’une déconnexion. Le cumul
 suit les niveaux, mais le segment et sa cible sont réinitialisés pour le grade.
-Les récompenses de grenades utilisent des tokens séparés des six choix de bonus,
+Les récompenses de grenades utilisent des tokens séparés des choix de bonus,
 avec déduplication bornée ; aucun état de partie supplémentaire n’est persisté.
 Voir [règles](gameplay.md) et [recette](gameplay-validation.md).
 

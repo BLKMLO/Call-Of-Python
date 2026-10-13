@@ -1,4 +1,4 @@
-# Règles gameplay 0.5.0
+# Règles gameplay 0.6.0
 
 ## Mission Entrepôt
 
@@ -7,7 +7,7 @@ Récupérer le manifeste dans le bureau (25,5 ; 18,5), désactiver l’alarme
 secondes consécutives dans un rayon de 1,4 m. Quitter la zone remet le timer
 à zéro. En coop, la présence d’au moins un joueur vivant suffit. Les autres
 niveaux conservent leur condition d’élimination. E/LB/ACT. interagit à portée
-avec ligne de vue ; un joueur mort ou en roulade ne peut pas interagir.
+avec ligne de vue ; un joueur mort ou en glissade ne peut pas interagir.
 
 La même mission est disponible depuis le menu LAN, indépendante de la campagne.
 L’hôte est seul responsable des objectifs, récompenses, dégâts et timers.
@@ -16,19 +16,25 @@ L’hôte est seul responsable des objectifs, récompenses, dégâts et timers.
 
 Chaque interaction de mission et chaque troisième vague entièrement nettoyée
 (chaque deuxième en Déferlement solo)
-ouvre une offre, jusqu’à six choix par partie. Choisir parmi trois cartes avec
-F5/F6/F7, croix gauche/haut/droite, souris ou tactile. Sans réponse pendant
-12 secondes, la première carte est choisie. La pause hôte fige le délai ; une
-pause locale ne suspend pas les autres joueurs. Les offres simultanées attendent
-en file. Chaque bonus a deux niveaux maximum :
+ouvre une offre, sans limite de nombre par partie. Une offre montre jusqu’à
+quatre cartes : trois d’arme, puis une quatrième toujours hors arme (bordure
+ambre). Choisir avec F5/F6/F7/F8, croix gauche/haut/droite/bas, souris ou
+tactile. Sans réponse pendant 12 secondes, la première carte est choisie. La
+pause hôte fige le délai ; une pause locale ne suspend pas les autres joueurs.
+Les offres simultanées attendent en file. Chaque bonus a son plafond ; un bonus
+au plafond n’est plus proposé, et une offre peut donc avoir moins de cartes.
 
-| Bonus | Effet par niveau |
-|---|---|
-| Impact | Dégâts +10 %, arrondi entier |
-| Recharge | Temps -15 % |
-| Capacité | Chargeur +20 %, arrondi entier |
-| Précision | Dispersion -20 % |
-| Cadence | Fréquence +8 % |
+| Bonus | Type | Effet par niveau | Plafond |
+|---|---|---|---|
+| Impact | Arme | Dégâts +10 %, arrondi entier | 10 |
+| Chargeur rapide | Arme | Temps de recharge -15 % du temps de base | 5 |
+| Réserve | Arme | Chargeur +20 %, arrondi entier | 10 |
+| Stabilité | Arme | Dispersion -20 % de la dispersion de base | 4 |
+| Mécanisme | Arme | Fréquence +8 % | 10 |
+| Artificier | Hors arme | +1 grenade maximum, stock rempli | 4 |
+| Glissade fantôme | Hors arme | Invulnérable pendant toute la glissade | 1 |
+| Blindage | Hors arme | +20 PV maximum, et 20 PV rendus | 5 |
+| Élan | Hors arme | +25 % de vitesse, donc de distance, de glissade | 2 |
 
 Les effets repartent des caractéristiques de base, sans cumul accidentel entre
 ticks. La capacité ne fournit pas de munitions gratuites ; le ratio d’une
@@ -36,7 +42,8 @@ recharge en cours est conservé. Les choix continuent entre niveaux de campagne,
 pas après une nouvelle partie. En coop, chacun reçoit son offre ; un nouvel
 arrivant ne récupère pas les récompenses antérieures.
 
-Les mêmes jalons rendent une grenade (maximum deux), même après les six choix.
+Les mêmes jalons rendent une grenade (maximum deux, plus un par niveau
+d’Artificier).
 Une vague submergée sans nettoyage ne donne pas sa récompense.
 
 ## Déferlement et adversaires

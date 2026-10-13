@@ -5,9 +5,10 @@ Le jeu propose une campagne de cinq missions, un mode survie de 30 vagues,
 sept archetypes ennemis, quatre armes evolutives et une direction pixel-art
 militaire/SF.
 
-Version gameplay **0.5.0** : objectifs dans l’Entrepôt (solo et LAN),
-améliorations temporaires, mutateurs, secours, élites, attaques du Colosse,
-grenades et score. [Règles et équilibrage](docs/gameplay.md) ·
+Version gameplay **0.6.0** : refonte du Déferlement (glissade, cartes sans
+limite dont une hors arme, nouveaux délais de vagues, sortie par le portail),
+après les objectifs de l’Entrepôt (solo et LAN), améliorations temporaires,
+mutateurs, secours, élites, attaques du Colosse, grenades et score. [Règles et équilibrage](docs/gameplay.md) ·
 [Validation des dix étapes](docs/gameplay-validation.md).
 
 ## Installation
@@ -39,13 +40,13 @@ python assets.py --force-procedural
 | Vue | Souris | Stick droit |
 | Tir | Clic gauche | Gachette droite ou RB |
 | Mise en joue | Clic droit | Gachette gauche |
-| Roulade | Maj | A / Croix |
+| Glissade (tir possible) | Maj | A / Croix |
 | Recharger | R | X / Carre |
 | Changer d'arme | 1–4 ou molette | Y / Triangle |
 | Interagir / réanimer | E | LB |
 | Signal coop | C | Back / View |
 | Grenade | G | Clic stick droit |
-| Amélioration 1 / 2 / 3 | F5 / F6 / F7 | Croix gauche / haut / droite |
+| Carte 1 / 2 / 3 / 4 | F5 / F6 / F7 / F8 | Croix gauche / haut / droite / bas |
 | Pause | Echap | Start |
 | FPS | F3 | — |
 | Plein ecran | F11 | — |
@@ -83,14 +84,24 @@ libere deux packs de vie avant de reveler le portail lunaire.
 ### Le Deferlement
 
 Trente vagues lunaires de creatures possedees, avec submersion progressive,
-ravitaillement periodique et un Colosse toutes les dix vagues. Un directeur
+ravitaillement periodique et un Colosse toutes les dix vagues. Les ennemis
+sortent tous du portail central puis s'en ecartent. Le delai avant submersion
+part de 30 s et baisse de 10 % par vague, sans descendre sous 8 s (vagues
+1-10), 6 s (11-20) et 4 s (21-30). Une vague nettoyee laisse le temps qui
+restait, plus 5 s pour recharger, avant la suivante. Un boss final geant est
+en preparation (`docs/boss-final-deferlement.md`). Un directeur
 ajuste legerement la cadence d'apparition selon la sante du joueur et la
 pression deja presente ; il ne modifie jamais les degats, la composition ou
 le nombre d'ennemis prevu.
 
-Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v4 refuse
+Le mode accepte un hote et trois clients sur UDP/5577. Le protocole v5 refuse
 explicitement toute autre version. L'hote valide deplacements, collisions,
-roulades, cadence, chargeurs et degats.
+glissades, cadence, chargeurs et degats.
+
+La glissade (Maj) remplace la roulade : 4,5 cases au lieu de 2,5, vitesse
+decroissante, tir et rotation possibles pendant le mouvement (sans lunette),
+0,30 s d'invulnerabilite au coeur du mouvement (toute la glissade avec la
+carte Glissade fantome).
 
 ## Nouveautés gameplay
 
@@ -99,13 +110,13 @@ une seconde entre lancers, fusée 2 s, rebonds, rayon 2,7 m. Dégâts décroissa
 (90 au centre sur les ennemis, 60 sur le lanceur), bloqués par les murs.
 Pas de dégâts directs aux alliés ; les kamikazes peuvent provoquer leurs propres
 explosions. Les deux interactions et chaque troisième vague nettoyée (deuxième en Déferlement solo) rendent une charge,
-maximum deux, même lorsque les six améliorations ont déjà été choisies.
-Lancer impossible en roulade ou pendant un secours.
+maximum deux (plus un par niveau de la carte Artificier).
+Lancer impossible en glissade ou pendant un secours.
 
 Colosse : annonce de 1,2 s avant une charge rectiligne, puis 1,2 s de
 récupération. Dès la phase 2, il alterne avec une frappe sur une zone verrouillée
 de rayon 1,8 m. Sortez du tracé au sol ou utilisez la fenêtre d'invulnérabilité
-de roulade. Murs et obstacles arrêtent la charge ; chaque attaque ne touche
+de glissade. Murs et obstacles arrêtent la charge ; chaque attaque ne touche
 qu'une fois chaque joueur. Les deux packs de changement de phase sont conservés.
 
 Bestiaire : Résistant (bleu : +35 % vie, -10 % vitesse), Traqueur (rouge :
@@ -117,7 +128,7 @@ Ils apparaissent dans l'Entrepôt ; en Déferlement, élites dès la vague 4
 
 Secours coop : un joueur à terre peut être réanimé pendant 20 s. Approchez à
 1,4 m puis Interagir (E/LB/ACT.) pour commencer un secours de 3 s ; rester près
-de lui. Dégâts, roulade, perte de vue ou nouvel appui annulent le secours. Le
+de lui. Dégâts, glissade, perte de vue ou nouvel appui annulent le secours. Le
 tir est bloqué pendant l'action. Réanimation sur place à 40 PV et 2 s de bouclier.
 Sans secours, réapparition au spawn après 6 s supplémentaires à 60 PV. Si toute
 l'équipe tombe, la partie est perdue. Signal : C (remappable), Back/View ou
@@ -132,10 +143,12 @@ En solo, ni mutateur ni élite : les ennemis ne gardent que la montée de vie et
 de dégâts propre à chaque vague.
 
 Améliorations de partie : après les deux interactions de l'Entrepôt, ou chaque
-troisième vague nettoyée (chaque deuxième en Déferlement solo), choisir une des trois cartes avec F5–F7, gauche/haut/
-droite sur la croix manette, clic ou tactile. Après 12 s, le premier choix est
-retenu. Impact, recharge, capacité, précision et cadence ont deux niveaux au
-maximum ; six choix par partie. Aucun bonus n'est enregistré dans les sauvegardes.
+troisième vague nettoyée (chaque deuxième en Déferlement solo), choisir une des quatre cartes avec F5–F8,
+gauche/haut/droite/bas sur la croix manette, clic ou tactile. Les trois premières
+améliorent l'arme (impact, recharge, capacité, précision, cadence) ; la quatrième
+est hors arme (Artificier, Glissade fantôme, Blindage, Élan). Après 12 s, le
+premier choix est retenu. Aucune limite de choix par partie : seul chaque bonus
+a un plafond (voir `docs/gameplay.md`). Aucun bonus n'est enregistré dans les sauvegardes.
 La capacité supplémentaire se remplit au prochain rechargement. La pause de
 l'hôte fige le délai ; une pause locale d'un client ne suspend pas la partie.
 
@@ -172,7 +185,7 @@ compteur à zéro, la pause le fige. Les autres niveaux gardent leur victoire
 par élimination. Dans le menu LAN, **Héberger (Mission Entrepôt en coop)**
 permet de jouer cette mission à quatre ; rejoindre charge automatiquement
 la bonne carte. La progression est commune, même en arrivant en cours de partie.
-Tous les participants doivent utiliser le protocole v4 de cette version.
+Tous les participants doivent utiliser le protocole v5 de cette version.
 
 | Fichier | Role |
 |---|---|

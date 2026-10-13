@@ -1,10 +1,10 @@
-# Protocole LAN v4
+# Protocole LAN v5
 
 Le transport utilise UDP/IPv4 et des objets JSON compacts. L'hote est
 autoritaire : un client ne declare jamais ses degats, munitions, cadence ou
 invulnerabilite.
 
-`join` doit contenir `v: 4`. Toute autre version recoit `incompatible` sans
+`join` doit contenir `v: 5`. Toute autre version recoit `incompatible` sans
 allocation de joueur. `welcome` fournit l'identifiant, le `session_id` et la
 sequence d'evenements. Les entrees portent `iq`, les instantanes `sq`, et les
 evenements fiables sont acquittes par `ea`.
@@ -37,7 +37,22 @@ validés (entiers 0 à 10^9, cible positive, secours 0 à 4, grade D/C/B/A/S).
 Le client ne propose aucun point. Le total est partagé, les statistiques de
 tirs/éliminations restent individuelles. Les identifiants d’arme et d’ennemi
 sont vérifiés comme chaînes avant toute consultation du catalogue.
-Version du jeu 0.5.0, protocole v4 : mettre à jour tous les participants.
+Version du jeu 0.6.0, protocole v5 : mettre à jour tous les participants.
+
+## Changements v5 (0.6.0)
+
+- `snap.ub.propositions` contient de 0 à 4 clés distinctes : au plus trois
+  cartes d’arme, puis au plus une carte hors arme (`grenade`, `ghost_slide`,
+  `vitality`, `momentum`), toujours en dernière position. Chaque niveau est
+  borné par `upgrades.CAPS` ; `id_offre` et `crédits` sont bornés à 2^31 - 1
+  (plus de limite de six récompenses).
+- `snap.gm[0]` (grenades du client) est borné par `upgrades.MAX_GRENADES` (6).
+- `in.uc` accepte l’index 3 (quatrième carte).
+- La roulade devient une glissade : mêmes champs (`rt`, `rs`), durée
+  `Player.ROLL_DURATION` (0,8 s). L’hôte accepte les tirs pendant la glissade
+  et borne le déplacement par `Player.ROLL_SPEED × slide_boost`.
+- Les ennemis du Déferlement apparaissent à la bouche du portail ; les
+  positions restent celles de l’hôte, sans champ nouveau.
 
 Grenades : `in.gr` est une séquence 31 bits, consommée même si charges/cooldown
 refusent le lancer. `snap.gm=[charges,cooldown,dernière_séquence]` acquitte ;

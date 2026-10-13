@@ -206,7 +206,7 @@ class RequestedChangesTests(unittest.TestCase):
         player.take_damage(20)
         self.assertEqual(player.health, health - 40)
         self.assertFalse(player.start_roll(keys, DEFAULT_KEYS))
-        player.update(0.17)
+        player.update(Player.ROLL_DURATION - 0.39 + 0.01)
         self.assertTrue(player.start_roll(keys, DEFAULT_KEYS))
         self.assertEqual(player.roll_sequence, 2)
         self.assertEqual(player.roll_cooldown, 0.0)

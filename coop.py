@@ -49,7 +49,7 @@ from support_ui import draw_support, ping_sprites
 from survival import SurvivalGame
 from touch_controls import FINGER_EVENTS, TouchControls
 from upgrade_ui import choice_event, draw_choices
-from upgrades import SessionUpgrades
+from upgrades import MAX_GRENADES, SessionUpgrades
 from version import PROTOCOL_VERSION
 from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
 
@@ -156,7 +156,8 @@ class CoopHostGame(SurvivalGame):
             client["upgrades"].award(token)
             if token not in client["supplies"] and len(client["supplies"]) < 64:
                 client["supplies"].add(token)
-                client["grenade_ammo"] = min(2, client["grenade_ammo"] + 1)
+                client["grenade_ammo"] = min(client["upgrades"].grenade_capacity,
+                                             client["grenade_ammo"] + 1)
 
     def _interact(self, actor=None):
         if self.paused or self.outcome is not None:
@@ -175,7 +176,14 @@ class CoopHostGame(SurvivalGame):
         super()._update_upgrades(dt)
         for client in self.clients.values():
             client["upgrades"].update(dt)
-            client["upgrades"].apply(client["weapons"].values())
+            self._apply_client_upgrades(client)
+
+    @staticmethod
+    def _apply_client_upgrades(client):
+        build = client["upgrades"]
+        build.apply(client["weapons"].values())
+        if build.apply_player(client["player"]):
+            client["grenade_ammo"] = build.grenade_capacity
 
     # -- hooks du Game de base -----------------------------------------
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
@@ -450,7 +458,7 @@ class CoopHostGame(SurvivalGame):
         x = _finite_float(message.get("x"), 0.0, self.level.width)
         y = _finite_float(message.get("y"), 0.0, self.level.height)
         speed = (
-            Player.ROLL_SPEED if remote.rolling
+            Player.ROLL_SPEED * getattr(remote, "slide_boost", 1.0) if remote.rolling
             else Player.SPEED * (Player.ADS_MULT if remote.aiming else 1.0)
         )
         capacity = speed * MOVE_BURST_SECONDS + MOVE_JITTER
@@ -498,7 +506,7 @@ class CoopHostGame(SurvivalGame):
         if isinstance(choice, list) and len(choice) == 2:
             build = client["upgrades"]
             if build.choose(*choice):
-                build.apply(client["weapons"].values())
+                self._apply_client_upgrades(client)
 
         weapon_id = message.get("wid")
         if isinstance(weapon_id, str) and weapon_id in client["weapons"]:
@@ -516,7 +524,7 @@ class CoopHostGame(SurvivalGame):
         fire_events = message.get("fx", [])
         # Les anciens couples [angle, dégâts] ne permettent pas de vérifier
         # arme, chargeur, cadence ni nombre de plombs. Un hôte v2 les refuse.
-        if (protocol < PROTOCOL_VERSION or remote.rolling or pid in self.rescue.requests
+        if (protocol < PROTOCOL_VERSION or pid in self.rescue.requests
                 or not isinstance(fire_events, list)):
             return
         for trigger in fire_events[:MAX_REMOTE_FIRE_EVENTS]:
@@ -1072,13 +1080,12 @@ class CoopClientGame:
             mouse_dy += touch_dy + pad_dy
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
-            if not player.rolling:
-                player.aiming = (
-                    self._mouse_aim_held
-                    or self.touch.aim_held
-                    or self.gamepad.aim_held
-                )
-                player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
+            player.aiming = not player.rolling and (
+                self._mouse_aim_held
+                or self.touch.aim_held
+                or self.gamepad.aim_held
+            )
+            player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
             touch_axes = self.touch.movement_axes() if self.touch.enabled else (0, 0)
@@ -1108,9 +1115,8 @@ class CoopClientGame:
                 self.step_side = not self.step_side
                 self.sounds.play("step" if self.step_side else "step2",
                                  volume_scale=0.35)
-            if (not player.rolling
-                    and (self._mouse_fire_held or self.touch.fire_held
-                         or self.gamepad.fire_held)
+            if ((self._mouse_fire_held or self.touch.fire_held
+                 or self.gamepad.fire_held)
                     and player.weapon.spec.automatic):
                 self._fire()
             player.update(dt)
@@ -1141,7 +1147,7 @@ class CoopClientGame:
 
     # -- tir local ------------------------------------------------------
     def _fire(self):
-        if self.player.rolling or any(row[3] == self.pid for row in self.rescue_rows):
+        if any(row[3] == self.pid for row in self.rescue_rows):
             return
         weapon = self.player.weapon
         if not weapon.fire():
@@ -1303,7 +1309,8 @@ class CoopClientGame:
         if "gm" in snap:
             row = snap["gm"]
             if (not isinstance(row, list) or len(row) != 3 or type(row[0]) is not int
-                    or not 0 <= row[0] <= 2 or _finite_float(row[1], 0, 1) is None
+                    or not 0 <= row[0] <= MAX_GRENADES
+                    or _finite_float(row[1], 0, 1) is None
                     or type(row[2]) is not int or not 0 <= row[2] < 2 ** 31):
                 return False
             self.grenade_ammo = row[0]
@@ -1346,6 +1353,7 @@ class CoopClientGame:
                 impact_ids.add(event[1])
         self._apply_players(players)
         self.upgrades.apply(self.player.weapons)
+        self.upgrades.apply_player(self.player)
         self._apply_enemies(enemies, impact_ids)
         if isinstance(pickups, list):
             self._apply_pickups(pickups)
@@ -1817,7 +1825,8 @@ class CoopClientGame:
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
                                 lambda *points: Game._objective_visible(self, *points))
         draw_choices(screen, self.hud, self.upgrades)
-        self.hud.draw_grenade_count(screen, self.grenade_ammo)
+        self.hud.draw_grenade_count(screen, self.grenade_ammo,
+                                    self.upgrades.grenade_capacity)
         if self.pid is None:
             self.hud.show_message("Connexion à l'hôte...")
         if not self.player.alive and self.outcome is None:

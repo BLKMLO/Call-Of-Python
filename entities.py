@@ -92,11 +92,17 @@ class Player(Entity):
     RADIUS = 0.25        # rayon de collision
     MAX_PITCH = 0.35     # amplitude de la visée verticale (fraction d'écran)
     SHIELD_DURATION = 3.0   # bouclier temporaire à l'arrivée sur un niveau (s)
-    ROLL_DURATION = 0.55    # mouvement total : amorce + esquive + récupération
+    # Glissade (remplace l'ancienne roulade ; les noms `roll_*` sont gardés
+    # pour la sauvegarde des touches et le protocole LAN). La vitesse décroît
+    # linéairement de ROLL_SPEED à ROLL_SPEED × (1 - SLIDE_DECEL) :
+    # distance = ROLL_SPEED × ROLL_DURATION × (1 - SLIDE_DECEL / 2)
+    #          = 7,5 × 0,8 × 0,75 = 4,5 cases (l'ancienne roulade : 2,5).
+    ROLL_DURATION = 0.8     # durée de la glissade (s)
     ROLL_COOLDOWN = 0.0     # enchaînable dès la fin, jamais pendant l'action
-    ROLL_SPEED = 4.55       # conserve ~2,5 cases malgré la durée ajustée
+    ROLL_SPEED = 7.5        # vitesse au départ de la glissade (cases / s)
+    SLIDE_DECEL = 0.5       # perte de vitesse relative en fin de glissade
     ROLL_IFRAME_START = 0.08
-    ROLL_IFRAME_END = 0.38  # 0,30 s d'i-frames au cœur du mouvement
+    ROLL_IFRAME_END = 0.38  # 0,30 s d'i-frames (toute la glissade avec la carte)
 
     def __init__(self, x, y):
         super().__init__(x, y, max_health=100)
@@ -114,6 +120,14 @@ class Player(Entity):
         self.roll_dy = 0.0
         self.roll_strafe = 0.0   # inclinaison de caméra (-gauche, +droite)
         self.roll_sequence = 0   # identifie chaque déclenchement en coop LAN
+        self.slide_ghost = False  # carte « Glissade fantôme »
+        self.slide_boost = 1.0    # carte « Élan » (multiplie la distance)
+
+    @property
+    def slide_speed(self):
+        """Vitesse instantanée de la glissade (décroît jusqu'à l'arrêt)."""
+        return (self.ROLL_SPEED * self.slide_boost
+                * (1.0 - self.SLIDE_DECEL * self.roll_progress))
 
     @property
     def zoom(self):
@@ -132,9 +146,12 @@ class Player(Entity):
 
     @property
     def roll_invulnerable(self):
-        """Fenêtre juste : vulnérable au démarrage et à la récupération."""
+        """Fenêtre juste : vulnérable au démarrage et à la récupération,
+        sauf avec la carte « Glissade fantôme » (toute la glissade)."""
         if not self.rolling:
             return False
+        if getattr(self, "slide_ghost", False):
+            return True
         elapsed = self.ROLL_DURATION - self.roll_timer
         return self.ROLL_IFRAME_START <= elapsed < self.ROLL_IFRAME_END
 
@@ -202,7 +219,7 @@ class Player(Entity):
         """
         if self.rolling:
             old = (self.x, self.y)
-            distance = self.ROLL_SPEED * min(dt, self.roll_timer)
+            distance = self.slide_speed * min(dt, self.roll_timer)
             self.x, self.y = _move_with_substeps(
                 level, self.x, self.y,
                 self.roll_dx * distance, self.roll_dy * distance,
@@ -245,7 +262,7 @@ class Player(Entity):
         return forward, strafe
 
     def start_roll(self, keys_pressed, bindings, extra_axes=None):
-        """Déclenche une roulade dans la direction tenue, en avant par défaut."""
+        """Déclenche une glissade dans la direction tenue, en avant par défaut."""
         if not self.alive or self.rolling or self.roll_cooldown > 0.0:
             return False
         forward, strafe = self._movement_axes(keys_pressed, bindings)
@@ -705,6 +722,8 @@ class RemotePlayer(Enemy):
     def roll_invulnerable(self):
         if not self.rolling:
             return False
+        if getattr(self, "slide_ghost", False):   # carte « Glissade fantôme »
+            return True
         elapsed = self.ROLL_DURATION - self.roll_timer
         return self.ROLL_IFRAME_START <= elapsed < self.ROLL_IFRAME_END
 

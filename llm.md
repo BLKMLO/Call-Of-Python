@@ -1,5 +1,50 @@
 # llm.md — Contexte projet unique (source de vérité)
 
+## Refonte du Déferlement — 0.6.0, protocole v5 (13 octobre 2026)
+
+- **Glissade** (remplace la roulade du joueur ; les noms `roll_*`, la touche
+  `roulade` et les champs réseau `rt`/`rs` sont conservés pour la compatibilité
+  des sauvegardes). `Player.ROLL_DURATION = 0.8`, `ROLL_SPEED = 7.5`,
+  `SLIDE_DECEL = 0.5` : vitesse `Player.slide_speed` décroissante, distance
+  7,5 × 0,8 × 0,75 = 4,5 cases (ancienne roulade 2,5). Tir (`_player_fire`,
+  tir auto, tirs distants côté hôte) et rotation autorisés pendant la glissade ;
+  ADS coupé. Grenade et interaction restent bloquées. i-frames 0,08–0,38 s ;
+  `slide_ghost` (carte) = toute la glissade, aussi sur `RemotePlayer`.
+  Caméra : `_player_roll_camera` abaisse la vue (image remontée de 4 %,
+  inclinaison 3°). Libellés HUD/menu/tactile : « GLISSADE », « GLIS. ».
+- **Cartes** (`upgrades.py`) : plus de `MAX_CHOICES`, plafond par bonus `CAPS`.
+  Offre = `rng.sample` de 3 cartes `WEAPON_UPGRADES` (même tirage qu'avant pour
+  les 3 premières) + 1 `PERKS` en dernière position (`valid_offers`). Perks :
+  `grenade` (+1 max, plein ; `grenade_capacity`, `MAX_GRENADES = 6`),
+  `ghost_slide`, `vitality` (+20 PV max et rendus), `momentum` (+25 %
+  `slide_boost`). `apply_player` est idempotent (`vitality_applied`,
+  `grenade_applied`, copiés au changement de niveau) et renvoie les niveaux
+  d'Artificier gagnés → `Game._apply_upgrades` / `CoopHostGame._apply_client_upgrades`
+  remplissent les grenades. UI : 4 cartes, F5–F8 (F8 ajoutée à `RESERVED_KEYS`),
+  croix gauche/haut/droite/bas, carte hors arme bordée d'ambre.
+- **Vagues** (`survival.py`) : `wave_timeout = max(wave_floor, 30 × 0,9^(n-1))`,
+  `wave_floor` = 8 s (1-10), 6 s (11-20), 4 s (21-30), minimum 2 s.
+  Vague nettoyée : `intermission = temps restant + CLEAR_BONUS (5 s)`.
+  `INTERMISSION = 4` ne sert plus qu'avant la vague 1.
+- **Apparitions** : `_pick_spawn_point(radius)` renvoie `(x, y, angle)` à la
+  bouche du portail (`level.config["portal"]`, case bloquante) : distance
+  0,55/0,85/1,2 + rayon, 16 directions, `can_stand` ; < `SPAWN_MAX_DISTANCE`
+  (2 m). Puis `enemy.emerge` pousse l'ennemi vers l'extérieur
+  (`EMERGE_SPEED` 3,5 × `EMERGE_TIME` 0,6 s = 2,1 m). Les cases `S` de la carte
+  ne servent plus que de repli.
+- **Sprites** : `tools/clean_sprites.py` (+ `--check`, testé) retire les débris
+  de frames voisines touchant le bord et recentre la silhouette sur la pose
+  `idle` de même vue. Onze PNG corrigés (sniper, grunt, heavy, kamikaze, soldier,
+  ally). Les débris décalaient aussi les yeux de `assets.get_possessed`.
+- **Boss final** : conception seule dans `docs/boss-final-deferlement.md` ; le
+  test vérifie qu'aucun `FinalBoss` n'est codé.
+- Recette : 161 tests OK, Ruff OK, `tools/validate_gameplay.py --stage 10`
+  OK (assertion passée à 4 cartes ; datagramme max 718 octets). Captures
+  800×600 des cartes et de la glissade inspectées. Non testé : ressenti en jeu
+  réel, LAN multi-machines.
+- Les sections plus bas qui parlent de « six choix », « deux niveaux par
+  bonus », roulade de 2,5 cases ou protocole v4 sont historiques.
+
 ## Difficulté du Déferlement solo (12 octobre 2026)
 
 `SurvivalGame.SOLO = True`, `CoopHostGame.SOLO = False`. En solo : aucun

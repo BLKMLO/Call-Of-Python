@@ -322,8 +322,8 @@ class HUD:
                 text = pygame.transform.smoothscale(text, (width - 16, text.get_height()))
             screen.blit(text, (panel.centerx - text.get_width() // 2, panel.y + 4 + line * 25))
 
-    def draw_grenade_count(self, screen, count):
-        text = self.small_font.render(f"FRAG. {count}/2", True, HUD_AMBER)
+    def draw_grenade_count(self, screen, count, capacity=2):
+        text = self.small_font.render(f"FRAG. {count}/{capacity}", True, HUD_AMBER)
         screen.blit(text, (screen.get_width() // 2 - text.get_width() // 2,
                            screen.get_height() - 135))
 
@@ -335,9 +335,7 @@ class HUD:
             self._flash_veil.set_alpha(int(42 * (self.flash / 0.06)))
             screen.blit(self._flash_veil, (0, 0))
         self._draw_weapon(screen, player)
-        if player.rolling:
-            pass                        # pas de réticule pendant l'esquive
-        elif player.ads > 0.55:
+        if player.ads > 0.55:
             self._draw_scope(screen, player)     # lunette de visée
         else:
             self._draw_crosshair(screen)
@@ -437,13 +435,13 @@ class HUD:
 
         sway_x = math.sin(self.sway_time * 7) * self.width * 0.008
         sway_y = abs(math.cos(self.sway_time * 7)) * self.height * 0.008
-        # Abaissement interpolé pour l'ADS et la roulade. Les poses de recharge
+        # Abaissement interpolé pour l'ADS et la glissade. Les poses de recharge
         # ont leurs propres offsets et restent assez hautes pour montrer la
         # main, le chargeur ou la bande de munitions.
         target_lower = 0.0
         target_lower += player.ads * self.height * 0.5
         if player.rolling:
-            target_lower += self.height * 0.48
+            target_lower += self.height * 0.06   # arme gardée en joue en glissant
         self.lower += (target_lower - self.lower) * 0.16
         x = (self.width // 2 - target_w // 2
              + int(self.width * (0.07 + reload_x) + sway_x))
@@ -615,11 +613,11 @@ class HUD:
         screen.blit(hp_text, (left_rect.right - hp_text.get_width() - 12,
                               left_rect.y + 10))
         if player.rolling:
-            roll_label, roll_color = "ROULADE EN COURS", HUD_AMBER
+            roll_label, roll_color = "GLISSADE EN COURS", HUD_AMBER
         elif player.roll_cooldown <= 0.0:
-            roll_label, roll_color = "ROULADE PRÊTE", HUD_GREEN
+            roll_label, roll_color = "GLISSADE PRÊTE", HUD_GREEN
         else:  # compatibilité avec une éventuelle sauvegarde/ancienne session
-            roll_label = f"ROULADE  {player.roll_cooldown:.1f} s"
+            roll_label = f"GLISSADE  {player.roll_cooldown:.1f} s"
             roll_color = HUD_DIM
         roll_text = self._text(self.small_font, roll_label, roll_color)
         screen.blit(roll_text, (left_rect.x + 14,

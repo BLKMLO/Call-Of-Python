@@ -148,7 +148,7 @@ def validate(stage, output):
                         for _ in range(8):
                             mission_host.update(1 / 60)
                             mission_client.update(1 / 60)
-                        assert len(mission_client.upgrades.offers) == 3
+                        assert len(mission_client.upgrades.offers) == 4
                     mission_client.draw(screen)
                     pygame.image.save(screen, output / f"stage-{stage}-{size[0]}-mission-coop.png")
                 finally:

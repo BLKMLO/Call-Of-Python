@@ -1,6 +1,6 @@
 import unittest
 
-from upgrades import CHOICE_SECONDS, SessionUpgrades
+from upgrades import CAPS, CHOICE_SECONDS, SessionUpgrades
 from weapons import WEAPON_SPECS, Weapon
 
 
@@ -20,14 +20,16 @@ class UpgradeTests(unittest.TestCase):
         self.assertFalse(left.choose(1, 0))
 
     def test_caps_and_queued_rewards(self):
+        """Plus de limite de récompenses : chaque crédit donne un choix,
+        chaque bonus reste sous son plafond."""
         build = SessionUpgrades()
         for token in range(10):
             build.award(token)
-        for _ in range(6):
+        for _ in range(10):
             self.assertTrue(build.choose(build.offer_id, 0))
         self.assertFalse(build.offers)
-        self.assertEqual(sum(build.levels.values()), 6)
-        self.assertLessEqual(max(build.levels.values()), 2)
+        self.assertEqual(sum(build.levels.values()), 10)
+        self.assertTrue(all(level <= CAPS[key] for key, level in build.levels.items()))
 
     def test_apply_preserves_ammo_and_reload_progress(self):
         weapon = Weapon(WEAPON_SPECS["rifle"])

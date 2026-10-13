@@ -32,7 +32,7 @@ class TouchControls:
     BUTTON_LAYOUT: ClassVar = {
         "fire": (0.88, 0.75, 0.082, "TIR"),
         "aim": (0.76, 0.61, 0.064, "VISÉE"),
-        "roll": (0.69, 0.75, 0.068, "ROUL."),
+        "roll": (0.69, 0.75, 0.068, "GLIS."),
         "reload": (0.90, 0.54, 0.055, "R"),
         "weapon": (0.62, 0.64, 0.055, "ARME"),
         "interact": (0.51, 0.64, 0.048, "ACT."),

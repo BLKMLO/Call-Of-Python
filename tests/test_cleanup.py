@@ -157,7 +157,7 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(remote.rolling)
         host._resolve_remote_shot.assert_not_called()
 
-        remote.update_timers(0.56)
+        remote.update_timers(Player.ROLL_DURATION + 0.01)
         host.net_time += 0.1
         host._handle_input({
             "id": 1, "x": float("nan"), "y": remote.y,

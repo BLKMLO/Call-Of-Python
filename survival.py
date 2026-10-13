@@ -6,10 +6,14 @@ par les sas de l'arène, vague après vague, jusqu'à la 30e.
 
 Règles :
 - une vague est "terminée" quand tous ses ennemis sont morts ; la
-  suivante arrive après un court répit (et un petit bonus de soin) ;
+  suivante arrive après le temps qui restait au chrono plus 5 secondes
+  (le temps de recharger), avec un petit bonus de soin ;
 - MAIS si la vague n'est pas nettoyée avant la submersion (30 secondes
-  pour la 1ère vague, puis 10 % de moins à chaque nouvelle vague), la
-  suivante déferle quand même par-dessus : on peut être submergé ;
+  pour la 1ère vague, puis 10 % de moins à chaque nouvelle vague, sans
+  descendre sous 8 s pour les vagues 1-10, 6 s pour 11-20 et 4 s pour
+  21-30), la suivante déferle quand même par-dessus : on peut être
+  submergé ;
+- les ennemis sortent tous du portail central puis s'en écartent ;
 - les vagues grossissent et durcissent ; toutes les 10 vagues, un
   Colosse accompagne la horde ;
 - les trousses de soins réapparaissent toutes les 3 vagues, les packs de
@@ -27,6 +31,7 @@ from collections import deque
 
 from difficulty import ThreatDirector
 from elites import apply_elite
+from entities import ENEMY_TYPES
 from game import Game
 from level import SURVIVAL_LEVEL
 from mutators import apply_mutator, composition, mutator_for_wave
@@ -34,8 +39,14 @@ from mutators import apply_mutator, composition, mutator_for_wave
 FINAL_WAVE = 30                # dernière vague
 WAVE_TIMEOUT_BASE = 30.0       # délai de submersion de la 1ère vague (s)
 WAVE_TIMEOUT_DECAY = 0.9       # -10 % de délai à chaque nouvelle vague
-WAVE_TIMEOUT_MIN = 3.0         # plancher : reste jouable en fin de partie
-INTERMISSION = 4.0             # répit entre deux vagues nettoyées (s)
+WAVE_FLOOR_START = 8.0         # plancher des vagues 1-10 (s)
+WAVE_FLOOR_STEP = 2.0          # -2 s de plancher par tranche de 10 vagues
+WAVE_FLOOR_MIN = 2.0           # plancher absolu (au-delà de la vague 40)
+INTERMISSION = 4.0             # répit avant la toute première vague (s)
+CLEAR_BONUS = 5.0              # ajouté au chrono restant d'une vague nettoyée (s)
+EMERGE_TIME = 0.6              # durée de la poussée de sortie du portail (s)
+EMERGE_SPEED = 3.5             # vitesse de cette poussée (cases / s)
+SPAWN_MAX_DISTANCE = 2.0       # apparition toujours à moins de 2 m du portail
 SPAWN_INTERVAL = 0.4           # étalement des apparitions dans une vague (s)
 MAX_ALIVE = 24                 # ennemis simultanés (les autres attendent en file)
 MAX_CORPSES = 60               # cadavres conservés au sol (rendu)
@@ -45,11 +56,18 @@ UPGRADE_EVERY_SOLO = 2         # amélioration d'arme toutes les N vagues (solo)
 UPGRADE_EVERY_COOP = 3         # idem en coopération LAN (inchangé)
 
 
+def wave_floor(wave):
+    """Plancher du délai de submersion par tranche de 10 vagues :
+    8 s (1-10), 6 s (11-20), 4 s (21-30), sans passer sous 2 s."""
+    tier = max(0, wave - 1) // 10
+    return max(WAVE_FLOOR_MIN, WAVE_FLOOR_START - WAVE_FLOOR_STEP * tier)
+
+
 def wave_timeout(wave):
     """Délai de submersion de la vague `wave` (1-indexée) : 30 s pour la
-    1ère, réduit de 10 % à chaque vague suivante, avec un plancher."""
-    return max(WAVE_TIMEOUT_MIN,
-              WAVE_TIMEOUT_BASE * WAVE_TIMEOUT_DECAY ** max(0, wave - 1))
+    1ère, réduit de 10 % à chaque vague suivante, borné par `wave_floor`."""
+    return max(wave_floor(wave),
+               WAVE_TIMEOUT_BASE * WAVE_TIMEOUT_DECAY ** max(0, wave - 1))
 
 
 def wave_composition(wave):
@@ -80,6 +98,11 @@ def wave_composition(wave):
         else:
             kinds.append("grunt")
     return kinds
+
+
+def _spawn_radius(kind):
+    """Rayon de collision du type `kind` (le Colosse est plus large)."""
+    return ENEMY_TYPES[kind].RADIUS
 
 
 def wave_multipliers(wave):
@@ -131,7 +154,21 @@ class SurvivalGame(Game):
         super().update(dt)
         if self.paused or self.outcome is not None:
             return
+        self._update_emergence(dt)
         self._update_waves(dt)
+
+    def _update_emergence(self, dt):
+        """Poussée de sortie : chaque nouvel ennemi s'écarte vite du portail."""
+        for enemy in self.enemies:
+            emerge = getattr(enemy, "emerge", None)
+            if not emerge or not enemy.alive:
+                continue
+            dx, dy, remaining = emerge
+            step = EMERGE_SPEED * min(dt, remaining)
+            enemy.x, enemy.y = self.level.move_with_collisions(
+                enemy.x, enemy.y, dx * step, dy * step, enemy.RADIUS)
+            remaining -= dt
+            enemy.emerge = (dx, dy, remaining) if remaining > 0.0 else None
 
     def _check_outcome(self):
         """Pas de victoire "tous morts" ici : seule la vague 30 libère."""
@@ -171,10 +208,12 @@ class SurvivalGame(Game):
                 self.outcome = "victory"     # le Déferlement est brisé
                 self.sounds.play("level_complete")
             else:
-                # Vague nettoyée à temps : répit + regain de vie.
+                # Vague nettoyée à temps : le chrono restant devient un
+                # répit, allongé de quelques secondes pour recharger.
                 self.player.health = min(self.player.max_health,
                                          self.player.health + CLEAR_HEAL)
-                self.intermission = INTERMISSION
+                remaining = max(0.0, wave_timeout(self.wave) - self.wave_timer)
+                self.intermission = remaining + CLEAR_BONUS
                 every = UPGRADE_EVERY_SOLO if self.SOLO else UPGRADE_EVERY_COOP
                 if self.wave % every == 0:
                     self._award_upgrades(f"wave:{self.wave}")
@@ -227,31 +266,45 @@ class SurvivalGame(Game):
         entry = self.spawn_queue.popleft()
         kind, wave, mutator, elite = (entry if isinstance(entry, tuple)
                                       else (entry, self.wave, "", ""))
-        x, y = self._pick_spawn_point()
+        x, y, angle = self._pick_spawn_point(_spawn_radius(kind))
         hp_mult, dmg_mult = wave_multipliers(wave)
         enemy = self.spawn_enemy(kind, x, y, hp_mult, dmg_mult)
+        enemy.angle = angle
+        enemy.emerge = (math.cos(angle), math.sin(angle), EMERGE_TIME)
         apply_mutator(enemy, mutator)
         if sum(e.alive and bool(e.elite) for e in self.enemies) < 3:
             apply_elite(enemy, elite)
         # Il surgit en chasse, pas en patrouille.
         self.ais[-1].alert((self.player.x, self.player.y))
-        self.particles.spawn_portal(enemy.x, enemy.y)
+        self.particles.spawn_portal(*self._portal_center())
         self.sounds.play("spawn", volume_scale=0.8,
                          pos=(enemy.x, enemy.y), listener=self.player)
         self.spawn_cooldown = self.director.interval(SPAWN_INTERVAL)
         self._prune_corpses()
 
-    def _pick_spawn_point(self):
-        """Sas d'invasion le plus discret : loin du joueur, avec un peu
-        d'aléatoire dans la case."""
-        spawns = sorted(
-            self.level.horde_spawns,
-            key=lambda s: -math.hypot(s[0] - self.player.x,
-                                      s[1] - self.player.y))
-        # un des sas de la moitié la plus lointaine, au hasard
-        x, y = random.choice(spawns[:max(1, len(spawns) // 2)])
-        return (x + random.uniform(-0.25, 0.25),
-                y + random.uniform(-0.25, 0.25))
+    def _portal_center(self):
+        return self.level.config.get("portal") or self.level.horde_spawns[0]
+
+    def _pick_spawn_point(self, radius=0.3):
+        """Bouche du portail : (x, y, direction de sortie).
+
+        Le portail occupe une case bloquante ; l'ennemi apparaît juste à
+        son bord, dans une direction libre tirée au hasard, à moins de
+        `SPAWN_MAX_DISTANCE` du centre. Il s'en écarte ensuite (`emerge`).
+        """
+        cx, cy = self._portal_center()
+        start = random.uniform(0.0, 2 * math.pi)
+        for distance in (0.55 + radius, 0.85 + radius, 1.2 + radius):
+            for step in range(16):
+                angle = start + step * math.pi / 8
+                x = cx + math.cos(angle) * distance
+                y = cy + math.sin(angle) * distance
+                if self.level.can_stand(x, y, radius):
+                    return x, y, angle
+        # Arène modifiée sans place autour du portail : ancien sas le plus proche.
+        x, y = min(self.level.horde_spawns,
+                   key=lambda s: math.hypot(s[0] - cx, s[1] - cy))
+        return x, y, math.atan2(y - cy, x - cx)
 
     def _prune_corpses(self):
         """Limite le nombre de cadavres au sol (rendu et mémoire)."""

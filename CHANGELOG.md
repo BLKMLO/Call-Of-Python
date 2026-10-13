@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0 — Refonte du Déferlement (2026-10-13)
+
+- Glissade à la place de la roulade du joueur : 4,5 cases au lieu de 2,5
+  (7,5 cases/s décroissant de moitié sur 0,8 s), tir et rotation possibles
+  pendant la glissade, caméra abaissée. Mêmes touches (Maj, A, GLIS. tactile).
+- Cartes : plus de limite de six récompenses ; plafond par bonus. Quatre cartes
+  par offre : trois d'arme et une hors arme (Artificier, Glissade fantôme,
+  Blindage, Élan), choix F8 / croix bas pour la quatrième.
+- Vagues : submersion à 30 s puis -10 % par vague, plancher 8 s (1-10),
+  6 s (11-20), 4 s (21-30). Vague nettoyée : temps restant + 5 s avant la suivante.
+- Les ennemis sortent tous du portail central (à moins de 2 m) puis s'en écartent.
+- Sprites : onze frames d'ennemis nettoyées (débris de frames voisines, silhouettes
+  décalées), outil `tools/clean_sprites.py`.
+- Boss final géant du Déferlement préparé, non codé (`docs/boss-final-deferlement.md`).
+- Protocole LAN v5 (format des cartes et grenades), version 0.6.0. 161 tests.
+
 ## Non publié — Difficulté du Déferlement solo (2026-10-12)
 
 - Déferlement solo : plus de mutateurs ni de variantes élites ennemies

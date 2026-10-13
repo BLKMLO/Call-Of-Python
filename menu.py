@@ -14,6 +14,8 @@ import assets
 from difficulty import get_difficulty
 from settings import KEY_ACTIONS, RESOLUTIONS, valid_ipv4
 
+ACTION_LABELS = {"roulade": "Glissade"}
+
 TITLE_COLOR = (238, 242, 240)
 TEXT_COLOR = (205, 214, 216)
 HOVER_COLOR = (105, 238, 174)
@@ -512,7 +514,7 @@ class MainMenu(MenuBase):
             "bahnschrift,dejavusans,arial", max(12, h // 48), bold=True,
         )
         hint = font.render(
-            "ZQSD  DÉPLACEMENT   ·   MAJ  ROULADE   ·   SOURIS  VISÉE / TIR   ·   1–4  ARMES",
+            "ZQSD  DÉPLACEMENT   ·   MAJ  GLISSADE   ·   SOURIS  VISÉE / TIR   ·   1–4  ARMES",
             True, DIM_COLOR)
         screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
 
@@ -556,10 +558,12 @@ class SettingsMenu(MenuBase):
             (None, ""),  # séparateur
         ]
         for action in KEY_ACTIONS:
+            # La clé "roulade" est conservée pour les sauvegardes existantes.
+            name = ACTION_LABELS.get(action, action.capitalize())
             if self.waiting_action == action:
-                label = f"{action.capitalize()} :  [appuyez sur une touche]"
+                label = f"{name} :  [appuyez sur une touche]"
             else:
-                label = f"{action.capitalize()} :  {s.key_name(action)}"
+                label = f"{name} :  {s.key_name(action)}"
             rows.append((f"key:{action}", label))
         rows.append(("reset_keys", "Réinitialiser les touches"))
         rows.append(("back", "Retour"))

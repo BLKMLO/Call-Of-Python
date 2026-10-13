@@ -82,8 +82,15 @@ class Game:
         if carry_player is not None:
             self.player.weapons = carry_player.weapons
             self.player.weapon_index = carry_player.weapon_index
+            # Les cartes hors arme déjà appliquées ne se rejouent pas
+            # (pas de soin « Blindage » gratuit à chaque niveau).
+            for name in ("max_health", "vitality_applied", "grenade_applied"):
+                if hasattr(carry_player, name):
+                    setattr(self.player, name, getattr(carry_player, name))
             self.player.health = min(self.player.max_health,
                                      carry_player.health + LEVEL_HEAL)
+        self.grenade_ammo = self.upgrades.grenade_capacity
+        self.upgrades.apply_player(self.player)
         self.player.activate_shield()  # invulnérabilité le temps de s'orienter
 
         hp_mult = (
@@ -347,15 +354,16 @@ class Game:
             mouse_dy += touch_dy + pad_dy
             if self.settings.invert_mouse:
                 mouse_dx, mouse_dy = -mouse_dx, -mouse_dy   # option : souris inversée
-            if not player.rolling:
-                player.aiming = (
-                    self._mouse_aim_held
-                    or self.touch.aim_held
-                    or self.gamepad.aim_held
-                )
-                player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
+            # La glissade laisse viser librement (pas de lunette) : on tire
+            # en glissant.
+            player.aiming = not player.rolling and (
+                self._mouse_aim_held
+                or self.touch.aim_held
+                or self.gamepad.aim_held
+            )
+            player.rotate(mouse_dx, mouse_dy, self.settings.mouse_factor())
 
-            # Déplacement normal ou impulsion de roulade collisionnée.
+            # Déplacement normal ou impulsion de glissade collisionnée.
             keys = pygame.key.get_pressed()
             old_x, old_y = player.x, player.y
             touch_axes = self.touch.movement_axes() if self.touch.enabled else (0, 0)
@@ -370,7 +378,7 @@ class Game:
             )
             self.player_moving = moving   # relayé aux clients en coop LAN
 
-            # Une roulade ne produit pas une rafale artificielle de pas.
+            # Une glissade ne produit pas une rafale artificielle de pas.
             if player.rolling:
                 self.step_distance = 0.0
             else:
@@ -382,10 +390,9 @@ class Game:
                 self.sounds.play("step" if self.step_side else "step2",
                                  volume_scale=0.35)
 
-            # Tir maintenu (armes automatiques uniquement).
-            if (not player.rolling
-                    and (self._mouse_fire_held or self.touch.fire_held
-                         or self.gamepad.fire_held)
+            # Tir maintenu (armes automatiques uniquement), glissade comprise.
+            if ((self._mouse_fire_held or self.touch.fire_held
+                 or self.gamepad.fire_held)
                     and player.weapon.spec.automatic):
                 self._player_fire()
 
@@ -522,7 +529,7 @@ class Game:
         self.upgrades.award(token)
         if token not in self._supply_tokens and len(self._supply_tokens) < 64:
             self._supply_tokens.add(token)
-            self.grenade_ammo = min(2, self.grenade_ammo + 1)
+            self.grenade_ammo = min(self.upgrades.grenade_capacity, self.grenade_ammo + 1)
 
     def _throw_grenade(self):
         if self.grenade_ammo > 0 and self.grenade_cooldown <= 0:
@@ -583,11 +590,17 @@ class Game:
 
     def _choose_upgrade(self, index):
         self.upgrades.choose(self.upgrades.offer_id, index)
-        self.upgrades.apply(self.player.weapons)
+        self._apply_upgrades()
 
     def _update_upgrades(self, dt):
         self.upgrades.update(dt)
+        self._apply_upgrades()
+
+    def _apply_upgrades(self):
+        """Cartes d'arme et hors arme ; « Artificier » remplit le stock."""
         self.upgrades.apply(self.player.weapons)
+        if self.upgrades.apply_player(self.player):
+            self.grenade_ammo = self.upgrades.grenade_capacity
 
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0,
                     possessed=False):
@@ -891,8 +904,6 @@ class Game:
     # Tir du joueur (hitscan, multi-plombs pour le fusil à pompe)
     # ------------------------------------------------------------------
     def _player_fire(self):
-        if self.player.rolling:
-            return
         weapon = self.player.weapon
         if not weapon.fire():
             return
@@ -1043,7 +1054,8 @@ class Game:
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
                                 self._objective_visible)
         draw_choices(screen, self.hud, self.upgrades)
-        self.hud.draw_grenade_count(screen, self.grenade_ammo)
+        self.hud.draw_grenade_count(screen, self.grenade_ammo,
+                                    self.upgrades.grenade_capacity)
         if not hasattr(self, "rescue"):
             draw_support(screen, self.hud, self.player, self.pings)
         if self.paused:
@@ -1051,16 +1063,17 @@ class Game:
         self.touch.draw(screen, paused=self.paused)
 
     def _player_roll_camera(self, screen):
-        """Donne du poids à la roulade sans transformer le HUD avec le monde."""
+        """Glissade : caméra abaissée et légèrement inclinée, sans toucher au
+        HUD. La caméra descend vite puis remonte en fin de glissade."""
         progress = self.player.roll_progress
-        arc = math.sin(progress * math.pi)
-        angle = -self.player.roll_strafe * arc * 8.0
-        scale = 1.02 + arc * 0.04
+        arc = math.sin(min(1.0, progress * 1.6) * math.pi * 0.5) * (1.0 - progress ** 4)
+        angle = -self.player.roll_strafe * arc * 3.0
+        scale = 1.03 + arc * 0.08   # couvre le décalage vertical et l'inclinaison
         # Rotation entière + agrandissement dans un tampon réutilisé : trois
         # fois moins cher que `rotozoom` pour le même cadrage.
         transformed = rotate_zoom_screen(screen, angle, scale)
         center = (screen.get_width() // 2,
-                  screen.get_height() // 2 + int(arc * screen.get_height() * 0.035))
+                  screen.get_height() // 2 - int(arc * screen.get_height() * 0.04))
         screen.blit(transformed, transformed.get_rect(center=center))
 
     def _death_cam_roll(self, screen, fall):
