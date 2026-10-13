@@ -102,7 +102,8 @@ class Settings:
 
     def __init__(self):
         self.resolution_index = 3        # 1280x720 par défaut
-        self.sound_volume = 0.4          # effets sonores (0.0 → 1.0), bas pour laisser entendre la musique
+        # Effets sonores (0.0 → 1.0) : bas par défaut pour laisser entendre la musique.
+        self.sound_volume = 0.4
         self.music_volume = 0.7          # musique (0.0 → 1.0)
         self.sensitivity = 0.5           # sensibilité souris (0.1 → 1.0)
         self.invert_mouse = False        # inverse les deux axes de la souris
