@@ -47,6 +47,7 @@ CLEAR_INTERMISSION = 7.0       # répit fixe après une vague nettoyée (s)
 EMERGE_TIME = 0.6              # durée de la poussée de sortie du portail (s)
 EMERGE_SPEED = 3.5             # vitesse de cette poussée (cases / s)
 SPAWN_MAX_DISTANCE = 2.0       # apparition toujours à moins de 2 m du portail
+SPAWN_PLAYER_CLEARANCE = 1.2   # distance minimale visée entre apparition et joueur
 SPAWN_INTERVAL = 0.4           # étalement des apparitions dans une vague (s)
 MAX_ALIVE = 24                 # ennemis simultanés (les autres attendent en file)
 MAX_CORPSES = 60               # cadavres conservés au sol (rendu)
@@ -289,18 +290,30 @@ class SurvivalGame(Game):
         """Bouche du portail : (x, y, direction de sortie).
 
         Le portail occupe une case bloquante ; l'ennemi apparaît juste à
-        son bord, dans une direction libre tirée au hasard, à moins de
-        `SPAWN_MAX_DISTANCE` du centre. Il s'en écarte ensuite (`emerge`).
+        son bord, dans une direction libre tirée au hasard (de préférence
+        loin des joueurs), à moins de `SPAWN_MAX_DISTANCE` du centre. Il
+        s'en écarte ensuite (`emerge`).
         """
         cx, cy = self._portal_center()
+        players = [p for p in self._all_players() if p.alive]
         start = random.uniform(0.0, 2 * math.pi)
         for distance in (0.55 + radius, 0.85 + radius, 1.2 + radius):
+            free = []
             for step in range(16):
                 angle = start + step * math.pi / 8
                 x = cx + math.cos(angle) * distance
                 y = cy + math.sin(angle) * distance
                 if self.level.can_stand(x, y, radius):
-                    return x, y, angle
+                    gap = min((math.hypot(x - p.x, y - p.y) for p in players),
+                              default=math.inf)
+                    free.append((gap, x, y, angle))
+            if free:
+                # Jamais sur un joueur collé au portail : on sort par le côté
+                # dégagé, au hasard parmi les bouches assez éloignées.
+                clear = [spot for spot in free if spot[0] >= SPAWN_PLAYER_CLEARANCE]
+                _gap, x, y, angle = (random.choice(clear) if clear
+                                     else max(free, key=lambda spot: spot[0]))
+                return x, y, angle
         # Arène modifiée sans place autour du portail : ancien sas le plus proche.
         x, y = min(self.level.horde_spawns,
                    key=lambda s: math.hypot(s[0] - cx, s[1] - cy))

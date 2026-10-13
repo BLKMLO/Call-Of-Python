@@ -123,6 +123,15 @@ class SurvivalGameTests(unittest.TestCase):
         self.assertGreater(math.hypot(enemy.x - cx, enemy.y - cy), start + 1.0)
         self.assertIsNone(enemy.emerge)
 
+    def test_spawn_avoids_a_player_camping_at_the_portal(self):
+        game = self.game
+        cx, cy = game.level.config["portal"]
+        game.player.x, game.player.y = cx + 0.9, cy
+        for _ in range(60):
+            x, y, _angle = game._pick_spawn_point(0.3)
+            self.assertGreaterEqual(math.hypot(x - game.player.x, y - game.player.y), 1.2)
+            self.assertLess(math.hypot(x - cx, y - cy), SPAWN_MAX_DISTANCE)
+
     def test_firing_is_allowed_while_sliding(self):
         game = self.game
         game.player.start_roll(defaultdict(bool), DEFAULT_KEYS)

@@ -31,7 +31,10 @@
 - **Apparitions** : `_pick_spawn_point(radius)` renvoie `(x, y, angle)` à la
   bouche du portail (`level.config["portal"]`, case bloquante) : distance
   0,55/0,85/1,2 + rayon, 16 directions, `can_stand` ; < `SPAWN_MAX_DISTANCE`
-  (2 m). Puis `enemy.emerge` pousse l'ennemi vers l'extérieur
+  (2 m), en choisissant au hasard parmi les bouches à >= 1,2 m de tout joueur
+  vivant (`SPAWN_PLAYER_CLEARANCE`, sinon la plus éloignée) : un joueur collé
+  au portail ne reçoit pas d'ennemi sur lui. Puis `enemy.emerge` pousse
+  l'ennemi vers l'extérieur
   (`EMERGE_SPEED` 3,5 × `EMERGE_TIME` 0,6 s = 2,1 m). Les cases `S` de la carte
   ne servent plus que de repli.
 - **Sprites** : `tools/clean_sprites.py` (+ `--check`, testé) retire les débris
@@ -44,6 +47,13 @@
   OK (assertion passée à 4 cartes ; datagramme max 718 octets). Captures
   800×600 des cartes et de la glissade inspectées. Non testé : ressenti en jeu
   réel, LAN multi-machines.
+- Passe bugs du 13 octobre : fuzz sans affichage (4 graines solo : 30 vagues
+  jusqu'à la victoire + 5 niveaux de campagne ; coop hôte+client UDP loopback :
+  30 vagues), entrées aléatoires (glissade, grenade, cartes F5–F8, tir) ;
+  contrôles position finie, hors carte, ennemi dans un mur, PV, grenades :
+  aucun défaut. Suite en `-X dev` sans avertissement, Ruff étendu (F, B, PLE,
+  PLW) : style seulement. Seul défaut trouvé et corrigé : apparition possible
+  sur un joueur collé au portail. Scripts de fuzz non versionnés.
 - Les sections plus bas qui parlent de « six choix », « deux niveaux par
   bonus », roulade de 2,5 cases ou protocole v4 sont historiques.
 
