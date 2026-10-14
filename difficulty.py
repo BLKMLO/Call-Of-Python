@@ -15,12 +15,34 @@ class DifficultyProfile:
     # Facteur appliqué au délai de submersion à chaque nouvelle vague du
     # Déferlement : -3 % (Recrue), -6 % (Soldat), -10 % (Vétéran).
     wave_timeout_decay: float
+    # Confort du joueur. Soldat garde exactement les valeurs historiques.
+    clear_heal: int            # PV rendus par vague nettoyée (Déferlement)
+    level_heal: int            # PV rendus en passant au niveau suivant
+    spawn_shield: float        # bouclier d'arrivée (s)
+    lifepack_every: int        # le pack de vie revient toutes les N vagues
+    enemy_count: float         # multiplicateur du nombre d'ennemis par vague
+    boss_tempo: float          # multiplicateur du temps de repos du Colosse
+    reinforcement_cap: float   # multiplicateur des renforts de mission
+    countdown_mult: float      # multiplicateur des comptes à rebours de mission
+    summary: str               # résumé affiché dans le menu principal
 
 
 DIFFICULTIES = {
-    "recruit": DifficultyProfile("recruit", "Recrue", 0.82, 0.72, 1.20, 0.97),
-    "soldier": DifficultyProfile("soldier", "Soldat", 1.00, 1.00, 1.00, 0.94),
-    "veteran": DifficultyProfile("veteran", "Veteran", 1.22, 1.28, 0.86, 0.90),
+    "recruit": DifficultyProfile(
+        "recruit", "Recrue", 0.82, 0.72, 1.20, 0.97,
+        clear_heal=20, level_heal=55, spawn_shield=4.0, lifepack_every=1,
+        enemy_count=0.8, boss_tempo=1.2, reinforcement_cap=0.75, countdown_mult=1.25,
+        summary="Ennemis moins nombreux, soins généreux"),
+    "soldier": DifficultyProfile(
+        "soldier", "Soldat", 1.00, 1.00, 1.00, 0.94,
+        clear_heal=12, level_heal=40, spawn_shield=3.0, lifepack_every=2,
+        enemy_count=1.0, boss_tempo=1.0, reinforcement_cap=1.0, countdown_mult=1.0,
+        summary="L'expérience prévue"),
+    "veteran": DifficultyProfile(
+        "veteran", "Vétéran", 1.22, 1.28, 0.86, 0.90,
+        clear_heal=6, level_heal=25, spawn_shield=2.0, lifepack_every=3,
+        enemy_count=1.25, boss_tempo=0.75, reinforcement_cap=1.5, countdown_mult=0.8,
+        summary="Hordes denses, Colosse enragé, peu de soins"),
 }
 DIFFICULTY_ORDER = tuple(DIFFICULTIES)
 

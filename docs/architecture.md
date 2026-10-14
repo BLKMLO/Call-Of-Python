@@ -91,10 +91,12 @@ les séquences et la validation autoritaire ne changent pas.
 
 Responsabilites principales :
 
-- `game.py` orchestre une mission ;
+- `game.py` orchestre une mission ; `missions.py` (renforts, compte à
+  rebours, otage, générateurs du Colosse) pilote les missions de campagne ;
 - `survival.py` ajoute les vagues et le directeur de pression ;
 - `entities.py`, `weapons.py` et `ai.py` portent les regles ;
 - `raycaster.py`, `hud.py`, `particles.py` et `sounds.py` produisent la vue ;
+  `ui_style.py` fournit le texte stylé partagé menus/HUD ;
 - `network.py` ne connait que le transport ;
 - `coop.py` porte l'autorite hote et la replication ;
 - `difficulty.py`, `runtime.py` et `version.py` centralisent les politiques.

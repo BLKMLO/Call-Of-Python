@@ -313,18 +313,25 @@ class HUD:
     # ------------------------------------------------------------------
     # Rendu
     # ------------------------------------------------------------------
-    def draw_objective(self, screen, player, mission, key, visible):
+    def draw_objective(self, screen, player, mission, key, visible, extra=()):
         step = mission.current
         if step is None:
+            # Déferlement : sous la ligne de vague (et du mutateur coop).
+            self._draw_status_lines(screen, extra, 225 if self.width < 1000 else 104)
             return
         distance = math.hypot(step.x - player.x, step.y - player.y)
         bearing = (math.atan2(step.y - player.y, step.x - player.x)
                    - player.angle + math.pi) % (2 * math.pi) - math.pi
         direction = "DEVANT" if abs(bearing) < 0.35 else ("DROITE" if bearing > 0 else "GAUCHE")
         detail = f"{direction} · {distance:.0f} m"
-        if mission.in_range(player, step, visible):
-            detail = (f"[{key.upper()} / LB / ACT.] Interagir" if step.kind == "interact"
-                      else f"Rester dans la zone : {mission.elapsed:.1f} / {step.duration:.0f} s")
+        if step.kind == "eliminate":
+            detail = "Éliminez la cible"
+        elif mission.in_range(player, step, visible):
+            detail = {
+                "interact": f"[{key.upper()} / LB / ACT.] Interagir",
+                "defend": f"Rester dans la zone : {mission.elapsed:.1f} / {step.duration:.0f} s",
+                "escort": "Attendez l'otage dans la zone",
+            }.get(step.kind, detail)
         width = min(460, screen.get_width() - 32)
         panel = pygame.Rect((screen.get_width() - width) // 2, 160, width, 54)
         pygame.draw.rect(screen, (10, 22, 29), panel, border_radius=4)
@@ -334,6 +341,24 @@ class HUD:
             if text.get_width() > width - 16:
                 text = pygame.transform.smoothscale(text, (width - 16, text.get_height()))
             screen.blit(text, (panel.centerx - text.get_width() // 2, panel.y + 4 + line * 25))
+        self._draw_status_lines(screen, extra, panel.bottom + 4)
+
+    def _draw_status_lines(self, screen, lines, top):
+        """Compte à rebours, otage, contrat... sous le panneau d'objectif."""
+        y = top
+        for content, color in lines:
+            text = self.small_font.render(content, True, color)
+            if text.get_width() > screen.get_width() - 32:
+                text = pygame.transform.smoothscale(
+                    text, (screen.get_width() - 32, text.get_height()))
+            # Largeur arrondie à 16 px : le cache des plaques reste petit
+            # même quand le texte change (compte à rebours, pourcentage).
+            plate = self._panel(((text.get_width() + 35) // 16 * 16,
+                                 text.get_height() + 6))
+            x = (screen.get_width() - plate.get_width()) // 2
+            screen.blit(plate, (x, y))
+            screen.blit(text, (x + 10, y + 3))
+            y += plate.get_height() + 3
 
     def draw_grenade_count(self, screen, count, capacity=2):
         text = self.small_font.render(f"FRAG. {count}/{capacity}", True, HUD_AMBER)
@@ -652,7 +677,13 @@ class HUD:
 
         weapon = player.weapon
         low = weapon.ammo <= max(1, weapon.spec.magazine_size // 4)
-        if weapon.reloading > 0.0:
+        if weapon.spec.heat:
+            # Munitions illimitées : jauge de chaleur à la place du chargeur.
+            blink = int(self.time_acc * 6) % 2 == 0
+            ammo_str = "∞"
+            ammo_col = ((235, 70, 60) if blink else (150, 40, 34)) if weapon.overheated \
+                else HUD_TEXT
+        elif weapon.reloading > 0.0:
             ammo_str, ammo_col = "RECHARGEMENT...", (235, 200, 120)
         elif weapon.ammo == 0:
             # chargeur vide : invite au rechargement, clignotante.
@@ -669,6 +700,10 @@ class HUD:
         screen.blit(ammo_text,
                     (right_rect.right - ammo_text.get_width() - 12,
                      right_rect.bottom - ammo_text.get_height() - 5))
+        if weapon.spec.heat:
+            self._draw_heat(screen, weapon, pygame.Rect(
+                right_rect.x + 12, right_rect.bottom - 22,
+                max(40, right_rect.width - ammo_text.get_width() - 40), 10))
 
         if survival is not None:
             remaining = survival["remaining"]   # inclut la file d'attente
@@ -687,6 +722,21 @@ class HUD:
         if stats is not None:
             screen.blit(kills, (info_rect.x + 12,
                                 info_rect.y + 8 + info.get_height()))
+
+    def _draw_heat(self, screen, weapon, rect):
+        """Jauge de chaleur du minigun (vert → ambre → rouge) et lancement."""
+        heat = max(0.0, min(1.0, weapon.heat))
+        color = (HUD_GREEN if heat < 0.6 else HUD_AMBER if heat < 0.85
+                 else (235, 70, 60))
+        if weapon.overheated:
+            color = (235, 70, 60) if int(self.time_acc * 6) % 2 == 0 else (150, 40, 34)
+        pygame.draw.rect(screen, (28, 43, 47), rect)
+        pygame.draw.rect(screen, color, (rect.x, rect.y, int(rect.width * heat), rect.height))
+        pygame.draw.rect(screen, (78, 98, 101), rect, 1)
+        label = "SURCHAUFFE" if weapon.overheated else (
+            "CHALEUR" if weapon.spin >= 1.0 or weapon.spin <= 0.0 else "LANCEMENT")
+        text = self._text(self.small_font, label, color if weapon.overheated else HUD_DIM)
+        screen.blit(text, (rect.x, rect.y - text.get_height() - 2))
 
     def _draw_slots(self, screen, player, box=44):
         """Emplacements d'armes (touches 1..4), l'arme active surlignée."""

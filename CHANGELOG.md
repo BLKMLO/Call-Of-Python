@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.0 — Difficulté, missions et rôles des armes (2026-10-14)
+
+- Difficulté : en plus de la vie/des dégâts ennemis et du délai de vague,
+  elle règle les PV rendus (vague nettoyée 20/12/6, entre niveaux 55/40/25),
+  le bouclier d'arrivée (4/3/2 s), la fréquence du pack de vie du Déferlement
+  (chaque vague / 2 / 3), le nombre d'ennemis par vague (×0,8/×1/×1,25), le
+  repos du Colosse (×1,2/×1/×0,75), les renforts (×0,75/×1/×1,5) et les comptes
+  à rebours (×1,25/×1/×0,8). Soldat garde les valeurs historiques.
+- Difficulté choisie depuis le menu principal ; le thème des menus suit :
+  vert (Recrue), ambre (Soldat), rouge (Vétéran), illustration teintée et
+  insigne à 1–3 chevrons.
+- Missions : Métropole (balise, tenir 30 s sous renforts, hélicoptère),
+  Gouvernement (3 dossiers, otage à escorter, ciblé par l'ennemi), Base
+  militaire (3 batteries avant le lancement des missiles, renforts à chaque
+  sabotage), Laboratoire (3 générateurs rendent le Colosse invulnérable).
+  Nouvel écran « Mission échouée ». Module `missions.py`, objectif `escort`.
+- Armes : minigun à munitions illimitées avec surchauffe (70 tirs,
+  refroidissement 2,2 s, lancement 0,4 s, déplacement ×0,65 en tirant,
+  ×0,6 contre le blindage) ; pistolet perforant (×1,4 blindage, ×1,75 en
+  visée) ; fusil à pompe ×1,5 à bout portant, étourdit et repousse. Quatre
+  cartes propres aux armes (Balles explosives, Chevrotine lourde,
+  Perforantes, Refroidissement).
+- Ennemis : porte-boucliers (bouclier frontal, 15 % des dégâts de face) dans
+  le Déferlement dès la vague 7 et en Gouvernement/Base ; essaims de
+  kamikazes rapides (×1,25) une vague sur quatre dès la 8e.
+- Déferlement : contrats optionnels (vagues 2, 5, 8…) récompensés par une
+  carte bonus, répliqués en coop.
+- Protocole LAN v6 (bouclier en `en[16]`, contrat dans `wv`, sémantique du
+  minigun). 194 tests.
+
 ## Non publié — Délai selon la difficulté et menus « jeu vidéo » (2026-10-14)
 
 - Déferlement : la baisse du délai de submersion dépend de la difficulté —

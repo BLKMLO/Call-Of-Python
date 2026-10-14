@@ -11,8 +11,8 @@ import pygame
 
 import assets
 from boss_patterns import BossPattern
-from elites import variant_sprite
-from weapons import WEAPON_ORDER, WEAPON_SPECS, Weapon
+from elites import shield_sprite, variant_sprite
+from weapons import HEAVY_MOVE_MULT, WEAPON_ORDER, WEAPON_SPECS, Weapon
 
 
 def _blocked_by_entity(old_x, old_y, x, y, radius, blockers):
@@ -155,10 +155,11 @@ class Player(Entity):
         elapsed = self.ROLL_DURATION - self.roll_timer
         return self.ROLL_IFRAME_START <= elapsed < self.ROLL_IFRAME_END
 
-    def activate_shield(self):
+    def activate_shield(self, duration=None):
         """Bouclier temporaire : le joueur est invulnérable à l'arrivée sur
-        un niveau (le temps de repérer les lieux avant le premier tir)."""
-        self.shield = self.SHIELD_DURATION
+        un niveau (le temps de repérer les lieux avant le premier tir). La
+        durée dépend de la difficulté (`spawn_shield`)."""
+        self.shield = self.SHIELD_DURATION if duration is None else float(duration)
 
     # ------------------------------------------------------------------
     # Arsenal
@@ -244,6 +245,8 @@ class Player(Entity):
         speed = self.SPEED * dt / length
         if self.aiming:
             speed *= self.ADS_MULT           # on avance au ralenti en visée
+        if self.weapon.firing_heavy:
+            speed *= HEAVY_MOVE_MULT         # le minigun alourdit le pas
         cos_a, sin_a = math.cos(self.angle), math.sin(self.angle)
         dx = (forward * cos_a - strafe * sin_a) * speed
         dy = (forward * sin_a + strafe * cos_a) * speed
@@ -382,6 +385,10 @@ class Enemy(Entity):
         self.roll_dx = 0.0
         self.roll_dy = 0.0
         self.possessed = False
+        self.shielded = False    # porte-bouclier : bouclier frontal
+        self.stun_timer = 0.0    # étourdi (fusil à pompe) : IA figée, bouclier baissé
+        self.swarm = False       # membre d'un essaim (Déferlement)
+        self.invulnerable = False  # Colosse protégé par des générateurs
         self._base_speed = type(self).SPEED
         self._base_can_roll = type(self).CAN_ROLL
         # Demande consommée par l'IA après la résolution complète du tir.
@@ -446,12 +453,19 @@ class Enemy(Entity):
         if self.possessed:
             sprite = assets.get_possessed(name, flipped, hurt=hurt)
         elif hurt:
-            return assets.get_tinted(name, flipped)
+            sprite = assets.get_tinted(name, flipped)
         else:
             sprite = assets.get(name, flipped)
-        variant = ("commander" if self.KIND == "commander" else self.elite
-                   or ("commanded" if self.commanded else ""))
-        return variant_sprite(sprite, variant)
+        if not (hurt and not self.possessed):
+            variant = ("commander" if self.KIND == "commander" else self.elite
+                       or ("sealed" if self.invulnerable else "")
+                       or ("commanded" if self.commanded else ""))
+            sprite = variant_sprite(sprite, variant)
+        if (self.shielded and "_back" not in name and "_side" not in name
+                and "_dead" not in name):
+            # Bouclier levé de face ; baissé (de biais) quand il est étourdi.
+            sprite = shield_sprite(sprite, lowered=self.stun_timer > 0.0)
+        return sprite
 
     def set_possessed(self, enabled=True):
         """Active la variante du Déferlement et ses règles de mobilité.
@@ -476,7 +490,7 @@ class Enemy(Entity):
             self.hit_roll_request = None
 
     def take_damage(self, amount):
-        if self.roll_invuln > 0.0:
+        if self.roll_invuln > 0.0 or self.invulnerable:
             return False
         died = super().take_damage(amount)
         if died:
@@ -505,6 +519,7 @@ class Enemy(Entity):
         self.roll_timer = max(0.0, self.roll_timer - dt)
         self.roll_invuln = max(0.0, self.roll_invuln - dt)
         self.roll_cooldown = max(0.0, self.roll_cooldown - dt)
+        self.stun_timer = max(0.0, self.stun_timer - dt)
         if self.aiming:
             self.aim_timer = max(0.0, self.aim_timer - dt)
         self.ai_timer += dt

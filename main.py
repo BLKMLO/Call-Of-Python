@@ -291,6 +291,14 @@ def main():
                     sounds.play_music("menu")
                 elif isinstance(game, (SurvivalGame, CoopClientGame)):
                     end_survival()
+                elif game.outcome == "failed":
+                    transition = EndScreen(sounds, victory=False,
+                                           title="MISSION ÉCHOUÉE",
+                                           subtitle=(f"{game.failure_reason} "
+                                                     "Vous repartez de zéro."),
+                                           stats=game.stats)
+                    state = "end"
+                    sounds.play_music("menu")
                 elif game.outcome == "dead":
                     transition = EndScreen(sounds, victory=False,
                                            stats=game.stats)

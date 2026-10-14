@@ -81,6 +81,8 @@ class ReloadAndMusicTests(unittest.TestCase):
         hud = HUD(screen.get_size())
 
         for weapon_id in WEAPON_ORDER:
+            if WEAPON_SPECS[weapon_id].heat:
+                continue    # minigun : munitions illimitées, jamais rechargé
             weapon = Weapon(WEAPON_SPECS[weapon_id])
             weapon.ammo -= 1
             player.weapons = [weapon]
@@ -109,6 +111,8 @@ class ReloadAndMusicTests(unittest.TestCase):
         hud = HUD(screen.get_size())
 
         for weapon_id in WEAPON_ORDER:
+            if WEAPON_SPECS[weapon_id].heat:
+                continue    # minigun : munitions illimitées, jamais rechargé
             weapon = Weapon(WEAPON_SPECS[weapon_id])
             weapon.ammo -= 1
             weapon.start_reload()

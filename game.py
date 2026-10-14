@@ -14,7 +14,7 @@ import assets
 from ai import EnemyAI
 from coop_support import Pings
 from difficulty import get_difficulty
-from elites import apply_elite, update_command
+from elites import apply_elite, apply_shield, update_command
 from entities import ENEMY_TYPES, Pickup, Player, Prop, move_with_entity_collisions
 from gamepad import GamepadInput, reset_gameplay_input
 from grenades import DAMAGE as GRENADE_DAMAGE
@@ -24,6 +24,7 @@ from hazards import draw_boss_warnings
 from hud import HUD
 from level import Level
 from mission_marker import MissionMarker
+from missions import MissionDirector
 from objectives import Mission
 from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, has_line_of_sight, rotate_zoom_screen, zoom_screen
@@ -32,11 +33,18 @@ from support_ui import draw_support, ping_sprites
 from touch_controls import FINGER_EVENTS, TouchControls
 from upgrade_ui import choice_event, draw_choices
 from upgrades import SessionUpgrades
+from weapons import SHOTGUN_CLOSE_RANGE, armored, shot_damage
 
 MEDKIT_HEAL = 35
 PICKUP_RADIUS = 0.55         # distance de ramassage
-LEVEL_HEAL = 40              # PV rendus en passant au niveau suivant
+LEVEL_HEAL = 40              # PV rendus entre deux niveaux en Soldat (voir difficulty.py)
 GUNSHOT_HEARING = 9.0        # rayon dans lequel un tir alerte les ennemis
+STUN_TIME = 0.5              # étourdissement d'un coup de fusil à pompe (s)
+KNOCKBACK = 0.35             # recul infligé par le fusil à pompe (m)
+SHOTGUN_HEAVY_RANGE = 3.5    # bout portant étendu (carte « Chevrotine lourde »)
+PIERCE_MULT = 0.6            # 2e cible d'une balle perforante (fusil d'assaut)
+PISTOL_SPLASH_MULT = 0.4     # éclats des balles explosives du pistolet
+PISTOL_SPLASH_RADIUS = 1.2
 SHOUT_HEARING = 5.0          # rayon du cri d'alerte d'un ennemi
 
 # Caméra de mort (façon Dark Souls) : le protagoniste s'effondre au sol,
@@ -88,10 +96,11 @@ class Game:
                 if hasattr(carry_player, name):
                     setattr(self.player, name, getattr(carry_player, name))
             self.player.health = min(self.player.max_health,
-                                     carry_player.health + LEVEL_HEAL)
+                                     carry_player.health + self.difficulty.level_heal)
         self.grenade_ammo = self.upgrades.grenade_capacity
         self.upgrades.apply_player(self.player)
-        self.player.activate_shield()  # invulnérabilité le temps de s'orienter
+        # Invulnérabilité le temps de s'orienter (durée selon la difficulté).
+        self.player.activate_shield(self.difficulty.spawn_shield)
 
         hp_mult = (
             self.level.config["enemy_health_mult"]
@@ -103,6 +112,14 @@ class Game:
         )
         self.enemies = [ENEMY_TYPES[kind](x, y, hp_mult, dmg_mult)
                         for x, y, kind in self.level.enemy_spawns]
+        for enemy in self.enemies:
+            self._tune_enemy(enemy)
+        # Porte-boucliers de campagne : un soldat sur `shield_every`.
+        shield_every = self.level.config.get("shield_every", 0)
+        if shield_every:
+            soldiers = [e for e in self.enemies if e.KIND == "soldier"]
+            for enemy in soldiers[shield_every - 1::shield_every]:
+                apply_shield(enemy)
         for index, elite in self.level.config.get("elites", {}).items():
             if 0 <= index < len(self.enemies):
                 apply_elite(self.enemies[index], elite)
@@ -111,6 +128,8 @@ class Game:
                         + 500 * len(self.mission.steps) + 500)
         self.score = ScoreBook(self.stats.get("score", 0), target_score)
         self.ais = [EnemyAI(enemy) for enemy in self.enemies]
+        self.failure_reason = ""
+        self.mission_director = MissionDirector(self, self.level.config, self.difficulty)
         self.pickups = [Pickup(x, y, kind, level_index)
                         for x, y, kind in self.level.pickup_spawns]
         self.props = [Prop(x, y, kind)
@@ -406,6 +425,11 @@ class Game:
         # plusieurs en coopération LAN).
         for ai in self.ais:
             target = self._ai_target(ai.enemy)
+            if ai.enemy.stun_timer > 0.0 and ai.enemy.alive:
+                # Étourdi par le fusil à pompe : ni pas ni tir.
+                ai.enemy.update_timers(dt)
+                ai.enemy.moving = False
+                continue
             if ai.enemy.IS_BOSS and self._tick_boss(ai.enemy, dt, target):
                 continue
             for event, data in ai.update(dt, target, self.level):
@@ -442,6 +466,7 @@ class Game:
         if self.outcome is None:
             self.mission.update(dt, self._all_players(), self._objective_visible,
                                 any(enemy.alive for enemy in self.enemies))
+            self.mission_director.update(dt)
             self._check_outcome()
         else:
             self.end_delay += dt
@@ -454,6 +479,13 @@ class Game:
         """Fin de partie standard ; surchargé par le mode survie."""
         if not self.player.alive:
             self.outcome = "dead"
+        elif self.mission_director.failure:
+            # Mission échouée (otage abattu, compte à rebours écoulé) :
+            # pas de caméra de mort, un bandeau puis l'écran d'échec.
+            self.outcome = "failed"
+            self.failure_reason = self.mission_director.failure
+            self.hud.announce("MISSION ÉCHOUÉE")
+            self.hud.show_message(self.failure_reason)
         elif (self.mission.complete if self.mission.steps else
               all(not enemy.alive for enemy in self.enemies)):
             self.outcome = "victory"
@@ -570,6 +602,7 @@ class Game:
                 self._on_enemy_impact(enemy, fatal=died)
             if died:
                 killed += 1
+                self._credit_kill(enemy, "grenade")
                 self.sounds.play("enemy_die", pos=(enemy.x, enemy.y), listener=self.player)
                 if enemy.EXPLODES:
                     self._explode(enemy)
@@ -613,15 +646,35 @@ class Game:
             dmg_mult * self.difficulty.enemy_damage,
         )
         enemy.set_possessed(possessed)
+        self._tune_enemy(enemy)
         self.enemies.append(enemy)
         self.ais.append(EnemyAI(enemy))
         return enemy
+
+    def _credit_kill(self, enemy, weapon_id):
+        """Élimination attribuée à une arme (contrats du Déferlement)."""
+
+    def _status_lines(self):
+        """Lignes affichées sous l'objectif (compte à rebours, otage...)."""
+        return self.mission_director.status_lines()
+
+    def _tune_enemy(self, enemy):
+        """Réglages de difficulté propres à certains ennemis (Colosse)."""
+        pattern = getattr(enemy, "pattern", None)
+        if pattern is not None:
+            pattern.tempo = self.difficulty.boss_tempo
 
     # ------------------------------------------------------------------
     # Points d'ancrage surchargés par la coopération LAN (coop.py)
     # ------------------------------------------------------------------
     def _ai_target(self, enemy):
-        """Cible de cet ennemi : le joueur (le plus proche, en coop)."""
+        """Cible de cet ennemi : le joueur (le plus proche, en coop), ou
+        l'otage escorté s'il est plus près que le joueur."""
+        hostage = getattr(getattr(self, "mission_director", None), "hostage", None)
+        if (hostage is not None and hostage.alive and hostage.following
+                and self.player.alive
+                and enemy.distance_to(hostage) < enemy.distance_to(self.player)):
+            return hostage
         return self.player
 
     def _all_players(self):
@@ -632,8 +685,9 @@ class Game:
         return {0: self.player.alive}
 
     def _extra_sprites(self):
-        """Billboards supplémentaires (coéquipiers en coop)."""
-        return []
+        """Billboards supplémentaires (otage ; coéquipiers en coop)."""
+        hostage = getattr(getattr(self, "mission_director", None), "hostage", None)
+        return [hostage] if hostage is not None else []
 
     def _movement_blockers(self, player):
         """Entités vivantes que `player` ne peut pas traverser."""
@@ -905,8 +959,13 @@ class Game:
     # ------------------------------------------------------------------
     def _player_fire(self):
         weapon = self.player.weapon
+        if not weapon.pull_trigger():
+            return              # canons du minigun encore en lancement
         if not weapon.fire():
             return
+        if weapon.overheated:
+            self.hud.show_message("SURCHAUFFE !")
+            self.sounds.play("click", volume_scale=0.8)
         self.sounds.play(weapon.spec.sound, volume_scale=0.9)
         if weapon.reloading > 0.0:
             # Dernière cartouche : fire() a lancé le rechargement
@@ -919,48 +978,56 @@ class Game:
         self.stats["shots"] += 1
         # En visée, la dispersion est fortement réduite (tir précis).
         spread = weapon.spec.spread * (1.0 - 0.75 * self.player.ads)
-        results = []
+        log = []
+        perks = self.upgrades.levels
         for _ in range(weapon.spec.pellets):
             angle = self.player.angle + random.uniform(-spread, spread)
-            results.append(self._hitscan(self.player.x, self.player.y, angle,
-                                         weapon.damage,
-                                         weapon.spec.hit_radius))
-        hits = [r for r in results if r is not None]
-        if hits:
+            self._hitscan(self.player.x, self.player.y, angle, weapon.damage,
+                          weapon.spec.hit_radius, weapon=weapon,
+                          ads=self.player.ads, perks=perks, hit_log=log)
+        if weapon.spec.id == "shotgun":
+            self._shotgun_impact(self.player.x, self.player.y, log, perks)
+        if log:
             self.stats["hits"] += 1
-            self.stats["kills"] += sum(1 for r in hits if r == "kill")
-            self.hud.on_enemy_hit(killed="kill" in hits)
+            self.stats["kills"] += sum(1 for _enemy, died in log if died)
+            self.hud.on_enemy_hit(killed=any(died for _enemy, died in log))
+            for enemy, died in log:
+                if died:
+                    self._credit_kill(enemy, weapon.spec.id)
 
         # Le bruit du coup de feu attire les ennemis du secteur.
         self._alert_allies((self.player.x, self.player.y), GUNSHOT_HEARING)
 
-    def _hitscan(self, ox, oy, angle, damage, hit_radius=0.35):
+    def _hitscan(self, ox, oy, angle, damage, hit_radius=0.35, weapon=None,
+                 ads=0.0, perks=None, hit_log=None):
         """Résout une balle depuis (ox, oy) : "kill", "hit" ou None (mur).
 
         Utilisé par le tir du joueur local ET par les tirs des coéquipiers
-        en coopération LAN (résolus par l'hôte).
+        en coopération LAN (résolus par l'hôte). Avec `weapon`, les dégâts
+        suivent la spécialisation de l'arme (`weapons.shot_damage`) et les
+        cartes propres aux armes (`perks`) ; `hit_log` reçoit les couples
+        (ennemi, tué) réellement touchés, éclats compris.
         """
         wall_dist, wall_tile, _, _ = cast_ray(self.level, ox, oy, angle)
         cover_dist = self.level.first_cover_hit(ox, oy, angle, wall_dist)
         hit_cover = cover_dist < wall_dist
         if hit_cover:
             wall_dist = cover_dist
-        best = None
-        best_dist = wall_dist
+        candidates = []
         for enemy in self.enemies:
             if not enemy.alive:
                 continue
             dx, dy = enemy.x - ox, enemy.y - oy
             dist = math.hypot(dx, dy)
-            if dist >= best_dist:
+            if dist >= wall_dist:
                 continue
             # L'ennemi est touché si l'axe de la balle passe dans son rayon.
             delta = math.atan2(dy, dx) - angle
             delta = (delta + math.pi) % (2 * math.pi) - math.pi
             if abs(delta) < math.atan2(hit_radius, dist):
-                best, best_dist = enemy, dist
+                candidates.append((dist, enemy))
 
-        if best is None:
+        if not candidates:
             # Impact sur un mur : poussière teintée de la texture touchée.
             hx = ox + math.cos(angle) * (wall_dist - 0.05)
             hy = oy + math.sin(angle) * (wall_dist - 0.05)
@@ -972,6 +1039,34 @@ class Game:
             self.particles.spawn_wall_dust(hx, hy, color)
             return None
 
+        candidates.sort(key=lambda item: item[0])
+        perks = perks or {}
+        wid = weapon.spec.id if weapon is not None else ""
+        # Carte « Perforantes » : la balle de fusil traverse une cible.
+        targets = candidates[:2] if wid == "rifle" and perks.get("rifle_pierce") else candidates[:1]
+        close = SHOTGUN_HEAVY_RANGE if perks.get("shotgun_heavy") else SHOTGUN_CLOSE_RANGE
+        result = None
+        for index, (dist, enemy) in enumerate(targets):
+            amount = damage
+            if weapon is not None:
+                amount = shot_damage(weapon, enemy, dist, ads,
+                                     math.atan2(oy - enemy.y, ox - enemy.x), close)
+                if index:
+                    amount = max(1, round(amount * PIERCE_MULT))
+            outcome = self._apply_bullet(enemy, amount, ox, oy)
+            if outcome is None:
+                continue
+            if hit_log is not None:
+                hit_log.append((enemy, outcome == "kill"))
+            if result != "kill":
+                result = outcome
+            if wid == "pistol" and perks.get("pistol_explosive"):
+                if self._pistol_splash(enemy, amount, hit_log):
+                    result = "kill"
+        return result
+
+    def _apply_bullet(self, best, damage, ox, oy):
+        """Applique une balle à `best` : "kill", "hit" ou None (esquive)."""
         health_before = best.health
         died = best.take_damage(damage)
         self._handle_boss_phase_events(best)
@@ -997,6 +1092,55 @@ class Game:
             best.ai_state = "chase"
             best.last_seen = (ox, oy)
         return "hit"
+
+    def _pistol_splash(self, center, amount, hit_log=None):
+        """Carte « Balles explosives » : 40 % des dégâts dans 1,2 m."""
+        self.particles.spawn_impact(center.x, center.y, "armor", fatal=False)
+        killed = False
+        splash = max(1, round(amount * PISTOL_SPLASH_MULT))
+        for other in self.enemies:
+            if (other is center or not other.alive
+                    or math.hypot(other.x - center.x, other.y - center.y) > PISTOL_SPLASH_RADIUS
+                    or not self._objective_visible(center.x, center.y, other.x, other.y)):
+                continue
+            before = other.health
+            died = other.take_damage(splash)
+            self._handle_boss_phase_events(other)
+            if other.health < before:
+                self._on_enemy_impact(other, fatal=died)
+                if hit_log is not None:
+                    hit_log.append((other, died))
+            if died:
+                killed = True
+                if other.EXPLODES:
+                    self._explode(other)
+        return killed
+
+    def _shotgun_impact(self, ox, oy, hit_log, perks=None):
+        """Le fusil à pompe repousse et étourdit (bouclier baissé, IA figée).
+
+        Le Colosse n'est jamais étourdi ; les blindés le sont deux fois
+        moins longtemps et ne reculent pas."""
+        heavy = bool((perks or {}).get("shotgun_heavy"))
+        seen = set()
+        for enemy, died in hit_log:
+            if died or id(enemy) in seen or enemy.IS_BOSS or not enemy.alive:
+                continue
+            seen.add(id(enemy))
+            stun = STUN_TIME * (2.0 if heavy else 1.0)
+            if armored(enemy):
+                enemy.stun_timer = max(enemy.stun_timer, stun * 0.5)
+            else:
+                enemy.stun_timer = max(enemy.stun_timer, stun)
+                push = KNOCKBACK * (1.7 if heavy else 1.0)
+                away = math.atan2(enemy.y - oy, enemy.x - ox)
+                steps = max(1, math.ceil(push / 0.1))
+                for _ in range(steps):
+                    enemy.x, enemy.y = self.level.move_with_collisions(
+                        enemy.x, enemy.y, math.cos(away) * push / steps,
+                        math.sin(away) * push / steps, enemy.RADIUS)
+            enemy.cancel_aim()
+            enemy.moving = False
 
     # ------------------------------------------------------------------
     # Rendu
@@ -1052,7 +1196,8 @@ class Game:
                       survival=self.survival_info(), stats=self.stats)
         self.hud.draw_objective(screen, self.player, self.mission,
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
-                                self._objective_visible)
+                                self._objective_visible,
+                                self._status_lines())
         draw_choices(screen, self.hud, self.upgrades)
         self.hud.draw_grenade_count(screen, self.grenade_ammo,
                                     self.upgrades.grenade_capacity)

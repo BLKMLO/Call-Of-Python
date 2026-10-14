@@ -46,7 +46,7 @@ from particles import ParticleSystem
 from raycaster import Raycaster, cast_ray, zoom_screen
 from scoring import valid_score
 from support_ui import draw_support, ping_sprites
-from survival import SurvivalGame
+from survival import SurvivalGame, contract_line, valid_contract
 from touch_controls import FINGER_EVENTS, TouchControls
 from upgrade_ui import choice_event, draw_choices
 from upgrades import MAX_GRENADES, SessionUpgrades
@@ -592,15 +592,21 @@ class CoopHostGame(SurvivalGame):
     def _resolve_remote_shot(self, pid, remote, weapon, angles):
         """Résout un déclenchement dont l'arme et la cadence sont hôte."""
         remote.flash_timer = 0.12   # les autres voient l'éclair de tir
+        client = self.clients.get(pid)
+        perks = client["upgrades"].levels if client else {}
+        log = []
         for angle in angles:
-            result = self._hitscan(
+            self._hitscan(
                 remote.x, remote.y, angle, weapon.damage,
-                weapon.spec.hit_radius,
+                weapon.spec.hit_radius, weapon=weapon,
+                ads=1.0 if remote.aiming else 0.0, perks=perks, hit_log=log,
             )
-            if result is not None:
-                self._queue_net_event(
-                    ["hm", pid, 1 if result == "kill" else 0],
-                )
+        if weapon.spec.id == "shotgun":
+            self._shotgun_impact(remote.x, remote.y, log, perks)
+        for enemy, died in log:
+            self._queue_net_event(["hm", pid, 1 if died else 0])
+            if died:
+                self._credit_kill(enemy, weapon.spec.id)
         self._alert_allies((remote.x, remote.y), GUNSHOT_HEARING)
 
     def _update_respawns(self, dt):
@@ -653,7 +659,9 @@ class CoopHostGame(SurvivalGame):
                     round(e.angle, 3), e.health, int(e.moving),
                     int(e.flash_timer > 0), int(e.aiming), int(e.rolling),
                     round(e.roll_timer, 2), e.max_health, int(e.possessed),
-                    e.elite, int(e.commanded), e.pattern.snapshot() if e.IS_BOSS else None]
+                    e.elite, int(e.commanded), e.pattern.snapshot() if e.IS_BOSS else None,
+                    # Bouclier : 0 aucun, 1 levé, 2 baissé (étourdi). En fin de ligne.
+                    (2 if e.stun_timer > 0.0 else 1) if e.shielded else 0]
                    for e in self.enemies if e.net_id is not None]
         static_pickups = [p for p in self.pickups if not p.dynamic]
         dynamic_pickups = [
@@ -1150,8 +1158,13 @@ class CoopClientGame:
         if any(row[3] == self.pid for row in self.rescue_rows):
             return
         weapon = self.player.weapon
+        if not weapon.pull_trigger():
+            return              # canons du minigun encore en lancement
         if not weapon.fire():
             return
+        if weapon.overheated:
+            self.hud.show_message("SURCHAUFFE !")
+            self.sounds.play("click", volume_scale=0.8)
         self.sounds.play(weapon.spec.sound, volume_scale=0.9)
         if weapon.reloading > 0.0:
             # Dernière cartouche : rechargement automatique audible,
@@ -1607,6 +1620,10 @@ class CoopClientGame:
             ghost.commanded = len(data) > 14 and type(data[14]) is int and data[14] == 1
             if ghost.IS_BOSS and len(data) > 15 and data[15] is not None:
                 ghost.pattern.apply_snapshot(data[15])
+            shield_state = data[16] if len(data) > 16 else 0
+            if type(shield_state) is int and shield_state in (0, 1, 2):
+                ghost.shielded = shield_state > 0
+                ghost.stun_timer = 0.3 if shield_state == 2 else 0.0
             ghost.set_possessed(possessed)
             if max_health is not None:
                 ghost.max_health = round(max_health)
@@ -1710,6 +1727,9 @@ class CoopClientGame:
         mutator = wave_info.get("mutator", "")
         if isinstance(mutator, str) and mutator in MUTATORS:
             clean["mutator"] = mutator
+        contract = wave_info.get("contract")
+        if contract is not None and valid_contract(contract):
+            clean["contract"] = contract
         if clean["wave"] > self.wave_info["wave"] and self.synced:
             self.sounds.play("wave", volume_scale=0.9)
             self.hud.announce(f"VAGUE {clean['wave']}")
@@ -1821,9 +1841,11 @@ class CoopClientGame:
                       self.level, self.pickups,
                       fps=self.fps if self.show_fps else None,
                       survival=self.survival_info(), stats=self.stats)
+        contract = contract_line((self.survival_info() or {}).get("contract"))
         self.hud.draw_objective(screen, self.player, self.mission,
                                 pygame.key.name(self.settings.keys.get("interagir", pygame.K_e)),
-                                lambda *points: Game._objective_visible(self, *points))
+                                lambda *points: Game._objective_visible(self, *points),
+                                [contract] if contract else [])
         draw_choices(screen, self.hud, self.upgrades)
         self.hud.draw_grenade_count(screen, self.grenade_ammo,
                                     self.upgrades.grenade_capacity)

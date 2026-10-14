@@ -21,6 +21,7 @@ import pygame
 import settings as settings_module
 from coop import CoopClientGame, CoopHostGame
 from game import DEATH_CAM_TIME, Game
+from level import LEVELS
 from menu import (
     EndScreen,
     LevelCompleteScreen,
@@ -95,8 +96,10 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(game.finished)
 
     def test_campaign_victory_when_all_enemies_down(self):
-        # Les niveaux sans objectifs conservent leur condition historique.
-        game = Game(self.screen, self.settings, self.sounds, 1)
+        # Un niveau sans objectifs conserve la condition historique (tous
+        # les niveaux de campagne ont désormais des missions).
+        config = dict(LEVELS[1], objectives=[], reinforcements={})
+        game = Game(self.screen, self.settings, self.sounds, 1, level_config=config)
         for enemy in game.enemies:
             enemy.health = 0
         _run_frames(game, self.screen, 10)

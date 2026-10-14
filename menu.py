@@ -29,6 +29,29 @@ SELECTED_TEXT = (6, 20, 15)
 DANGER_COLOR = (226, 72, 64)
 GOLD_COLOR = (244, 196, 84)
 UI_FONTS = "bahnschrift,dejavusans,arial,liberationsans"
+# Thème des menus selon la difficulté : vert (Recrue), ambre (Soldat),
+# rouge (Vétéran). `tint` colore l'illustration de fond (None = intacte).
+THEMES = {
+    "recruit": {"accent": ACCENT_COLOR, "hover": HOVER_COLOR, "warm": WARM_COLOR,
+                "tint": None, "chevrons": 1},
+    "soldier": {"accent": (222, 156, 58), "hover": (250, 198, 108),
+                "warm": (96, 188, 222), "tint": (255, 178, 92), "chevrons": 2},
+    "veteran": {"accent": (212, 62, 56), "hover": (246, 112, 100),
+                "warm": (240, 196, 90), "tint": (255, 84, 70), "chevrons": 3},
+}
+_theme_key = "soldier"
+
+
+def set_theme(difficulty):
+    """Choisit le thème des menus d'après la clé de difficulté."""
+    global _theme_key
+    _theme_key = difficulty if difficulty in THEMES else "soldier"
+
+
+def theme(name):
+    return THEMES[_theme_key][name]
+
+
 GRADE_COLORS = {"S": GOLD_COLOR, "A": HOVER_COLOR, "B": (120, 200, 230),
                 "C": (214, 214, 200), "D": DIM_COLOR}
 
@@ -49,7 +72,7 @@ def _sysfont(names, size, bold=False):
 
 def _keycap_strip(pairs, height, max_width):
     """Bandeau d'aides façon jeu : [TOUCHE] ACTION, centré, mis en cache."""
-    key = ("keycaps", tuple(pairs), height, max_width)
+    key = ("keycaps", tuple(pairs), height, max_width, _theme_key)
     cached = STYLE_CACHE.get(key)
     if cached is not None:
         return cached
@@ -70,8 +93,8 @@ def _keycap_strip(pairs, height, max_width):
         cap_w = font.size(cap)[0] + pad_x * 2
         rect = pygame.Rect(x, 0, cap_w, cap_h)
         pygame.draw.rect(surface, (18, 38, 34, 235), rect, border_radius=3)
-        pygame.draw.rect(surface, (*ACCENT_COLOR, 200), rect, 1, border_radius=3)
-        pygame.draw.line(surface, (*ACCENT_COLOR, 255), (rect.left + 2, rect.bottom - 1),
+        pygame.draw.rect(surface, (*theme("accent"), 200), rect, 1, border_radius=3)
+        pygame.draw.line(surface, (*theme("accent"), 255), (rect.left + 2, rect.bottom - 1),
                          (rect.right - 3, rect.bottom - 1), 2)
         glyph = font.render(cap, True, TITLE_COLOR)
         surface.blit(glyph, glyph.get_rect(center=rect.center))
@@ -121,7 +144,7 @@ class MenuBase:
     title = ""
     kicker = ""                    # petite ligne « // ... » au-dessus du titre
     title_color = TITLE_COLOR
-    glow_color = ACCENT_COLOR      # halo du titre (rouge en défaite, or en victoire)
+    glow_color = None              # halo du titre (None = thème ; rouge/or en fin)
     menu_vertical_offset = 0.0
     nav_hints = (("FLÈCHES", "NAVIGUER"), ("ENTRÉE", "VALIDER"),
                  ("ÉCHAP", "RETOUR"))
@@ -254,7 +277,7 @@ class MenuBase:
         Au repos : plaque sombre avec un liseré à gauche. Sélectionné :
         barre pleine couleur accent, reflet en haut et tranche chaude —
         la ligne « s'allume » comme dans un menu de jeu."""
-        key = (size, bool(hovered))
+        key = (size, bool(hovered), _theme_key)
         surface = cls._button_cache.get(key)
         if surface is not None:
             return surface
@@ -262,30 +285,30 @@ class MenuBase:
         rect = surface.get_rect()
         points = cls._button_points(rect)
         if hovered:
-            pygame.draw.polygon(surface, (*ACCENT_COLOR, 240), points)
+            pygame.draw.polygon(surface, (*theme("accent"), 240), points)
             highlight = [points[0], points[1],
                          (points[1][0] - cls._button_skew(rect) * 0.4, rect.height * 0.4),
                          (points[0][0] - cls._button_skew(rect) * 0.4, rect.height * 0.4)]
             pygame.draw.polygon(surface, (255, 255, 255, 46), highlight)
             # Le contour n'apparaît qu'au survol, comme demandé.
-            pygame.draw.polygon(surface, HOVER_COLOR, points, 2)
-            pygame.draw.line(surface, WARM_COLOR, points[0], points[3], 4)
+            pygame.draw.polygon(surface, theme("hover"), points, 2)
+            pygame.draw.line(surface, theme("warm"), points[0], points[3], 4)
         else:
             pygame.draw.polygon(surface, (6, 14, 19, 178), points)
-            pygame.draw.line(surface, (*ACCENT_COLOR, 120), points[0], points[3], 2)
+            pygame.draw.line(surface, (*theme("accent"), 120), points[0], points[3], 2)
         cls._button_cache[key] = surface
         return surface
 
     @classmethod
     def _button_glow(cls, size):
         """Halo pulsé derrière le bouton sélectionné (mis en cache)."""
-        glow = cls._glow_cache.get(size)
+        glow = cls._glow_cache.get((size, _theme_key))
         if glow is None:
             shape = pygame.Surface(size, pygame.SRCALPHA)
             pygame.draw.polygon(shape, (255, 255, 255, 255),
                                 cls._button_points(shape.get_rect()))
-            glow = glow_surface(shape, HOVER_COLOR, max(4, size[1] // 4))
-            cls._glow_cache[size] = glow
+            glow = glow_surface(shape, theme("hover"), max(4, size[1] // 4))
+            cls._glow_cache[(size, _theme_key)] = glow
         return glow
 
     @staticmethod
@@ -313,8 +336,9 @@ class MenuBase:
     @classmethod
     def _background(cls, size):
         """Fond cinématique recadré en mode cover, mis en cache par taille."""
-        if size in cls._background_cache:
-            return cls._background_cache[size]
+        key = (size, _theme_key)
+        if key in cls._background_cache:
+            return cls._background_cache[key]
         w, h = size
         try:
             source = assets.get("menu_background")
@@ -329,6 +353,16 @@ class MenuBase:
         x = (scaled.get_width() - w) // 2
         y = (scaled.get_height() - h) // 2
         result = scaled.subsurface((x, y, w, h)).copy()
+        tint = theme("tint")
+        if tint is not None:
+            # Monochrome teinté (ambre/rouge) puis un peu d'original : le
+            # portail vert vire à la couleur de la difficulté.
+            original = result.copy()
+            result = pygame.transform.grayscale(result)
+            result.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
+            result.blit(result, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+            original.set_alpha(40)
+            result.blit(original, (0, 0))
         veil = pygame.Surface(size, pygame.SRCALPHA)
         veil.fill((3, 8, 13, 40))
         # Fondu sombre depuis la gauche (zone de menu) : l'illustration
@@ -347,15 +381,16 @@ class MenuBase:
         for row in range(0, h, 3):
             pygame.draw.line(veil, (0, 0, 0, 34), (0, row), (w, row))
         result.blit(veil, (0, 0))
-        cls._background_cache[size] = result
+        cls._background_cache[key] = result
         return result
 
     @classmethod
     def _panel(cls, size):
         """Cadre tactique façon HUD : voile léger, coins en équerre et
         coin biseauté, plutôt qu'une boîte arrondie. Mis en cache."""
-        if size in cls._panel_cache:
-            return cls._panel_cache[size]
+        key = (size, _theme_key)
+        if key in cls._panel_cache:
+            return cls._panel_cache[key]
         panel = pygame.Surface(size, pygame.SRCALPHA)
         w, h = size
         cut = max(12, min(w, h) // 14)
@@ -364,19 +399,19 @@ class MenuBase:
         pygame.draw.polygon(panel, (3, 9, 13, 150), outline)
         pygame.draw.polygon(panel, (71, 101, 104, 70), outline, 1)
         arm = max(18, min(w, h) // 9)
-        bright = (*ACCENT_COLOR, 235)
+        bright = (*theme("accent"), 235)
         # Équerres en haut à droite et en bas à gauche, biseaux soulignés.
         pygame.draw.lines(panel, bright, False,
                           [(w - 1 - arm, 1), (w - 2, 1), (w - 2, arm)], 3)
         pygame.draw.lines(panel, bright, False,
                           [(1, h - 1 - arm), (1, h - 2), (arm, h - 2)], 3)
-        pygame.draw.line(panel, (*WARM_COLOR, 235), (0, cut), (cut, 0), 3)
-        pygame.draw.line(panel, (*WARM_COLOR, 235), (w - 1, h - 1 - cut),
+        pygame.draw.line(panel, (*theme("warm"), 235), (0, cut), (cut, 0), 3)
+        pygame.draw.line(panel, (*theme("warm"), 235), (w - 1, h - 1 - cut),
                          (w - 1 - cut, h - 1), 3)
         # Graduations sur le bord gauche (instrument de visée).
         for y in range(cut + arm, h - arm * 2, max(8, h // 40)):
-            pygame.draw.line(panel, (*ACCENT_COLOR, 70), (3, y), (8, y), 1)
-        cls._panel_cache[size] = panel
+            pygame.draw.line(panel, (*theme("accent"), 70), (3, y), (8, y), 1)
+        cls._panel_cache[key] = panel
         return panel
 
     @staticmethod
@@ -436,7 +471,7 @@ class MenuBase:
             rect = pygame.Rect(x, top, card_w, card_h)
             plate = pygame.Surface(rect.size, pygame.SRCALPHA)
             plate.fill((5, 14, 18, 200))
-            pygame.draw.rect(plate, (*ACCENT_COLOR, 90), plate.get_rect(), 1)
+            pygame.draw.rect(plate, (*theme("accent"), 90), plate.get_rect(), 1)
             pygame.draw.line(plate, (*color, 255), (0, 0), (card_w - 1, 0), 3)
             screen.blit(plate, rect)
             name = label_font.render(label, True, DIM_COLOR)
@@ -516,11 +551,12 @@ class MenuBase:
         # au-dessus et barre segmentée en dessous : un écran de jeu, pas
         # une diapositive. Les intitulés longs sont ajustés à la largeur.
         title_text = self.title.upper()
+        glow = self.glow_color or theme("accent")
         panel = self._panel_rect(screen)
         font, spacing = self._fit_font(title_text, max(36, h // 11),
                                        panel.width - 40, 0.06, 26)
         title = styled_text(font, title_text, self.title_color, spacing,
-                            glow=self.glow_color, glow_radius=max(4, h // 90))
+                            glow=glow, glow_radius=max(4, h // 90))
         title_y = h // 8 if len(self.items()) > 8 else h // 5
         center_x = self._content_center_x(screen)
         pos = title.get_rect(center=(center_x, title_y))
@@ -528,18 +564,18 @@ class MenuBase:
         text_h = font.get_height()
         if self.kicker:
             kick_font = _sysfont(UI_FONTS, max(11, h // 52), bold=True)
-            kicker = styled_text(kick_font, self.kicker.upper(), self.glow_color,
+            kicker = styled_text(kick_font, self.kicker.upper(), glow,
                                  max(1, h // 300))
             screen.blit(kicker, kicker.get_rect(
                 center=(center_x, title_y - text_h // 2 - kicker.get_height() // 3)))
         line_w = min(tracked_width(font, title_text, spacing), int(w * 0.32))
         line_y = title_y + text_h // 2 + max(4, h // 120)
         left = center_x - line_w // 2
-        pygame.draw.line(screen, self.glow_color, (left, line_y),
+        pygame.draw.line(screen, glow, (left, line_y),
                          (left + line_w - 40, line_y), 3)
         for i in range(3):
             x = left + line_w - 32 + i * 12
-            pygame.draw.line(screen, WARM_COLOR, (x, line_y), (x + 7, line_y), 3)
+            pygame.draw.line(screen, theme("warm"), (x, line_y), (x + 7, line_y), 3)
 
     def _draw_footer_strip(self, screen):
         """Bande basse sombre soulignée d'un filet accent."""
@@ -547,8 +583,8 @@ class MenuBase:
         height = max(42, h // 11)
         footer = pygame.Surface((w, height), pygame.SRCALPHA)
         footer.fill((3, 8, 12, 215))
-        pygame.draw.line(footer, (*ACCENT_COLOR, 150), (0, 0), (w, 0), 1)
-        pygame.draw.line(footer, (*WARM_COLOR, 220), (0, 0), (w // 6, 0), 2)
+        pygame.draw.line(footer, (*theme("accent"), 150), (0, 0), (w, 0), 1)
+        pygame.draw.line(footer, (*theme("warm"), 220), (0, 0), (w // 6, 0), 2)
         screen.blit(footer, (0, h - height))
 
     def _draw_keycaps(self, screen, pairs):
@@ -633,7 +669,7 @@ class MenuBase:
                 # Chevron de sélection qui « respire » devant la ligne.
                 tip_x = rect.left - 4 - int(3 * pulse)
                 half = max(4, rect.height // 6)
-                pygame.draw.polygon(screen, WARM_COLOR, [
+                pygame.draw.polygon(screen, theme("warm"), [
                     (tip_x, rect.centery), (tip_x - half, rect.centery - half),
                     (tip_x - half, rect.centery + half)])
             if ident is not None:
@@ -672,9 +708,20 @@ class MainMenu(MenuBase):
         rows = [("play", "JOUER LA CAMPAGNE")]
         if self.settings.survival_unlocked:
             rows.append(("survival", "LE DÉFERLEMENT"))
-        rows += [("multiplayer", "COOPÉRATION LAN"),
+        label = get_difficulty(getattr(self.settings, "difficulty", "soldier")).label
+        rows += [("difficulty", f"DIFFICULTÉ  <  {label}  >"),
+                 ("multiplayer", "COOPÉRATION LAN"),
                  ("settings", "PARAMÈTRES"), ("quit", "QUITTER")]
         return rows
+
+    def on_click(self, ident, pos, rect, split_x=None):
+        if ident == "difficulty":
+            center = split_x if split_x is not None else rect.centerx
+            self.settings.cycle_difficulty(1 if pos[0] >= center else -1)
+            self.settings.save()
+            set_theme(self.settings.difficulty)
+            return None
+        return ident
 
     @staticmethod
     def _content_center_x(screen):
@@ -719,10 +766,10 @@ class MainMenu(MenuBase):
             "CALL OF", max(18, h // 24), max_w, 0.45, 14)
         title_y = h // 5
         logo = styled_text(big, "PYTHON", TITLE_COLOR, big_spacing,
-                           glow=ACCENT_COLOR, glow_radius=max(5, h // 70))
+                           glow=theme("accent"), glow_radius=max(5, h // 70))
         logo_rect = logo.get_rect(center=(center_x, title_y))
         screen.blit(logo, logo_rect)
-        top = styled_text(small, "CALL OF", HOVER_COLOR, small_spacing)
+        top = styled_text(small, "CALL OF", theme("hover"), small_spacing)
         screen.blit(top, top.get_rect(
             center=(center_x, title_y - big.get_height() // 2 - small.get_height() // 3)))
         tag_font = _sysfont(UI_FONTS, max(12, h // 48), bold=True)
@@ -730,16 +777,32 @@ class MainMenu(MenuBase):
         tag_rect = tag_text.get_rect().inflate(28, 8)
         tag_rect.midtop = (center_x, title_y + big.get_height() // 2 + max(4, h // 90))
         skew = tag_rect.height // 2
-        pygame.draw.polygon(screen, WARM_COLOR, [
+        pygame.draw.polygon(screen, theme("warm"), [
             (tag_rect.left + skew, tag_rect.top), (tag_rect.right, tag_rect.top),
             (tag_rect.right - skew, tag_rect.bottom), (tag_rect.left, tag_rect.bottom)])
         screen.blit(tag_text, tag_text.get_rect(center=tag_rect.center))
         version = _sysfont(UI_FONTS, max(10, h // 64), bold=True).render(
             f"v{GAME_VERSION}", True, DIM_COLOR)
         screen.blit(version, version.get_rect(midleft=(tag_rect.right + 10, tag_rect.centery)))
+        self._draw_chevrons(screen, tag_rect.left - 12, tag_rect.centery,
+                            max(5, tag_rect.height // 3))
+
+    @staticmethod
+    def _draw_chevrons(screen, right, center_y, size):
+        """Insigne de grade : 1 à 3 chevrons selon la difficulté."""
+        count = theme("chevrons")
+        color = theme("hover")
+        for index in range(count):
+            y = center_y + (index - (count - 1) / 2) * (size * 0.9)
+            x = right - size
+            pygame.draw.lines(screen, color, False, [
+                (x - size, y - size * 0.45), (x, y + size * 0.45),
+                (x + size, y - size * 0.45)], 3)
 
     def draw(self, screen):
+        set_theme(getattr(self.settings, "difficulty", "soldier"))
         super().draw(screen)
+        self._draw_difficulty_summary(screen)
         parts = []
         if self.settings.best_level > 0:
             parts.append(("MEILLEUR NIVEAU", str(self.settings.best_level)))
@@ -762,6 +825,21 @@ class MainMenu(MenuBase):
                 screen.blit(number, number.get_rect(
                     midleft=(x + name.get_width() + 10, y)))
 
+    def _draw_difficulty_summary(self, screen):
+        """Résumé de la difficulté sous sa ligne quand elle est sélectionnée."""
+        if self.selected != "difficulty" or not self.keyboard_focus:
+            row = next((r for r in self._layout(screen) if r[0] == "difficulty"), None)
+            if row is None or not self._button_contains(row[2], pygame.mouse.get_pos()):
+                return
+        row = next(r for r in self._layout(screen) if r[0] == "difficulty")
+        rect = row[2]
+        h = screen.get_height()
+        font = _sysfont(UI_FONTS, max(10, h // 62), bold=True)
+        summary = get_difficulty(self.settings.difficulty).summary.upper()
+        text = styled_text(font, summary, theme("hover"))
+        screen.blit(text, text.get_rect(
+            midright=(rect.right - 4, rect.bottom + font.get_height() // 2)))
+
     def _draw_footer(self, screen):
         self._draw_keycaps(screen, (("ZQSD", "DÉPLACEMENT"), ("MAJ", "GLISSADE"),
                                     ("SOURIS", "VISÉE / TIR"), ("1-4", "ARMES")))
@@ -783,6 +861,10 @@ class SettingsMenu(MenuBase):
         self.settings = settings
         self.waiting_action = None  # action en cours de re-mappage
 
+    def draw(self, screen):
+        set_theme(getattr(self.settings, "difficulty", "soldier"))
+        super().draw(screen)
+
     def items(self):
         s = self.settings
         ads_mode = "Bascule" if getattr(s, "toggle_ads", False) else "Maintien"
@@ -803,7 +885,7 @@ class SettingsMenu(MenuBase):
             ("toggle_ads",
              f"Visee clic droit :  <  {ads_mode}  >"),
             ("difficulty",
-             f"Difficulte :  <  {difficulty}  >"),
+             f"Difficulté :  <  {difficulty}  >"),
             (None, ""),  # séparateur
         ]
         for action in KEY_ACTIONS:
@@ -1088,6 +1170,6 @@ class LevelCompleteScreen(MenuBase):
     def draw(self, screen):
         super().draw(screen)
         self._draw_info_blocks(screen, [
-            (f"PROCHAINE ZONE : {self.next_name.upper()}", WARM_COLOR),
+            (f"PROCHAINE ZONE : {self.next_name.upper()}", theme("warm")),
             ("Vous gardez vos armes et récupérez de la vie.", DIM_COLOR),
         ], self.cards)

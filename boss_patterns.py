@@ -11,6 +11,9 @@ class BossPattern:
         self.x = self.y = self.angle = 0.0
         self.cycle = 0
         self.hits = set()
+        # Multiplicateur du repos entre deux attaques (difficulté) :
+        # < 1 = Colosse enragé (Vétéran), > 1 = plus de répit (Recrue).
+        self.tempo = 1.0
 
     def step(self, dt, boss, target, visible):
         if not boss.alive:
@@ -39,7 +42,7 @@ class BossPattern:
                 self.state, self.timer = "recover", 1.2
             return True, ["move"]
         if self.state == "recover" and self.timer <= 1e-9:
-            self.state, self.timer = "idle", 4.5 - .5 * boss.phase
+            self.state, self.timer = "idle", (4.5 - .5 * boss.phase) * self.tempo
         return True, []
 
     def snapshot(self):

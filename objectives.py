@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-KINDS = frozenset(("interact", "reach", "defend", "eliminate"))
+KINDS = frozenset(("interact", "reach", "defend", "eliminate", "escort"))
 
 
 @dataclass(frozen=True)

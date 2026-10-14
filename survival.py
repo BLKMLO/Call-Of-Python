@@ -30,7 +30,7 @@ import random
 from collections import deque
 
 from difficulty import ThreatDirector, get_difficulty
-from elites import apply_elite
+from elites import apply_elite, apply_traits
 from entities import ENEMY_TYPES
 from game import Game
 from level import SURVIVAL_LEVEL
@@ -51,10 +51,92 @@ SPAWN_PLAYER_CLEARANCE = 1.2   # distance minimale visée entre apparition et jo
 SPAWN_INTERVAL = 0.4           # étalement des apparitions dans une vague (s)
 MAX_ALIVE = 24                 # ennemis simultanés (les autres attendent en file)
 MAX_CORPSES = 60               # cadavres conservés au sol (rendu)
-CLEAR_HEAL = 12                # PV rendus quand une vague est nettoyée à temps
+CLEAR_HEAL = 12                # PV rendus par vague nettoyée en Soldat (voir difficulty.py)
 ALERT_PULSE = 2.5              # la horde re-flaire le joueur à cette fréquence (s)
 UPGRADE_EVERY_SOLO = 2         # amélioration d'arme toutes les N vagues (solo)
 UPGRADE_EVERY_COOP = 3         # idem en coopération LAN (inchangé)
+SHIELD_FROM_WAVE = 7           # porte-boucliers à partir de cette vague
+SHIELD_EVERY = 3               # un soldat sur trois porte un bouclier
+SWARM_FROM_WAVE = 8            # essaims de kamikazes à partir de cette vague
+SWARM_EVERY = 4                # ... une vague sur quatre (hors Colosse)
+
+
+def swarm_size(wave, count_mult=1.0):
+    """Kamikazes d'un essaim : 0 hors vagues d'essaim, sinon 3 + n // 6
+    (4 à la vague 8, 7 à la 28), modulé par la difficulté."""
+    if wave < SWARM_FROM_WAVE or wave % SWARM_EVERY or wave % 10 == 0:
+        return 0
+    return max(2, round((3 + wave // 6) * count_mult))
+
+
+# Contrats : défis optionnels d'une vague, récompensés par une carte bonus.
+# clé : (libellé, arme exigée, type d'ennemi ou None, objectif)
+CONTRACTS = {
+    "shotgun_kamikaze": ("Kamikazes au fusil à pompe", "shotgun", "kamikaze", 5),
+    "pistol_heavy": ("Lourds au pistolet", "pistol", "heavy", 2),
+    "rifle_sniper": ("Snipers au fusil d'assaut", "rifle", "sniper", 2),
+    "grenade_any": ("Ennemis à la grenade", "grenade", None, 4),
+    "pistol_any": ("Ennemis au pistolet", "pistol", None, 8),
+    "shotgun_shield": ("Porte-boucliers au fusil à pompe", "shotgun", "shield", 2),
+}
+CONTRACT_FROM_WAVE = 2
+CONTRACT_EVERY = 3     # vagues 2, 5, 8... (hors vagues du Colosse)
+
+
+def pick_contract(wave, kinds, traits):
+    """Contrat proposé à la vague `wave`, ou None. Déterministe (graine =
+    numéro de vague) ; l'objectif est ramené au nombre de cibles prévues."""
+    if (wave < CONTRACT_FROM_WAVE or (wave - CONTRACT_FROM_WAVE) % CONTRACT_EVERY
+            or wave % 10 == 0):
+        return None
+    counts = {}
+    for kind, trait in zip(kinds, traits, strict=True):
+        counts[kind] = counts.get(kind, 0) + 1
+        if trait == "shield":
+            counts["shield"] = counts.get("shield", 0) + 1
+    eligible = []
+    for key, (_label, _weapon, target, goal) in sorted(CONTRACTS.items()):
+        available = len(kinds) if target is None else counts.get(target, 0)
+        if available >= 1:
+            eligible.append((key, min(goal, available)))
+    if not eligible:
+        return None
+    key, goal = random.Random(7919 * wave).choice(eligible)
+    return {"key": key, "goal": goal, "progress": 0, "done": False}
+
+
+def contract_line(row):
+    """Ligne HUD d'un contrat répliqué `[clé, progrès, objectif, rempli]`."""
+    if not row:
+        return None
+    key, progress, goal, done = row
+    label = CONTRACTS[key][0]
+    if done:
+        return (f"CONTRAT REMPLI : {label} — carte bonus", (244, 196, 84))
+    return (f"Contrat : {label} {progress}/{goal}", (238, 166, 75))
+
+
+def valid_contract(row):
+    return (isinstance(row, list) and len(row) == 4 and isinstance(row[0], str)
+            and row[0] in CONTRACTS
+            and all(type(v) is int for v in row[1:3])
+            and 1 <= row[2] <= 64 and 0 <= row[1] <= row[2]
+            and type(row[3]) is int and row[3] in (0, 1))
+
+
+def wave_traits(kinds, wave):
+    """Traits par ennemi : un soldat sur trois porte un bouclier dès la
+    vague 7 (le minigun s'y casse les dents de face)."""
+    traits = []
+    soldiers = 0
+    for kind in kinds:
+        trait = ""
+        if kind == "soldier" and wave >= SHIELD_FROM_WAVE:
+            soldiers += 1
+            if soldiers % SHIELD_EVERY == 0:
+                trait = "shield"
+        traits.append(trait)
+    return traits
 
 
 def wave_floor(wave):
@@ -73,13 +155,14 @@ def wave_timeout(wave, difficulty="soldier"):
                WAVE_TIMEOUT_BASE * decay ** max(0, wave - 1))
 
 
-def wave_composition(wave):
+def wave_composition(wave, count_mult=1.0):
     """Liste des types d'ennemis de la vague `wave` (1-indexée).
 
     Le bestiaire s'élargit avec les vagues : kamikazes dès la 3e,
     snipers dès la 6e, de plus en plus de lourds et de soldats.
     """
-    count = min(4 + math.ceil(wave * 0.6), 20)
+    # Le nombre d'ennemis suit la difficulté (×0,8 Recrue, ×1,25 Vétéran).
+    count = max(3, round(min(4 + math.ceil(wave * 0.6), 20) * count_mult))
     kinds = []
     if wave % 10 == 0:          # un Colosse toutes les 10 vagues
         kinds.append("boss")
@@ -147,6 +230,7 @@ class SurvivalGame(Game):
         self.director = ThreatDirector(
             getattr(settings, "difficulty", "soldier"),
         )
+        self.contract = None           # défi optionnel de la vague en cours
 
     def spawn_enemy(self, kind, x, y, hp_mult=1.0, dmg_mult=1.0):
         """Tous les envahisseurs lunaires sont des variantes possédées."""
@@ -217,7 +301,7 @@ class SurvivalGame(Game):
                 # vague non nettoyée n'en a pas : la suivante déferle à la
                 # submersion, par-dessus les survivants.
                 self.player.health = min(self.player.max_health,
-                                         self.player.health + CLEAR_HEAL)
+                                         self.player.health + self.difficulty.clear_heal)
                 self.intermission = CLEAR_INTERMISSION
                 every = UPGRADE_EVERY_SOLO if self.SOLO else UPGRADE_EVERY_COOP
                 if self.wave % every == 0:
@@ -232,19 +316,28 @@ class SurvivalGame(Game):
         self.wave_timer = 0.0
         self.intermission = 0.0
         self.mutator = "" if self.SOLO else mutator_for_wave(number)
-        kinds = composition(wave_composition(number), self.mutator)
+        kinds = composition(wave_composition(number, self.difficulty.enemy_count),
+                            self.mutator)
         if number % 10 == 5:
             kinds[0] = "commander"
         # Le Colosse est long à abattre : temps de nettoyage supplémentaire.
         self.wave_limit = wave_timeout(number, self.difficulty.key) + (
             BOSS_EXTRA_TIME if "boss" in kinds else 0.0)
         elites = not self.SOLO and number >= 4
+        traits = wave_traits(kinds, number)
         self.spawn_queue.extend((kind, number, self.mutator,
                                  ("bulwark" if i == 1 else "hunter")
-                                 if elites and i in (1, 3) else "")
+                                 if elites and i in (1, 3) else "", traits[i])
                                 for i, kind in enumerate(kinds))
+        swarm = swarm_size(number, self.difficulty.enemy_count)
+        self.spawn_queue.extend(("kamikaze", number, self.mutator, "", "swarm")
+                                for _ in range(swarm))
+        self.contract = pick_contract(number, list(kinds) + ["kamikaze"] * swarm,
+                                      traits + ["swarm"] * swarm)
         self.sounds.play("wave", volume_scale=0.9)
         self.hud.announce(f"VAGUE {number}")
+        if swarm:
+            self.hud.show_message("Essaim de kamikazes en approche !")
         self._refresh_pickups(number)
 
     def _refresh_pickups(self, wave):
@@ -256,7 +349,7 @@ class SurvivalGame(Game):
                 if wave % 3 == 0:
                     pickup.taken = False
             elif pickup.kind == "lifepack":
-                if wave % 2 == 0:
+                if wave % self.difficulty.lifepack_every == 0:
                     pickup.taken = False
             elif wave % 5 == 0:
                 pickup.taken = False
@@ -272,14 +365,17 @@ class SurvivalGame(Game):
                 or sum(e.alive for e in self.enemies) >= MAX_ALIVE):
             return
         entry = self.spawn_queue.popleft()
-        kind, wave, mutator, elite = (entry if isinstance(entry, tuple)
-                                      else (entry, self.wave, "", ""))
+        if not isinstance(entry, tuple):
+            entry = (entry, self.wave, "", "")
+        kind, wave, mutator, elite = entry[:4]
+        traits = entry[4] if len(entry) > 4 else ""
         x, y, angle = self._pick_spawn_point(_spawn_radius(kind))
         hp_mult, dmg_mult = wave_multipliers(wave)
         enemy = self.spawn_enemy(kind, x, y, hp_mult, dmg_mult)
         enemy.angle = angle
         enemy.emerge = (math.cos(angle), math.sin(angle), EMERGE_TIME)
         apply_mutator(enemy, mutator)
+        apply_traits(enemy, traits)
         if sum(e.alive and bool(e.elite) for e in self.enemies) < 3:
             apply_elite(enemy, elite)
         # Il surgit en chasse, pas en patrouille.
@@ -342,6 +438,39 @@ class SurvivalGame(Game):
         self.enemies, self.ais = kept_e, kept_a
 
     # ------------------------------------------------------------------
+    # Contrats
+    # ------------------------------------------------------------------
+    def _credit_kill(self, enemy, weapon_id):
+        contract = self.contract
+        if contract is None or contract["done"]:
+            return
+        _label, weapon, target, _goal = CONTRACTS[contract["key"]]
+        if weapon != weapon_id:
+            return
+        if target == "shield":
+            if not enemy.shielded:
+                return
+        elif target is not None and enemy.KIND != target:
+            return
+        contract["progress"] = min(contract["goal"], contract["progress"] + 1)
+        if contract["progress"] >= contract["goal"]:
+            contract["done"] = True
+            self.hud.announce("CONTRAT REMPLI")
+            self.sounds.play("heal", volume_scale=0.8)
+            self._award_upgrades(f"contract:{self.wave}")
+
+    def _contract_row(self):
+        contract = self.contract
+        if contract is None:
+            return None
+        return [contract["key"], contract["progress"], contract["goal"],
+                int(contract["done"])]
+
+    def _status_lines(self):
+        line = contract_line(self._contract_row())
+        return super()._status_lines() + ([line] if line else [])
+
+    # ------------------------------------------------------------------
     def survival_info(self):
         """Infos affichées par le HUD pendant le Déferlement."""
         remaining = (sum(1 for e in self.enemies if e.alive)
@@ -354,4 +483,5 @@ class SurvivalGame(Game):
             "next_in": (self.intermission if self.intermission > 0.0
                         else max(0.0, self.wave_limit - self.wave_timer)),
             "intermission": self.intermission > 0.0,
+            "contract": self._contract_row(),
         }

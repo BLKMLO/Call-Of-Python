@@ -1,4 +1,4 @@
-# Protocole LAN v5
+# Protocole LAN v6
 
 Le transport utilise UDP/IPv4 et des objets JSON compacts. L'hote est
 autoritaire : un client ne declare jamais ses degats, munitions, cadence ou
@@ -37,7 +37,25 @@ validés (entiers 0 à 10^9, cible positive, secours 0 à 4, grade D/C/B/A/S).
 Le client ne propose aucun point. Le total est partagé, les statistiques de
 tirs/éliminations restent individuelles. Les identifiants d’arme et d’ennemi
 sont vérifiés comme chaînes avant toute consultation du catalogue.
-Version du jeu 0.6.0, protocole v5 : mettre à jour tous les participants.
+Version du jeu 0.7.0, protocole v6 : mettre à jour tous les participants.
+
+## Changements v6 (0.7.0)
+
+- `en[16]` (fin de ligne) : bouclier, entier 0 (aucun), 1 (levé) ou 2
+  (baissé, ennemi étourdi). Tout autre type ou valeur est ignoré ; une ligne
+  plus courte vaut 0.
+- `snap.wv.contract` : `null` ou `[clé, progrès, objectif, rempli]` ; clé
+  connue de `survival.CONTRACTS`, entiers avec 1 ≤ objectif ≤ 64,
+  0 ≤ progrès ≤ objectif, rempli ∈ {0, 1}. Sinon ignoré.
+- Minigun : `ammo` n’est plus consommé ; l’hôte valide chaque tir par la
+  cadence et la chaleur de sa propre instance `Weapon` (surchauffe = refus).
+  Le lancement des canons reste local au tireur.
+- Les dégâts des tirs distants suivent `weapons.shot_damage` avec l’état de
+  visée déjà transmis (`in.ad`) et les cartes de l’offre autoritaire du
+  client ; chaque cible touchée (perforation, éclats compris) produit un
+  événement `hm`.
+- Nouvelles clés de cartes acceptées dans `uc`/`ub` : `pistol_explosive`,
+  `shotgun_heavy`, `rifle_pierce`, `minigun_cooling` (plafond 1).
 
 ## Changements v5 (0.6.0)
 

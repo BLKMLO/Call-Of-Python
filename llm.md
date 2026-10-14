@@ -9,9 +9,9 @@
 
 - FPS rétro Python 3.12 / pygame 2.6.1 (raycasting pseudo-3D façon
   Wolfenstein 3D). Repo `BLKMLO/Call-Of-Python` (ex-`TempGPT`).
-- Version jeu **0.6.0**, protocole réseau **v5** (`version.py`). Les mentions
+- Version jeu **0.7.0**, protocole réseau **v6** (`version.py`). Les mentions
   « six choix », « deux niveaux par bonus », roulade 2,5 cases, protocole
-  v3/v4 sont historiques.
+  v3/v4/v5, « autres niveaux = élimination » sont historiques.
 - Contenu : campagne 5 niveaux (Entrepôt → Métropole → Gouvernement → Base
   militaire → Laboratoire, boss final « le Sceau » = Colosse) puis le
   **Déferlement** (survie par vagues sur la Lune, `FINAL_WAVE = 30`), coop LAN
@@ -47,10 +47,10 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 
 - `--python 3.12` obligatoire (pas de wheel pygame 2.6.1 pour Python plus
   récent). Tests en pilotes SDL factices (`SDL_VIDEODRIVER/SDL_AUDIODRIVER=dummy`).
-- État actuel : **171 tests OK**, Ruff OK (règles E, F, I, UP, B dans
+- État actuel : **194 tests OK**, couverture 80 % (`tests/test_v070.py` couvre la 0.7.0), Ruff OK (règles E, F, I, UP, B dans
   `pyproject.toml`), couverture minimale 70 %.
 - `tools/validate_gameplay.py --stage 10` (exécuté aussi en CI) : assertion à
-  4 cartes, datagramme max observé 718 octets.
+  4 cartes, datagramme max observé 733 octets (0.7.0, champ `en[16]`), budget 1 200.
 - `tools/clean_sprites.py` (+ `--check`, testé) : nettoyage des sprites.
 - CI `.github/workflows/ci.yml` : PR vers `main`, push `main`, manuel ;
   Ubuntu + Windows, Python 3.12 : compilation, Ruff, tests, couverture, wheel.
@@ -75,7 +75,8 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 | `ui_style.py` | Texte « jeu » partagé menus/HUD : espacement, ombre, halo (`styled_text`, cache clé = objet police) |
 | `game.py` | Boucle gameplay solo : entrées, hitscan, ramassages, portes, mission, caméra de mort |
 | `survival.py` | Déferlement : vagues, submersion, apparitions, ravitaillement |
-| `difficulty.py` | Profils Recrue/Soldat/Vétéran + directeur de pression (limité à la cadence) |
+| `difficulty.py` | Profils Recrue/Soldat/Vétéran (vie, dégâts, cadence, délai de vague, soins, bouclier, packs, taille des vagues, tempo du Colosse, renforts, comptes à rebours, résumé) + directeur de pression |
+| `missions.py` | `MissionDirector` (renforts `during`/`after`, compte à rebours, otage `Hostage`, générateurs du Colosse), `Game.mission_director` |
 | `scoring.py` | Score commun autoritaire et grades |
 | `upgrades.py` / `upgrade_ui.py` | Cartes d'amélioration et perks |
 | `mutators.py` | Mutateurs de vagues (coop) |
@@ -164,7 +165,16 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   page `_draw_keycaps` (`nav_hints` par défaut) ; bilans via `stat_cards()`
   passés à `_draw_info_blocks(..., cards)` ; Sceau en machine à écrire.
   HUD : `_banner()` (cache vidé dans `resize`, jamais muté : copie avant
-  `set_alpha`) pour annonces (zoom `ANNOUNCE_SLAM`) et pause. Bascule `< valeur >` entre chevrons (`_bracket_split`, `_row_font`
+  `set_alpha`) pour annonces (zoom `ANNOUNCE_SLAM`) et pause.
+- Thème par difficulté (`menu.THEMES`, `set_theme`, `theme(nom)`) : accent,
+  survol, chaud, teinte du fond (niveaux de gris × teinte + 40/255 d'original),
+  chevrons 1–3. Les caches menus incluent `_theme_key`. `MainMenu`/`SettingsMenu`
+  appellent `set_theme` au dessin ; ligne « DIFFICULTÉ < … > » dans le menu
+  principal (résumé `DifficultyProfile.summary` sous la ligne sélectionnée).
+- HUD : jauge de chaleur du minigun (`_draw_heat`, « ∞ ») ; lignes d'état
+  sous l'objectif (`draw_objective(..., extra)`, `_draw_status_lines`,
+  largeur de plaque arrondie à 16 px) : compte à rebours, otage, Colosse
+  scellé, contrat. Bascule `< valeur >` entre chevrons (`_bracket_split`, `_row_font`
   partagé). Listes compactes bornées : Retour visible à 800×600.
 - Remappage clavier : ignore les boutons manette sauf B (annuler) ; ne jamais
   injecter de touches manette dans `Settings.bind_key`. Échap/F11 non
@@ -223,7 +233,27 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   retour au repos sur les 18 % finaux ; repli `_reload` puis pose normale.
   Fusil : main droite arrière, main gauche charge par-dessous. Minigun : capot
   ouvert → bande présentée → calée → capot fermé.
-- Ne pas modifier `WEAPON_SPECS` ni offrir de munitions via un bonus.
+- Ne pas modifier `WEAPON_SPECS` ni offrir de munitions via un bonus, SAUF
+  exception validée le 14/10 : minigun `heat=True` (munitions illimitées +
+  surchauffe).
+- **Armes 0.7.0** (`weapons.py`) : `shot_damage(weapon, enemy, dist, ads,
+  shooter_angle, close_range)` — minigun ×0,6 blindage (`armored()` = classe
+  d'origine, même possédé), pistolet ×1,4 blindage et ×1,75 si `ads ≥ 0,9`,
+  pompe ×1,5 ≤ 2 m (3,5 m carte), bouclier frontal ±60° → ×0,15
+  (`shield_blocks`, inactif si `stun_timer > 0`). Minigun : `fire()` ne
+  consomme pas `ammo`, chaleur `heat_mult / (0,7 × capacité)`, refroidit après
+  0,3 s en `0,85 × reload_time`, `overheated` bloque jusqu'à 0 ; `start_reload`
+  no-op ; `pull_trigger()` (lancement 0,4 s) appelé UNIQUEMENT par les tirs
+  locaux (`Game._player_fire`, `CoopClientGame._fire`), jamais par l'hôte pour
+  les tirs distants ; `Player.move` ×0,65 si `weapon.firing_heavy`. Tests de
+  recharge HUD sautent les armes `heat` (sprites de recharge minigun inutilisés).
+- `Game._hitscan(..., weapon, ads, perks, hit_log)` : candidats triés, carte
+  `rifle_pierce` = 2e cible à 60 %, `pistol_explosive` = éclats 40 % / 1,2 m ;
+  `_apply_bullet` factorise l'impact ; `_shotgun_impact` étourdit 0,5 s
+  (×2 carte, blindé ½ sans recul, boss jamais), recul 0,35 m ; l'IA d'un
+  ennemi étourdi est sautée (timers seuls). `_credit_kill(enemy, weapon_id)`
+  (no-op, surchargé par le Déferlement pour les contrats) : tirs locaux,
+  tirs distants hôte, grenades.
 
 ## Ennemis et IA
 
@@ -283,13 +313,18 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 - Commandant : 220 PV, aura portée 5 avec visibilité, délai de tir allié ×0,8
   sans cumul, retiré à sa mort ; un seul vivant (second spawn → soldat).
 - Entrepôt : deux ennemis existants élites + dernier ennemi Commandant.
+- Porte-bouclier (`elites.apply_shield`, `enemy.shielded`, vitesse ×0,85,
+  pas sur boss/kamikaze), rendu `elites.shield_sprite` de face uniquement
+  (baissé si étourdi). Essaim (`apply_swarm`, `enemy.swarm`, vitesse ×1,25).
+  `apply_traits(enemy, "shield"|"swarm")`. `Enemy.invulnerable` (Colosse
+  scellé, variante `sealed`). Otage = variante `hostage`.
 - Champs `en[13:15]` visuels, santé max autoritaire.
 
 ## Niveaux
 
 - **Entrepôt** (mission) : manifeste (25,5 ; 18,5), alarme (24,5 ; 3,5),
   extraction au spawn (1,5 ; 1,5), rayon 1,4, maintien 8 s consécutives.
-  `Game.mission` ; autres niveaux = élimination. Interaction E/remappable, LB,
+  `Game.mission` ; les autres niveaux ont leurs missions (voir plus bas). Interaction E/remappable, LB,
   tactile ACT (portée/ligne de vue/vie/glissade contrôlées ; pause/outcome
   bloquent). HUD mission à y=160. Arsenal initial Entrepôt LAN : pistolet.
 - **Laboratoire** : sol résine blanche, textures `wall_lab_tech/metal/
@@ -304,6 +339,26 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   anneau fermé sans support, `v_offset` ~0,11, jamais retourné selon la
   parité ; animations de props locales, jamais répliquées.
 - Fond de menu lunaire 1280×720 (panneau sur le tiers gauche).
+
+## Missions de campagne (`missions.py`, solo uniquement, rien de répliqué)
+
+- Config par niveau : `objectives`, `reinforcements` {`points`, `kinds`,
+  `during`: {étape: (intervalle, nombre)}, `after`: {étape: nombre}, `max`},
+  `countdown` {`seconds`, `until`, `label`, `failure`}, `hostage` {`release`,
+  `x`, `y`}, `generators` [étapes], `shield_every`. Intervalle `during` ÷
+  `reinforcement_cap`, nombre `after` × cap, budget `max` × cap ;
+  compte à rebours × `countdown_mult`.
+- Métropole : balise → tenir 30 s (renforts) → hélicoptère. Gouvernement :
+  3 dossiers → libérer l'otage → `escort` (nouveau kind d'`Objective`, validé
+  par le directeur quand l'otage est dans la zone). Base : 3 batteries avant
+  150 s → exfiltration. Laboratoire : 3 générateurs (Colosse invulnérable)
+  → `eliminate`. Toutes les cibles sont joignables par BFS (test).
+- Échec : `director.failure` → `Game.outcome = "failed"` (pas de caméra de
+  mort), `failure_reason`, `main.py` affiche « MISSION ÉCHOUÉE ».
+- `_ai_target` renvoie l'otage s'il est plus proche que le joueur ;
+  `_extra_sprites` le dessine ; il n'est PAS dans `_all_players`.
+- Le directeur de pression du Déferlement reste `self.director` ; celui des
+  missions est `self.mission_director` (ne pas confondre).
 
 ## Déferlement (`survival.py`)
 
@@ -322,7 +377,17 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 - Vague nettoyée : `intermission = CLEAR_INTERMISSION` (7 s fixes, demande
   utilisateur). Non nettoyée : pas de répit, la suivante démarre par-dessus
   les survivants. `INTERMISSION = 4` seulement avant la vague 1.
-- Packs de vie toutes les 2 vagues.
+- Packs de vie toutes les `difficulty.lifepack_every` vagues (1/2/3) ; PV
+  par vague nettoyée `difficulty.clear_heal` (20/12/6) ; taille des vagues
+  `wave_composition(n, difficulty.enemy_count)` (min 3) ; `boss_tempo`
+  multiplie le repos du `BossPattern` (`pattern.tempo`, réglé par
+  `Game._tune_enemy`). Soldat = valeurs historiques.
+- Porte-boucliers : `wave_traits` (1 soldat sur 3 dès la vague 7) ; essaims
+  `swarm_size` (vagues ≡ 0 mod 4 dès 8, hors 10/20/30). Entrées de
+  `spawn_queue` à 5 champs `(kind, wave, mutator, elite, traits)` (4 tolérés).
+- Contrats : `pick_contract` (vagues 2, 5, 8…, graine 7919 × vague),
+  `self.contract`, `_credit_kill`, carte via `_award_upgrades("contract:n")`,
+  répliqué dans `survival_info()["contract"]` (`valid_contract` côté client).
 - **Apparitions** : `_pick_spawn_point(radius)` → `(x, y, angle)` à la bouche
   du portail (`level.config["portal"]`, case bloquante) : distances
   0,55/0,85/1,2 + rayon, 16 directions, `can_stand`, < `SPAWN_MAX_DISTANCE`
@@ -343,6 +408,8 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   dégâts +10 %, recharge −15 %, capacité +20 %, dispersion −20 %, cadence
   +8 % (arrondis entiers dégâts/capacité). Specs par arme dérivées de façon
   idempotente, ratio de rechargement conservé.
+- Cartes d'arme dédiées (plafond 1) : `pistol_explosive`, `shotgun_heavy`,
+  `rifle_pierce`, `minigun_cooling` (`weapon.heat_mult = 0,7` dans `apply`).
 - Offre (`valid_offers`) = `rng.sample` de 3 `WEAPON_UPGRADES` + 1 `PERKS` en
   dernière position. Perks : `grenade` (+1 max et plein, `grenade_capacity`,
   `MAX_GRENADES = 6`), `ghost_slide`, `vitality` (+20 PV max et rendus),
@@ -403,7 +470,8 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 
 ### Réseau / protocole
 
-- Protocole strict (`version.py`, v5) : autre version → `incompatible`, aucun
+- v6 : `en[16]` bouclier 0/1/2, `wv.contract`, minigun sans munitions.
+- Protocole strict (`version.py`, v6) : autre version → `incompatible`, aucun
   joueur créé. `session_id`, `iq` (entrées), `sq` (instantanés), événements
   fiables `rev` contigus acquittés par `ea`, journal borné 512, reprise `eb`.
   Ne jamais vider le journal après un envoi. `ix=[séquence,index]`, `ia`, `ms`,

@@ -241,6 +241,22 @@ LEVELS = [
     },
     {
         "name": "Métropole",
+        # Balise de détresse, puis tenir le carrefour sous les renforts
+        # jusqu'à l'évacuation, puis rejoindre l'hélicoptère.
+        "objectives": [
+            {"id": "beacon", "label": "Activer la balise de détresse", "kind": "interact",
+             "x": 14.5, "y": 7.5},
+            {"id": "hold", "label": "Tenir le carrefour jusqu'à l'évacuation",
+             "kind": "defend", "x": 14.5, "y": 7.5, "radius": 2.6, "duration": 30.0},
+            {"id": "helicopter", "label": "Rejoindre l'hélicoptère", "kind": "reach",
+             "x": 27.5, "y": 20.5, "radius": 1.4},
+        ],
+        "reinforcements": {
+            "points": [(28.5, 1.5), (1.5, 12.5), (28.5, 12.5), (14.5, 20.5)],
+            "kinds": ["grunt", "soldier", "grunt"],
+            "during": {"hold": (6.0, 2)},
+            "max": 12,
+        },
         "grid": MAP_CITY,
         "theme": {"1": "wall_tower", "2": "wall_brick", "3": "wall_barrier"},
         "heights": {"1": 3.4, "3": 0.6},   # commerces (2) à hauteur normale
@@ -254,6 +270,28 @@ LEVELS = [
     },
     {
         "name": "Gouvernement",
+        # Trois dossiers compromettants, puis l'otage à escorter jusqu'à
+        # l'entrée : les ennemis tirent sur lui s'il est le plus proche.
+        "objectives": [
+            {"id": "file_west", "label": "Dossier 1/3 : bureau ouest", "kind": "interact",
+             "x": 3.5, "y": 11.5},
+            {"id": "file_east", "label": "Dossier 2/3 : bureau est", "kind": "interact",
+             "x": 23.5, "y": 15.5},
+            {"id": "file_north", "label": "Dossier 3/3 : galerie nord", "kind": "interact",
+             "x": 11.5, "y": 3.5},
+            {"id": "release", "label": "Libérer l'otage de l'hémicycle", "kind": "interact",
+             "x": 15.5, "y": 12.5},
+            {"id": "escort", "label": "Escorter l'otage jusqu'à l'entrée", "kind": "escort",
+             "x": 13.5, "y": 24.5, "radius": 1.8},
+        ],
+        "hostage": {"release": "release", "x": 15.5, "y": 12.5},
+        "reinforcements": {
+            "points": [(13.5, 2.5), (3.5, 13.5), (23.5, 13.5)],
+            "kinds": ["soldier", "grunt"],
+            "after": {"release": 4},
+            "max": 6,
+        },
+        "shield_every": 3,
         "grid": MAP_GOV,
         "theme": {"1": "wall_marble", "2": "wall_govwood", "3": "wall_marble"},
         "heights": {"1": 2.4},             # murs de salle (2, à portes) hauteur 1
@@ -267,6 +305,28 @@ LEVELS = [
     },
     {
         "name": "Base militaire",
+        # Saboter trois batteries avant la fin du compte à rebours ; chaque
+        # sabotage déclenche des renforts. Puis exfiltration au point de départ.
+        "objectives": [
+            {"id": "battery_bunker", "label": "Saboter la batterie du bunker",
+             "kind": "interact", "x": 10.5, "y": 6.5},
+            {"id": "battery_north", "label": "Saboter la batterie nord-est",
+             "kind": "interact", "x": 21.5, "y": 2.5},
+            {"id": "battery_vault", "label": "Saboter la batterie de la soute",
+             "kind": "interact", "x": 12.5, "y": 15.5},
+            {"id": "exfil", "label": "Exfiltration au point de départ", "kind": "reach",
+             "x": 1.5, "y": 1.5, "radius": 1.4},
+        ],
+        "countdown": {"seconds": 150.0, "until": "battery_vault",
+                      "label": "Lancement des missiles",
+                      "failure": "Les missiles sont partis : batteries non sabotées."},
+        "reinforcements": {
+            "points": [(22.5, 8.5), (1.5, 8.5), (22.5, 16.5), (1.5, 16.5)],
+            "kinds": ["soldier", "kamikaze", "heavy"],
+            "after": {"battery_bunker": 3, "battery_north": 3, "battery_vault": 3},
+            "max": 9,
+        },
+        "shield_every": 2,
         "grid": MAP_BASE,
         "theme": {"1": "wall_stone", "2": "wall_metal", "3": "wall_crate"},
         "sky": ((22, 26, 40), (52, 60, 84)),
@@ -279,6 +339,19 @@ LEVELS = [
     },
     {
         "name": "Laboratoire — Assaut final",
+        # Trois générateurs rendent le Colosse invulnérable : les couper,
+        # puis abattre le Sceau.
+        "objectives": [
+            {"id": "generator_west", "label": "Couper le générateur ouest",
+             "kind": "interact", "x": 3.5, "y": 1.5},
+            {"id": "generator_east", "label": "Couper le générateur est",
+             "kind": "interact", "x": 27.5, "y": 7.5},
+            {"id": "generator_core", "label": "Couper le générateur du cœur",
+             "kind": "interact", "x": 13.5, "y": 17.5},
+            {"id": "colossus", "label": "Abattre le Colosse", "kind": "eliminate",
+             "x": 25.5, "y": 19.5, "radius": 2.0},
+        ],
+        "generators": ["generator_west", "generator_east", "generator_core"],
         "grid": MAP_LAB,
         # Textures dédiées : ne pas blanchir les murs partagés avec la Base.
         "theme": {"1": "wall_lab_tech", "2": "wall_lab_metal",

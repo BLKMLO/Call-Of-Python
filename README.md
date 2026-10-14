@@ -2,7 +2,7 @@
 
 FPS rétro en pseudo-3D (raycasting), solo ou coop LAN jusqu'à 4 joueurs :
 campagne de cinq missions, mode survie de 30 vagues, quatre armes évolutives.
-Version gameplay **0.6.0**. Détails : [règles et équilibrage](docs/gameplay.md).
+Version gameplay **0.7.0**. Détails : [règles et équilibrage](docs/gameplay.md).
 
 ## Installation
 
@@ -35,17 +35,56 @@ croix, Entrée/A pour valider, Échap/B pour revenir.
 
 ## Modes
 
-**Campagne** — Entrepôt, Métropole, Gouvernement, Base militaire, Laboratoire.
-L'arsenal est conservé. L'Entrepôt (jouable aussi en LAN) a des objectifs :
-manifeste, alarme, puis 8 s d'extraction. Les autres missions se gagnent par
-élimination. Colosse final en trois phases.
+**Campagne** — chaque niveau a sa mission :
+
+| Niveau | Mission |
+|---|---|
+| Entrepôt | Manifeste, alarme, 8 s d'extraction |
+| Métropole | Balise de détresse, tenir le carrefour 30 s sous les renforts, hélicoptère |
+| Gouvernement | Trois dossiers, libérer l'otage et l'escorter (les ennemis le visent ; s'il meurt, mission échouée) |
+| Base militaire | Saboter trois batteries avant le lancement des missiles (150 s en Soldat), renforts à chaque sabotage, exfiltration |
+| Laboratoire | Couper trois générateurs qui rendent le Colosse invulnérable, puis l'abattre |
+
+L'arsenal est conservé d'un niveau à l'autre ; chaque interaction de mission
+donne une carte d'amélioration.
 
 **Le Déferlement** — 30 vagues sortant d'un portail, Colosse aux vagues 10/20/30,
 Commandant aux vagues 5/15/25. Délai avant submersion : 30 s, puis par vague
 −3 % en Recrue (12,4 s à la vague 30), −6 % en Soldat (5,0 s) et −10 % en Vétéran
 (plancher de 4 s atteint dès la vague 21) ; planchers 8/6/4 s par tranche de 10 vagues ;
-**+10 s si un Colosse est dans la vague**. La difficulté se règle dans Paramètres. Vague nettoyée : 7 s de répit et +12 PV ; sinon la suivante arrive
+**+10 s si un Colosse est dans la vague**. Dès la vague 7, un soldat sur trois porte un bouclier frontal ;
+dès la vague 8, une vague sur quatre amène un essaim de kamikazes rapides.
+Des **contrats** optionnels (vagues 2, 5, 8…, ex. « 5 kamikazes au fusil à
+pompe ») rapportent une carte bonus.
+
+**Difficulté** (menu principal ou Paramètres ; le menu change de couleur :
+vert Recrue, ambre Soldat, rouge Vétéran) :
+
+| | Recrue | Soldat | Vétéran |
+|---|---|---|---|
+| Vie / dégâts ennemis | ×0,82 / ×0,72 | ×1 / ×1 | ×1,22 / ×1,28 |
+| Ennemis par vague | ×0,8 | ×1 | ×1,25 |
+| Délai de submersion par vague | −3 % | −6 % | −10 % |
+| PV par vague nettoyée / entre niveaux | 20 / 55 | 12 / 40 | 6 / 25 |
+| Bouclier d'arrivée | 4 s | 3 s | 2 s |
+| Pack de vie (Déferlement) | chaque vague | toutes les 2 | toutes les 3 |
+| Repos du Colosse | ×1,2 | ×1 | ×0,75 |
+| Renforts / comptes à rebours | ×0,75 / ×1,25 | ×1 / ×1 | ×1,5 / ×0,8 | Vague nettoyée : 7 s de répit et +12 PV ; sinon la suivante arrive
 par-dessus. En coop LAN : mutateurs et élites dès la vague 4.
+
+## Armes
+
+| Arme | Rôle |
+|---|---|
+| Pistolet | Perce le blindage (×1,4 contre lourds et Colosse), ×1,75 en visée complète |
+| Fusil à pompe | ×1,5 à moins de 2 m, étourdit 0,5 s et repousse (baisse les boucliers) |
+| Fusil d'assaut | Polyvalent |
+| Minigun | Munitions illimitées mais surchauffe (70 tirs, refroidissement 2,2 s), 0,4 s de lancement, déplacement ×0,65 en tirant, ×0,6 contre le blindage |
+
+Un bouclier levé ne laisse passer que 15 % des dégâts de face : contourner,
+grenade ou fusil à pompe. Cartes propres à chaque arme : Balles explosives
+(pistolet), Chevrotine lourde (pompe), Perforantes (fusil), Refroidissement
+(minigun).
 
 ## Mécaniques
 
@@ -62,14 +101,14 @@ par-dessus. En coop LAN : mutateurs et élites dès la vague 4.
 ## Technique
 
 Simulation 60 Hz et rendu jusqu'à 120 Hz, IA (BFS, couverture), réseau UDP
-port 5577, protocole v5, hôte autoritaire. Voir
+port 5577, protocole v6, hôte autoritaire. Voir
 [architecture](docs/architecture.md), [protocole](docs/network-protocol.md),
 [distribution](docs/distribution.md).
 
 | Fichier | Rôle |
 |---|---|
 | `main.py`, `runtime.py` | États, rendu, horloge |
-| `game.py`, `survival.py`, `objectives.py` | Missions, vagues, objectifs |
+| `game.py`, `survival.py`, `objectives.py`, `missions.py` | Missions, vagues, objectifs |
 | `entities.py`, `ai.py`, `weapons.py` | Entités, IA, armes |
 | `raycaster.py`, `hud.py`, `particles.py` | Rendu et interface |
 | `network.py`, `coop.py` | Réseau LAN |

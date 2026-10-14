@@ -18,7 +18,14 @@ WEAPON_UPGRADES = {
     "capacity": ("Réserve", "+20 % capacité du chargeur"),
     "accuracy": ("Stabilité", "-20 % dispersion"),
     "cadence": ("Mécanisme", "+8 % cadence"),
+    # Cartes propres à une arme (une seule fois chacune).
+    "pistol_explosive": ("Balles explosives", "Pistolet : éclats 40 % sur 1,2 m"),
+    "shotgun_heavy": ("Chevrotine lourde", "Pompe : étourdit 2x, portée 3,5 m"),
+    "rifle_pierce": ("Perforantes", "Fusil : traverse 1 ennemi (60 %)"),
+    "minigun_cooling": ("Refroidissement", "Minigun : -30 % de chauffe"),
 }
+# Carte « Refroidissement » : chaleur par tir ×0,7.
+COOLING_HEAT_MULT = 0.7
 PERKS = {
     "grenade": ("Artificier", "+1 grenade max, stock rempli"),
     "ghost_slide": ("Glissade fantôme", "Invincible toute la glissade"),
@@ -29,6 +36,8 @@ UPGRADES = {**WEAPON_UPGRADES, **PERKS}
 # Plafonds : les effets linéaires restent positifs (recharge >= 25 % du
 # temps d'origine, dispersion >= 20 %).
 CAPS = {"damage": 10, "reload": 5, "capacity": 10, "accuracy": 4, "cadence": 10,
+        "pistol_explosive": 1, "shotgun_heavy": 1, "rifle_pierce": 1,
+        "minigun_cooling": 1,
         "grenade": 4, "ghost_slide": 1, "vitality": 5, "momentum": 2}
 WEAPON_CARDS = 3
 CHOICE_SECONDS = 12.0
@@ -115,6 +124,11 @@ class SessionUpgrades:
                 spread=base.spread * (1 - 0.20 * self.levels.get("accuracy", 0)),
                 fire_delay=base.fire_delay / (1 + 0.08 * self.levels.get("cadence", 0)))
             weapon.reloading = ratio * weapon.spec.reload_time
+            if weapon.spec.heat:
+                weapon.ammo = weapon.spec.magazine_size   # munitions illimitées
+                weapon.reloading = 0.0
+                weapon.heat_mult = (COOLING_HEAT_MULT
+                                    if self.levels.get("minigun_cooling") else 1.0)
             weapon.ammo = min(weapon.ammo, weapon.spec.magazine_size)
             weapon.upgrade_signature = signature
 
