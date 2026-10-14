@@ -6,6 +6,7 @@ aux changements de résolution). Chaque menu retourne une chaîne d'action
 ("play", "settings", "quit", "back", ...) depuis `handle_event`.
 """
 
+import math
 from typing import ClassVar
 
 import pygame
@@ -13,6 +14,8 @@ import pygame
 import assets
 from difficulty import get_difficulty
 from settings import KEY_ACTIONS, RESOLUTIONS, valid_ipv4
+from ui_style import STYLE_CACHE, STYLE_LIMIT, glow_surface, styled_text, tracked, tracked_width
+from version import GAME_VERSION
 
 ACTION_LABELS = {"roulade": "Glissade"}
 
@@ -22,6 +25,12 @@ HOVER_COLOR = (105, 238, 174)
 DIM_COLOR = (132, 148, 151)
 ACCENT_COLOR = (64, 198, 137)
 WARM_COLOR = (230, 151, 67)
+SELECTED_TEXT = (6, 20, 15)
+DANGER_COLOR = (226, 72, 64)
+GOLD_COLOR = (244, 196, 84)
+UI_FONTS = "bahnschrift,dejavusans,arial,liberationsans"
+GRADE_COLORS = {"S": GOLD_COLOR, "A": HOVER_COLOR, "B": (120, 200, 230),
+                "C": (214, 214, 200), "D": DIM_COLOR}
 
 # Les menus demandent plusieurs polices par frame : SysFont reconstruit
 # l'objet Font à chaque appel, on les mutualise donc pour toute la session.
@@ -36,6 +45,61 @@ def _sysfont(names, size, bold=False):
         font = pygame.font.SysFont(names, size, bold=bold)
         _FONT_CACHE[key] = font
     return font
+
+
+def _keycap_strip(pairs, height, max_width):
+    """Bandeau d'aides façon jeu : [TOUCHE] ACTION, centré, mis en cache."""
+    key = ("keycaps", tuple(pairs), height, max_width)
+    cached = STYLE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    size = max(11, height // 50)
+    while True:
+        font = _sysfont(UI_FONTS, size, bold=True)
+        pad_x, gap, inner = max(6, size // 2), max(16, size * 2), max(6, size // 2)
+        cap_h = font.get_height() + 6
+        widths = [font.size(k)[0] + pad_x * 2 + inner + font.size(a)[0]
+                  for k, a in pairs]
+        total = sum(widths) + gap * (len(pairs) - 1)
+        if total <= max_width or size <= 9:
+            break
+        size -= 1
+    surface = pygame.Surface((max(1, total), cap_h), pygame.SRCALPHA)
+    x = 0
+    for (cap, action), width in zip(pairs, widths, strict=True):
+        cap_w = font.size(cap)[0] + pad_x * 2
+        rect = pygame.Rect(x, 0, cap_w, cap_h)
+        pygame.draw.rect(surface, (18, 38, 34, 235), rect, border_radius=3)
+        pygame.draw.rect(surface, (*ACCENT_COLOR, 200), rect, 1, border_radius=3)
+        pygame.draw.line(surface, (*ACCENT_COLOR, 255), (rect.left + 2, rect.bottom - 1),
+                         (rect.right - 3, rect.bottom - 1), 2)
+        glyph = font.render(cap, True, TITLE_COLOR)
+        surface.blit(glyph, glyph.get_rect(center=rect.center))
+        label = font.render(action, True, DIM_COLOR)
+        surface.blit(label, (rect.right + inner, (cap_h - label.get_height()) // 2))
+        x += width + gap
+    if len(STYLE_CACHE) >= STYLE_LIMIT:
+        STYLE_CACHE.clear()
+    STYLE_CACHE[key] = surface
+    return surface
+
+
+def stat_cards(stats):
+    """Bilan découpé en cartes (libellé, valeur, couleur) pour les écrans
+    de fin ; `None` si aucune statistique n'est disponible."""
+    if stats is None:
+        return None
+    accuracy = (100.0 * stats["hits"] / stats["shots"]) if stats["shots"] else 0.0
+    minutes, seconds = divmod(int(stats["time"]), 60)
+    cards = []
+    if "score" in stats:
+        grade = stats.get("grade", "D")
+        cards += [("SCORE", str(stats["score"]), GOLD_COLOR),
+                  ("GRADE", grade, GRADE_COLORS.get(grade, TEXT_COLOR))]
+    cards += [("ÉLIM.", str(stats["kills"]), TITLE_COLOR),
+              ("PRÉCISION", f"{accuracy:.0f} %", TITLE_COLOR),
+              ("TEMPS", f"{minutes}:{seconds:02d}", TITLE_COLOR)]
+    return cards
 
 
 def format_stats(stats):
@@ -55,10 +119,16 @@ class MenuBase:
     """Mécanique commune : boutons latéraux, survol à la souris, clic."""
 
     title = ""
+    kicker = ""                    # petite ligne « // ... » au-dessus du titre
+    title_color = TITLE_COLOR
+    glow_color = ACCENT_COLOR      # halo du titre (rouge en défaite, or en victoire)
     menu_vertical_offset = 0.0
+    nav_hints = (("FLÈCHES", "NAVIGUER"), ("ENTRÉE", "VALIDER"),
+                 ("ÉCHAP", "RETOUR"))
     _background_cache = {}
     _panel_cache = {}
     _button_cache: ClassVar[dict] = {}
+    _glow_cache: ClassVar[dict] = {}
 
     def __init__(self, sounds):
         self.sounds = sounds
@@ -68,6 +138,11 @@ class MenuBase:
     def items(self):
         """Liste de (identifiant, libellé) ; surchargée par chaque menu."""
         return []
+
+    @staticmethod
+    def _display(label):
+        """Libellé tel qu'affiché : capitales, comme un menu de jeu."""
+        return label.upper()
 
     def _layout(self, screen):
         """Calcule le rect (et le point de bascule gauche/droite) de chaque
@@ -93,20 +168,32 @@ class MenuBase:
             line_h = min(line_h, (bottom - top) // len(items))
             button_h = min(button_h, line_h - 2)
             start_y = top + button_h // 2
+        placed = []
         for i, (ident, label) in enumerate(items):
             rect = pygame.Rect(0, 0, button_w, button_h)
             rect.center = (self._content_center_x(screen),
                            start_y + i * line_h)
-            row_font = self._row_font(h, label, rect, compact)
-            split_x = self._bracket_split(row_font, label, rect)
+            placed.append((ident, label, rect))
+        row_font = self._shared_font(h, placed, compact)
+        for ident, label, rect in placed:
+            split_x = self._bracket_split(row_font, self._display(label), rect)
             rows.append((ident, label, rect, split_x))
         return rows
+
+    def _shared_font(self, height, rows, compact):
+        """Une seule taille par menu (la plus petite qui fait tout tenir) :
+        des lignes de tailles différentes faisaient « diapositive »."""
+        fonts = [self._row_font(height, row[1], row[2], compact) for row in rows]
+        if not fonts:
+            return self._font(height, small=compact)
+        return min(fonts, key=lambda font: font.get_height())
 
     def _row_font(self, height, label, rect, compact):
         font = self._font(height, small=compact)
         available = rect.right - self._button_text_left(rect) - self._button_skew(rect)
         size = font.get_height()
-        while font.size(label)[0] > available and size > 10:
+        text = self._display(label)
+        while font.size(text)[0] > available and size > 10:
             size -= 1
             font = _sysfont("bahnschrift,dejavusans,arial,liberationsans", size, bold=True)
         return font
@@ -162,7 +249,11 @@ class MenuBase:
 
     @classmethod
     def _button_surface(cls, size, hovered):
-        """Fond parallélogramme mis en cache par taille et état."""
+        """Fond parallélogramme mis en cache par taille et état.
+
+        Au repos : plaque sombre avec un liseré à gauche. Sélectionné :
+        barre pleine couleur accent, reflet en haut et tranche chaude —
+        la ligne « s'allume » comme dans un menu de jeu."""
         key = (size, bool(hovered))
         surface = cls._button_cache.get(key)
         if surface is not None:
@@ -170,16 +261,32 @@ class MenuBase:
         surface = pygame.Surface(size, pygame.SRCALPHA)
         rect = surface.get_rect()
         points = cls._button_points(rect)
-        fill = (27, 58, 53, 232) if hovered else (7, 16, 22, 205)
-        pygame.draw.polygon(surface, fill, points)
         if hovered:
+            pygame.draw.polygon(surface, (*ACCENT_COLOR, 240), points)
+            highlight = [points[0], points[1],
+                         (points[1][0] - cls._button_skew(rect) * 0.4, rect.height * 0.4),
+                         (points[0][0] - cls._button_skew(rect) * 0.4, rect.height * 0.4)]
+            pygame.draw.polygon(surface, (255, 255, 255, 46), highlight)
             # Le contour n'apparaît qu'au survol, comme demandé.
             pygame.draw.polygon(surface, HOVER_COLOR, points, 2)
-            pygame.draw.line(
-                surface, WARM_COLOR, points[0], points[3], 3,
-            )
+            pygame.draw.line(surface, WARM_COLOR, points[0], points[3], 4)
+        else:
+            pygame.draw.polygon(surface, (6, 14, 19, 178), points)
+            pygame.draw.line(surface, (*ACCENT_COLOR, 120), points[0], points[3], 2)
         cls._button_cache[key] = surface
         return surface
+
+    @classmethod
+    def _button_glow(cls, size):
+        """Halo pulsé derrière le bouton sélectionné (mis en cache)."""
+        glow = cls._glow_cache.get(size)
+        if glow is None:
+            shape = pygame.Surface(size, pygame.SRCALPHA)
+            pygame.draw.polygon(shape, (255, 255, 255, 255),
+                                cls._button_points(shape.get_rect()))
+            glow = glow_surface(shape, HOVER_COLOR, max(4, size[1] // 4))
+            cls._glow_cache[size] = glow
+        return glow
 
     @staticmethod
     def _font(screen_h, small=False):
@@ -223,23 +330,52 @@ class MenuBase:
         y = (scaled.get_height() - h) // 2
         result = scaled.subsurface((x, y, w, h)).copy()
         veil = pygame.Surface(size, pygame.SRCALPHA)
-        veil.fill((3, 8, 13, 48))
+        veil.fill((3, 8, 13, 40))
+        # Fondu sombre depuis la gauche (zone de menu) : l'illustration
+        # reste intacte à droite, sans cadre « diapositive ».
+        fade_w = int(w * 0.62)
+        for col in range(0, fade_w, 2):
+            t = 1.0 - col / fade_w
+            pygame.draw.line(veil, (2, 6, 10, int(40 + 175 * t * t)),
+                             (col, 0), (col, h), 2)
+        # Vignette haut/bas et lignes de balayage discrètes (écran CRT).
+        band = max(20, h // 6)
+        for row in range(band):
+            alpha = int(150 * (1.0 - row / band) ** 2)
+            pygame.draw.line(veil, (0, 0, 0, alpha), (0, row), (w, row))
+            pygame.draw.line(veil, (0, 0, 0, alpha), (0, h - 1 - row), (w, h - 1 - row))
+        for row in range(0, h, 3):
+            pygame.draw.line(veil, (0, 0, 0, 34), (0, row), (w, row))
         result.blit(veil, (0, 0))
         cls._background_cache[size] = result
         return result
 
     @classmethod
     def _panel(cls, size):
-        """Panneau central verre fumé, mis en cache par taille."""
+        """Cadre tactique façon HUD : voile léger, coins en équerre et
+        coin biseauté, plutôt qu'une boîte arrondie. Mis en cache."""
         if size in cls._panel_cache:
             return cls._panel_cache[size]
         panel = pygame.Surface(size, pygame.SRCALPHA)
-        rect = panel.get_rect()
-        pygame.draw.rect(panel, (4, 10, 15, 214), rect, border_radius=10)
-        pygame.draw.rect(panel, (71, 101, 104, 190), rect, 1,
-                         border_radius=10)
-        pygame.draw.line(panel, (*ACCENT_COLOR, 220), (1, 1),
-                         (rect.width - 2, 1), 3)
+        w, h = size
+        cut = max(12, min(w, h) // 14)
+        outline = [(cut, 0), (w - 1, 0), (w - 1, h - 1 - cut),
+                   (w - 1 - cut, h - 1), (0, h - 1), (0, cut)]
+        pygame.draw.polygon(panel, (3, 9, 13, 150), outline)
+        pygame.draw.polygon(panel, (71, 101, 104, 70), outline, 1)
+        arm = max(18, min(w, h) // 9)
+        bright = (*ACCENT_COLOR, 235)
+        # Équerres en haut à droite et en bas à gauche, biseaux soulignés.
+        pygame.draw.lines(panel, bright, False,
+                          [(w - 1 - arm, 1), (w - 2, 1), (w - 2, arm)], 3)
+        pygame.draw.lines(panel, bright, False,
+                          [(1, h - 1 - arm), (1, h - 2), (arm, h - 2)], 3)
+        pygame.draw.line(panel, (*WARM_COLOR, 235), (0, cut), (cut, 0), 3)
+        pygame.draw.line(panel, (*WARM_COLOR, 235), (w - 1, h - 1 - cut),
+                         (w - 1 - cut, h - 1), 3)
+        # Graduations sur le bord gauche (instrument de visée).
+        for y in range(cut + arm, h - arm * 2, max(8, h // 40)):
+            pygame.draw.line(panel, (*ACCENT_COLOR, 70), (3, y), (8, y), 1)
         cls._panel_cache[size] = panel
         return panel
 
@@ -257,6 +393,8 @@ class MenuBase:
         panel_h = int(h * 0.82)
         rect = pygame.Rect(0, 0, panel_w, panel_h)
         rect.center = (self._content_center_x(screen), h // 2 + h // 40)
+        # Le cadre s'arrête au-dessus de la bande d'aides du bas.
+        rect.height = min(rect.height, h - max(42, h // 11) - 8 - rect.top)
         return rect
 
     @staticmethod
@@ -277,15 +415,51 @@ class MenuBase:
         lines.append(current)
         return lines
 
-    def _draw_info_blocks(self, screen, blocks):
+    def _draw_stat_cards(self, screen, cards, bottom, max_width):
+        """Cartes de bilan alignées (libellé discret, valeur en gros) dont
+        le bas tombe sur `bottom` ; renvoie le haut occupé."""
+        h = screen.get_height()
+        gap = max(4, h // 120)
+        card_w = (max_width - gap * (len(cards) - 1)) // len(cards)
+        label_font = _sysfont(UI_FONTS, max(9, h // 64), bold=True)
+        value_size = max(15, h // 26)
+        value_font = _sysfont(UI_FONTS, value_size, bold=True)
+        while (value_size > 11 and max(value_font.size(v)[0] for _l, v, _c in cards)
+               > card_w - 8):
+            value_size -= 1
+            value_font = _sysfont(UI_FONTS, value_size, bold=True)
+        card_h = label_font.get_height() + value_font.get_height() + 14
+        top = bottom - card_h
+        x = self._content_center_x(screen) - (card_w * len(cards)
+                                              + gap * (len(cards) - 1)) // 2
+        for label, value, color in cards:
+            rect = pygame.Rect(x, top, card_w, card_h)
+            plate = pygame.Surface(rect.size, pygame.SRCALPHA)
+            plate.fill((5, 14, 18, 200))
+            pygame.draw.rect(plate, (*ACCENT_COLOR, 90), plate.get_rect(), 1)
+            pygame.draw.line(plate, (*color, 255), (0, 0), (card_w - 1, 0), 3)
+            screen.blit(plate, rect)
+            name = label_font.render(label, True, DIM_COLOR)
+            if name.get_width() > card_w - 6:
+                name = pygame.transform.smoothscale(
+                    name, (card_w - 6, name.get_height()))
+            screen.blit(name, name.get_rect(midtop=(rect.centerx, rect.top + 6)))
+            number = value_font.render(value, True, color)
+            screen.blit(number, number.get_rect(
+                midbottom=(rect.centerx, rect.bottom - 4)))
+            x += card_w + gap
+        return top
+
+    def _draw_info_blocks(self, screen, blocks, cards=None):
         """Centre plusieurs paragraphes dans l'espace avant les boutons.
 
         `blocks` contient des couples (texte, couleur). La police et les
         retours à la ligne s'adaptent à la largeur et à la hauteur réellement
-        disponibles, afin qu'aucun bilan ne déborde du panneau.
+        disponibles, afin qu'aucun bilan ne déborde du panneau. `cards`
+        (voir `stat_cards`) s'affichent juste au-dessus des boutons.
         """
         blocks = [(text, color) for text, color in blocks if text]
-        if not blocks:
+        if not blocks and not cards:
             return
         w, h = screen.get_size()
         panel = self._panel_rect(screen)
@@ -293,6 +467,11 @@ class MenuBase:
         top = h // 5 + h // 11
         bottom = rows[0][2].top - max(10, h // 60) if rows else panel.bottom - 20
         max_width = panel.width - max(36, panel.width // 10)
+        if cards:
+            bottom = self._draw_stat_cards(screen, cards, bottom, max_width)
+            bottom -= max(8, h // 50)
+        if not blocks:
+            return
         available = max(1, bottom - top)
 
         # Réduit progressivement le corps si un bilan très long ne tient pas.
@@ -322,34 +501,60 @@ class MenuBase:
             if index + 1 < len(wrapped):
                 y += gap
 
+    def _fit_font(self, text, size, max_width, spacing_ratio=0.0, minimum=24):
+        """Plus grande police (≤ `size`) dont le texte espacé tient."""
+        while True:
+            font = _sysfont(UI_FONTS, size, bold=True)
+            spacing = int(size * spacing_ratio)
+            if tracked_width(font, text, spacing) <= max_width or size <= minimum:
+                return font, spacing
+            size -= 2
+
     def _draw_title(self, screen):
         w, h = screen.get_size()
-        # La casse naturelle et une sans-serif moins massive évitent les
-        # titres étalés/empâtés, notamment sur le menu principal et l'écran
-        # de fin de niveau. Les intitulés longs sont ajustés à la largeur.
-        title_text = self.title
+        # Titre en capitales espacées avec halo, petite ligne d'accroche
+        # au-dessus et barre segmentée en dessous : un écran de jeu, pas
+        # une diapositive. Les intitulés longs sont ajustés à la largeur.
+        title_text = self.title.upper()
         panel = self._panel_rect(screen)
-        title_font = self._title_font(h, title_text, panel.width - 28)
-        shadow = title_font.render(title_text, True, (0, 0, 0))
-        title = title_font.render(title_text, True, TITLE_COLOR)
+        font, spacing = self._fit_font(title_text, max(36, h // 11),
+                                       panel.width - 40, 0.06, 26)
+        title = styled_text(font, title_text, self.title_color, spacing,
+                            glow=self.glow_color, glow_radius=max(4, h // 90))
         title_y = h // 8 if len(self.items()) > 8 else h // 5
         center_x = self._content_center_x(screen)
         pos = title.get_rect(center=(center_x, title_y))
-        screen.blit(shadow, pos.move(2, 2))
         screen.blit(title, pos)
-        line_w = min(title.get_width(), int(w * 0.32))
-        line_y = pos.bottom + max(5, h // 120)
-        pygame.draw.line(screen, ACCENT_COLOR,
-                         (center_x - line_w // 2, line_y),
-                         (center_x + line_w // 2, line_y), 2)
-        if self.title == "Call of Python":
-            tag_font = _sysfont(
-                "bahnschrift,dejavusans,arial", max(13, h // 46), bold=True,
-            )
-            tag = tag_font.render("INCIDENT LUNAIRE",
-                                  True, (160, 185, 180))
-            screen.blit(tag, tag.get_rect(
-                center=(center_x, line_y + tag.get_height())))
+        text_h = font.get_height()
+        if self.kicker:
+            kick_font = _sysfont(UI_FONTS, max(11, h // 52), bold=True)
+            kicker = styled_text(kick_font, self.kicker.upper(), self.glow_color,
+                                 max(1, h // 300))
+            screen.blit(kicker, kicker.get_rect(
+                center=(center_x, title_y - text_h // 2 - kicker.get_height() // 3)))
+        line_w = min(tracked_width(font, title_text, spacing), int(w * 0.32))
+        line_y = title_y + text_h // 2 + max(4, h // 120)
+        left = center_x - line_w // 2
+        pygame.draw.line(screen, self.glow_color, (left, line_y),
+                         (left + line_w - 40, line_y), 3)
+        for i in range(3):
+            x = left + line_w - 32 + i * 12
+            pygame.draw.line(screen, WARM_COLOR, (x, line_y), (x + 7, line_y), 3)
+
+    def _draw_footer_strip(self, screen):
+        """Bande basse sombre soulignée d'un filet accent."""
+        w, h = screen.get_size()
+        height = max(42, h // 11)
+        footer = pygame.Surface((w, height), pygame.SRCALPHA)
+        footer.fill((3, 8, 12, 215))
+        pygame.draw.line(footer, (*ACCENT_COLOR, 150), (0, 0), (w, 0), 1)
+        pygame.draw.line(footer, (*WARM_COLOR, 220), (0, 0), (w // 6, 0), 2)
+        screen.blit(footer, (0, h - height))
+
+    def _draw_keycaps(self, screen, pairs):
+        w, h = screen.get_size()
+        strip = _keycap_strip(pairs, h, w - 32)
+        screen.blit(strip, strip.get_rect(center=(w // 2, h - max(42, h // 11) // 2)))
 
     # ------------------------------------------------------------------
     def handle_event(self, event, screen):
@@ -412,28 +617,41 @@ class MenuBase:
 
         mouse = pygame.mouse.get_pos()
         rows = self._layout(screen)
+        pulse = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 260.0)
+        font = self._shared_font(h, rows, len(rows) > 8)
         for ident, label, rect, _split_x in rows:
-            font = self._row_font(h, label, rect, len(rows) > 8)
             hovered = (ident is not None
                        and ((self.keyboard_focus and ident == self.selected)
                             or (not self.keyboard_focus
                                 and self._button_contains(rect, mouse))))
+            offset = 0
+            if hovered:
+                glow = self._button_glow(rect.size)
+                glow.set_alpha(int(70 + 90 * pulse))
+                screen.blit(glow, glow.get_rect(center=rect.center))
+                offset = max(4, rect.height // 8)   # la ligne avance d'un cran
+                # Chevron de sélection qui « respire » devant la ligne.
+                tip_x = rect.left - 4 - int(3 * pulse)
+                half = max(4, rect.height // 6)
+                pygame.draw.polygon(screen, WARM_COLOR, [
+                    (tip_x, rect.centery), (tip_x - half, rect.centery - half),
+                    (tip_x - half, rect.centery + half)])
             if ident is not None:
                 screen.blit(self._button_surface(rect.size, hovered), rect)
-            color = HOVER_COLOR if hovered else TEXT_COLOR
-            text = font.render(label, True, color)
+            color = SELECTED_TEXT if hovered else TEXT_COLOR
+            if ident is None:
+                color = DIM_COLOR
+            text = font.render(self._display(label), True, color)
             text_rect = text.get_rect()
             text_rect.midleft = (
-                self._button_text_left(rect), rect.centery,
+                self._button_text_left(rect) + offset, rect.centery,
             )
             screen.blit(text, text_rect)
-        footer = pygame.Surface((w, max(42, h // 11)), pygame.SRCALPHA)
-        footer.fill((3, 8, 12, 205))
-        screen.blit(footer, (0, h - footer.get_height()))
+        self._draw_footer_strip(screen)
         self._draw_footer(screen)
 
     def _draw_footer(self, screen):
-        pass
+        self._draw_keycaps(screen, self.nav_hints)
 
 
 class MainMenu(MenuBase):
@@ -468,55 +686,85 @@ class MainMenu(MenuBase):
         panel_h = int(h * 0.84)
         rect = pygame.Rect(0, 0, panel_w, panel_h)
         rect.center = (self._content_center_x(screen), h // 2)
+        rect.height = min(rect.height, h - max(42, h // 11) - 8 - rect.top)
         return rect
 
     def _layout(self, screen):
         rows = super()._layout(screen)
         max_w = self._panel_rect(screen).width - 34
         result = []
-        font = self._font(
-            screen.get_height(), small=len(rows) > 8,
-        )
+        resized_rows = []
         for ident, label, rect, _split in rows:
             width = min(rect.width, max_w)
-            resized = pygame.Rect(
+            resized_rows.append((ident, label, pygame.Rect(
                 rect.centerx - width // 2, rect.y, width, rect.height,
-            )
+            )))
+        font = self._shared_font(screen.get_height(), resized_rows, len(rows) > 8)
+        for ident, label, resized in resized_rows:
             result.append((
                 ident, label, resized,
-                self._bracket_split(font, label, resized),
+                self._bracket_split(font, self._display(label), resized),
             ))
         return result
+
+    def _draw_title(self, screen):
+        """Logo : « CALL OF » espacé au-dessus d'un « PYTHON » géant
+        auréolé, puis une étiquette biseautée « INCIDENT LUNAIRE »."""
+        w, h = screen.get_size()
+        panel = self._panel_rect(screen)
+        center_x = self._content_center_x(screen)
+        max_w = panel.width - 40
+        big, big_spacing = self._fit_font("PYTHON", max(48, h // 7), max_w, 0.04, 30)
+        small, small_spacing = self._fit_font(
+            "CALL OF", max(18, h // 24), max_w, 0.45, 14)
+        title_y = h // 5
+        logo = styled_text(big, "PYTHON", TITLE_COLOR, big_spacing,
+                           glow=ACCENT_COLOR, glow_radius=max(5, h // 70))
+        logo_rect = logo.get_rect(center=(center_x, title_y))
+        screen.blit(logo, logo_rect)
+        top = styled_text(small, "CALL OF", HOVER_COLOR, small_spacing)
+        screen.blit(top, top.get_rect(
+            center=(center_x, title_y - big.get_height() // 2 - small.get_height() // 3)))
+        tag_font = _sysfont(UI_FONTS, max(12, h // 48), bold=True)
+        tag_text = tracked(tag_font, "INCIDENT LUNAIRE", SELECTED_TEXT, max(1, h // 260))
+        tag_rect = tag_text.get_rect().inflate(28, 8)
+        tag_rect.midtop = (center_x, title_y + big.get_height() // 2 + max(4, h // 90))
+        skew = tag_rect.height // 2
+        pygame.draw.polygon(screen, WARM_COLOR, [
+            (tag_rect.left + skew, tag_rect.top), (tag_rect.right, tag_rect.top),
+            (tag_rect.right - skew, tag_rect.bottom), (tag_rect.left, tag_rect.bottom)])
+        screen.blit(tag_text, tag_text.get_rect(center=tag_rect.center))
+        version = _sysfont(UI_FONTS, max(10, h // 64), bold=True).render(
+            f"v{GAME_VERSION}", True, DIM_COLOR)
+        screen.blit(version, version.get_rect(midleft=(tag_rect.right + 10, tag_rect.centery)))
 
     def draw(self, screen):
         super().draw(screen)
         parts = []
         if self.settings.best_level > 0:
-            parts.append(f"Meilleur niveau : {self.settings.best_level}")
+            parts.append(("MEILLEUR NIVEAU", str(self.settings.best_level)))
         if self.settings.best_wave > 0:
-            parts.append(f"Record du Déferlement : vague {self.settings.best_wave}")
+            parts.append(("RECORD DÉFERLEMENT", f"VAGUE {self.settings.best_wave}"))
         if parts:
             w, h = screen.get_size()
-            font = _sysfont(
-                "bahnschrift,dejavusans,arial", max(13, h // 47), bold=True,
-            )
+            label_font = _sysfont(UI_FONTS, max(11, h // 56), bold=True)
+            value_font = _sysfont(UI_FONTS, max(13, h // 42), bold=True)
             center_x = self._content_center_x(screen)
-            start_y = h - h // 6 - (len(parts) - 1) * font.get_linesize() // 2
-            for index, part in enumerate(parts):
-                text = font.render(part, True, DIM_COLOR)
-                screen.blit(text, text.get_rect(center=(
-                    center_x, start_y + index * font.get_linesize(),
-                )))
+            line_h = value_font.get_linesize() + 2
+            start_y = h - h // 6 - (len(parts) - 1) * line_h // 2
+            for index, (label, value) in enumerate(parts):
+                y = start_y + index * line_h
+                name = label_font.render(label, True, DIM_COLOR)
+                number = value_font.render(value, True, GOLD_COLOR)
+                total = name.get_width() + 10 + number.get_width()
+                x = center_x - total // 2
+                screen.blit(name, name.get_rect(midleft=(x, y)))
+                screen.blit(number, number.get_rect(
+                    midleft=(x + name.get_width() + 10, y)))
 
     def _draw_footer(self, screen):
-        w, h = screen.get_size()
-        font = _sysfont(
-            "bahnschrift,dejavusans,arial", max(12, h // 48), bold=True,
-        )
-        hint = font.render(
-            "ZQSD  DÉPLACEMENT   ·   MAJ  GLISSADE   ·   SOURIS  VISÉE / TIR   ·   1–4  ARMES",
-            True, DIM_COLOR)
-        screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
+        self._draw_keycaps(screen, (("ZQSD", "DÉPLACEMENT"), ("MAJ", "GLISSADE"),
+                                    ("SOURIS", "VISÉE / TIR"), ("1-4", "ARMES")))
 
 
 class SettingsMenu(MenuBase):
@@ -528,6 +776,7 @@ class SettingsMenu(MenuBase):
     """
 
     title = "Paramètres"
+    kicker = "// configuration"
 
     def __init__(self, sounds, settings):
         super().__init__(sounds)
@@ -636,14 +885,8 @@ class SettingsMenu(MenuBase):
         return None
 
     def _draw_footer(self, screen):
-        w, h = screen.get_size()
-        font = _sysfont(
-            "bahnschrift,dejavusans,arial", max(12, h // 48), bold=True,
-        )
-        hint = font.render(
-            "Touches : Échap annule · F11 est réservé · les doublons sont échangés",
-            True, DIM_COLOR)
-        screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
+        self._draw_keycaps(screen, (("< >", "RÉGLER"), ("ÉCHAP", "ANNULER / RETOUR"),
+                                    ("F11", "RÉSERVÉ"), ("DOUBLON", "TOUCHES ÉCHANGÉES")))
 
 
 class EndScreen(MenuBase):
@@ -662,7 +905,14 @@ class EndScreen(MenuBase):
         self.survival = survival
         self.coop_mission = coop_mission
         self.stats_line = format_stats(stats)
+        self.cards = stat_cards(stats)
         self.title = title or ("VICTOIRE !" if victory else "GAME OVER")
+        if victory:
+            self.kicker = "// mission accomplie"
+            self.title_color, self.glow_color = (255, 236, 190), GOLD_COLOR
+        else:
+            self.kicker = "// signal perdu"
+            self.title_color, self.glow_color = (255, 222, 216), DANGER_COLOR
         if subtitle is not None:
             self.subtitle = subtitle
         elif victory:
@@ -683,10 +933,7 @@ class EndScreen(MenuBase):
 
     def draw(self, screen):
         super().draw(screen)
-        self._draw_info_blocks(screen, [
-            (self.subtitle, DIM_COLOR),
-            (self.stats_line, (200, 180, 130)),
-        ])
+        self._draw_info_blocks(screen, [(self.subtitle, TEXT_COLOR)], self.cards)
 
 
 class MultiplayerMenu(MenuBase):
@@ -694,6 +941,7 @@ class MultiplayerMenu(MenuBase):
     rejoindre un hôte en saisissant son adresse IP."""
 
     title = "Multijoueur LAN"
+    kicker = "// liaison tactique"
 
     def __init__(self, sounds, settings):
         super().__init__(sounds)
@@ -703,14 +951,14 @@ class MultiplayerMenu(MenuBase):
 
     def items(self):
         if self.editing:
-            ip_label = f"Adresse de l'hôte : {self.settings.last_ip}_"
+            ip_label = f"IP hôte : {self.settings.last_ip}_"
         else:
-            ip_label = f"Adresse de l'hôte : {self.settings.last_ip}"
+            ip_label = f"IP hôte : {self.settings.last_ip}"
         return [
-            ("host", "Héberger (Le Déferlement en coop)"),
-            ("host_mission", "Héberger (Mission Entrepôt en coop)"),
+            ("host", "Héberger : Déferlement"),
+            ("host_mission", "Héberger : Mission Entrepôt"),
             ("ip", ip_label),
-            ("join", "Rejoindre cette adresse"),
+            ("join", "Rejoindre"),
             ("back", "Retour"),
         ]
 
@@ -763,18 +1011,25 @@ class MultiplayerMenu(MenuBase):
         w, h = screen.get_size()
         font = self._font(h, small=True)
         if self.error:
-            surf = font.render(self.error, True, (230, 110, 90))
+            surf = styled_text(font, self.error.upper(), DANGER_COLOR)
             screen.blit(surf, surf.get_rect(center=(w // 2, h - h // 9)))
-        hint = font.render(
-            "L'hôte fait tourner la partie ; les autres le rejoignent par "
-            "son adresse IP locale (port 5577).", True, DIM_COLOR)
-        screen.blit(hint, hint.get_rect(center=(w // 2, h - h // 14)))
+        self._draw_keycaps(screen, (("HÔTE", "FAIT TOURNER LA PARTIE"),
+                                    ("IP LOCALE", "POUR REJOINDRE"),
+                                    ("PORT", "5577")))
 
 
 class SealBrokenScreen(MenuBase):
     """Révélation après la mort du Colosse : il était le Sceau."""
 
     title = "LE SCEAU EST BRISÉ"
+    kicker = "// alerte — brèche lunaire"
+    title_color = (255, 222, 216)
+    glow_color = DANGER_COLOR
+    CHARS_PER_SECOND = 55          # défilement « machine à écrire »
+
+    def __init__(self, sounds):
+        super().__init__(sounds)
+        self._opened_at = None
 
     LORE = [
         "Le Colosse s'effondre... et le laboratoire tremble encore.",
@@ -790,13 +1045,27 @@ class SealBrokenScreen(MenuBase):
     def draw(self, screen):
         super().draw(screen)
         _w, h = screen.get_size()
+        now = pygame.time.get_ticks()
+        if self._opened_at is None:
+            self._opened_at = now
+        budget = int((now - self._opened_at) / 1000 * self.CHARS_PER_SECOND)
         font = self._font(h, small=True)
+        max_width = self._panel_rect(screen).width - 36
         y = h // 5 + h // 12
         for line in self.LORE:
-            surf = font.render(line, True, (200, 160, 130))
-            screen.blit(surf, surf.get_rect(
-                center=(self._content_center_x(screen), y),
-            ))
+            shown = line[:max(0, budget)]
+            budget -= len(line)
+            if shown:
+                surf = font.render(shown, True, (226, 176, 140))
+                if surf.get_width() > max_width:
+                    surf = pygame.transform.smoothscale(
+                        surf, (max_width, surf.get_height()))
+                rect = surf.get_rect(midleft=(
+                    self._content_center_x(screen) - max_width // 2, y))
+                screen.blit(surf, rect)
+                if len(shown) < len(line):    # curseur de frappe
+                    pygame.draw.rect(screen, DANGER_COLOR, (
+                        rect.right + 3, rect.top + 3, max(3, h // 120), rect.height - 6))
             y += int(font.get_height() * 1.35)
 
 
@@ -808,17 +1077,17 @@ class LevelCompleteScreen(MenuBase):
     def __init__(self, sounds, finished_index, next_name, stats=None):
         super().__init__(sounds)
         self.title = f"Niveau {finished_index + 1} terminé !"
+        self.kicker = "// zone sécurisée"
         self.next_name = next_name
         self.stats_line = format_stats(stats)
+        self.cards = stat_cards(stats)
 
     def items(self):
         return [("continue", "Continuer"), ("menu", "Menu principal")]
 
     def draw(self, screen):
         super().draw(screen)
-        text = (f"Prochain niveau : {self.next_name} — "
-                "vous gardez vos armes et récupérez de la vie.")
         self._draw_info_blocks(screen, [
-            (text, DIM_COLOR),
-            (self.stats_line, (200, 180, 130)),
-        ])
+            (f"PROCHAINE ZONE : {self.next_name.upper()}", WARM_COLOR),
+            ("Vous gardez vos armes et récupérez de la vie.", DIM_COLOR),
+        ], self.cards)

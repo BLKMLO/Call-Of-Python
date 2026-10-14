@@ -1,5 +1,23 @@
 # Changelog
 
+## Non publié — Délai selon la difficulté et menus « jeu vidéo » (2026-10-14)
+
+- Déferlement : la baisse du délai de submersion dépend de la difficulté —
+  −3 % par vague en Recrue, −6 % en Soldat (défaut), −10 % en Vétéran
+  (30 × facteur^(n-1), borné par les planchers 8/6/4 s). Vague 30 : 12,4 s,
+  5,0 s et 4,0 s (plancher). Le Colosse garde ses +10 s.
+- Menus refaits : fondu sombre depuis la gauche sur l'illustration, lignes de
+  balayage, cadre tactique à équerres au lieu de la boîte arrondie, titres en
+  capitales espacées avec halo (rouge en défaite, or en victoire), accroche
+  « // … », logo « CALL OF / PYTHON », bouton sélectionné allumé avec halo pulsé
+  et chevron, une seule taille de police par menu, aides en touches encadrées,
+  bilans en cartes (score, grade, éliminations, précision, temps), récit du
+  Sceau en machine à écrire. Libellés LAN raccourcis.
+- HUD : annonces (« VAGUE N », phases du Colosse) en bandeau avec impact de
+  zoom ; écran de pause en bandeau avec touches encadrées.
+- Nouveau module `ui_style.py` (texte espacé, ombre, halo, en cache).
+  171 tests.
+
 ## Non publié — Rythme des vagues (2026-10-14)
 
 - Déferlement : le délai avant submersion baisse de 3 % par vague au lieu de

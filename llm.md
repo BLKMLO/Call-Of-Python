@@ -47,7 +47,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 
 - `--python 3.12` obligatoire (pas de wheel pygame 2.6.1 pour Python plus
   récent). Tests en pilotes SDL factices (`SDL_VIDEODRIVER/SDL_AUDIODRIVER=dummy`).
-- État actuel : **164 tests OK**, Ruff OK (règles E, F, I, UP, B dans
+- État actuel : **171 tests OK**, Ruff OK (règles E, F, I, UP, B dans
   `pyproject.toml`), couverture minimale 70 %.
 - `tools/validate_gameplay.py --stage 10` (exécuté aussi en CI) : assertion à
   4 cartes, datagramme max observé 718 octets.
@@ -72,6 +72,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
 | `runtime.py` / `version.py` | `FixedStepClock` 60 Hz (rendu ≤120 Hz, ≤8 pas de rattrapage) ; versions jeu/protocole |
 | `settings.py` | Paramètres + JSON (borné, atomique) |
 | `menu.py` | Menus, paramètres, LAN, fins de niveau, game over/victoire |
+| `ui_style.py` | Texte « jeu » partagé menus/HUD : espacement, ombre, halo (`styled_text`, cache clé = objet police) |
 | `game.py` | Boucle gameplay solo : entrées, hitscan, ramassages, portes, mission, caméra de mort |
 | `survival.py` | Déferlement : vagues, submersion, apparitions, ravitaillement |
 | `difficulty.py` | Profils Recrue/Soldat/Vétéran + directeur de pression (limité à la cadence) |
@@ -153,7 +154,17 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   B ne quitte pas depuis le menu principal. Boutons via
   `MenuBase._button_surface()`/`_button_contains()` : parallélogrammes,
   panneau latéral gauche, contour seulement au survol, collision polygonale
-  (souris). Bascule `< valeur >` entre chevrons (`_bracket_split`, `_row_font`
+  (souris).
+- Style « jeu vidéo » (14/10) : fond = illustration + fondu gauche + balayage
+  (caché par taille) ; `_panel` = cadre à équerres/biseaux ; libellés affichés
+  via `_display()` (capitales) — `_row_font`/`_bracket_split` mesurent le texte
+  affiché ; `_shared_font` = une taille par menu ; titre via `_draw_title`
+  (`kicker`, `title_color`, `glow_color` par écran ; logo dédié `MainMenu`) ;
+  sélection = bouton plein + halo pulsé (`_button_glow`) + chevron ; pied de
+  page `_draw_keycaps` (`nav_hints` par défaut) ; bilans via `stat_cards()`
+  passés à `_draw_info_blocks(..., cards)` ; Sceau en machine à écrire.
+  HUD : `_banner()` (cache vidé dans `resize`, jamais muté : copie avant
+  `set_alpha`) pour annonces (zoom `ANNOUNCE_SLAM`) et pause. Bascule `< valeur >` entre chevrons (`_bracket_split`, `_row_font`
   partagé). Listes compactes bornées : Retour visible à 800×600.
 - Remappage clavier : ignore les boutons manette sauf B (annuler) ; ne jamais
   injecter de touches manette dans `Settings.bind_key`. Échap/F11 non
@@ -300,9 +311,12 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   mutateur (`self.mutator = ""`), aucune élite. Conservés partout : Commandant
   vagues 5/15/25, Colosses 10/20/30, `wave_multipliers` (vie +3 %/vague,
   dégâts +2,5 %/vague). Le test de submersion force `game.SOLO = False`.
-- `wave_timeout = max(wave_floor, 30 × 0.97^(n-1))` (−3 %/vague, demande
-  utilisateur du 14/10, remplace −10 % puis −1 %) : 12,40 s à la vague 30. `wave_floor`
-  = 8 s (1–10), 6 s (11–20), 4 s (21–30), minimum 2 s, n'est plus atteint. Vague avec `"boss"` :
+- `wave_timeout(n, difficulté) = max(wave_floor, 30 × decay^(n-1))`, `decay`
+  = `DifficultyProfile.wave_timeout_decay` : 0,97 Recrue, 0,94 Soldat (défaut),
+  0,90 Vétéran (demande utilisateur du 14/10, après des essais à −10/−1/−3 %
+  fixes). Vague 30 : 12,40 s / 4,99 s / 4 s (plancher, atteint dès la 21e en
+  Vétéran ; 6 s dès la 17e). `wave_floor` = 8 s (1–10), 6 s (11–20), 4 s
+  (21–30), minimum 2 s. Coop : difficulté de l'hôte. Vague avec `"boss"` :
   +`BOSS_EXTRA_TIME` (10 s, demande utilisateur). Délai effectif dans
   `self.wave_limit`.
 - Vague nettoyée : `intermission = CLEAR_INTERMISSION` (7 s fixes, demande

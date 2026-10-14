@@ -29,7 +29,7 @@ import math
 import random
 from collections import deque
 
-from difficulty import ThreatDirector
+from difficulty import ThreatDirector, get_difficulty
 from elites import apply_elite
 from entities import ENEMY_TYPES
 from game import Game
@@ -38,7 +38,6 @@ from mutators import apply_mutator, composition, mutator_for_wave
 
 FINAL_WAVE = 30                # dernière vague
 WAVE_TIMEOUT_BASE = 30.0       # délai de submersion de la 1ère vague (s)
-WAVE_TIMEOUT_DECAY = 0.97      # -3 % de délai à chaque nouvelle vague
 WAVE_FLOOR_START = 8.0         # plancher des vagues 1-10 (s)
 WAVE_FLOOR_STEP = 2.0          # -2 s de plancher par tranche de 10 vagues
 WAVE_FLOOR_MIN = 2.0           # plancher absolu (au-delà de la vague 40)
@@ -65,11 +64,13 @@ def wave_floor(wave):
     return max(WAVE_FLOOR_MIN, WAVE_FLOOR_START - WAVE_FLOOR_STEP * tier)
 
 
-def wave_timeout(wave):
+def wave_timeout(wave, difficulty="soldier"):
     """Délai de submersion de la vague `wave` (1-indexée) : 30 s pour la
-    1ère, réduit de 3 % à chaque vague suivante, borné par `wave_floor`."""
+    1ère, puis réduit à chaque vague selon la difficulté (-3 % Recrue,
+    -6 % Soldat, -10 % Vétéran), borné par `wave_floor`."""
+    decay = get_difficulty(difficulty).wave_timeout_decay
     return max(wave_floor(wave),
-               WAVE_TIMEOUT_BASE * WAVE_TIMEOUT_DECAY ** max(0, wave - 1))
+               WAVE_TIMEOUT_BASE * decay ** max(0, wave - 1))
 
 
 def wave_composition(wave):
@@ -137,7 +138,8 @@ class SurvivalGame(Game):
         self.wave = 0
         self.mutator = ""
         self.wave_timer = 0.0          # chrono de submersion de la vague
-        self.wave_limit = wave_timeout(1)  # délai de submersion de la vague en cours
+        # Délai de submersion de la vague en cours (dépend de la difficulté).
+        self.wave_limit = wave_timeout(1, self.difficulty.key)
         self.intermission = INTERMISSION
         self.spawn_queue = deque()     # types d'ennemis en attente
         self.spawn_cooldown = 0.0
@@ -234,7 +236,7 @@ class SurvivalGame(Game):
         if number % 10 == 5:
             kinds[0] = "commander"
         # Le Colosse est long à abattre : temps de nettoyage supplémentaire.
-        self.wave_limit = wave_timeout(number) + (
+        self.wave_limit = wave_timeout(number, self.difficulty.key) + (
             BOSS_EXTRA_TIME if "boss" in kinds else 0.0)
         elites = not self.SOLO and number >= 4
         self.spawn_queue.extend((kind, number, self.mutator,

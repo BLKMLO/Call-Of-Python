@@ -15,6 +15,7 @@ import pygame
 
 import settings as settings_module
 import survival
+from difficulty import get_difficulty
 from entities import ENEMY_TYPES, Player
 from level import Level
 from settings import DEFAULT_KEYS, RESOLUTIONS, Settings
@@ -51,18 +52,27 @@ class SpriteCleanupTests(unittest.TestCase):
 
 class WaveTimingTests(unittest.TestCase):
     def test_timeout_decays_but_respects_floor_per_ten_waves(self):
-        self.assertAlmostEqual(wave_timeout(1), 30.0)
-        for wave in range(2, 31):
-            self.assertLessEqual(wave_timeout(wave), wave_timeout(wave - 1) + 1e-9)
+        for difficulty in ("recruit", "soldier", "veteran"):
+            self.assertAlmostEqual(wave_timeout(1, difficulty), 30.0)
+            for wave in range(2, 31):
+                self.assertLessEqual(wave_timeout(wave, difficulty),
+                                     wave_timeout(wave - 1, difficulty) + 1e-9)
         for first, floor in ((1, 8.0), (11, 6.0), (21, 4.0)):
             for wave in range(first, first + 10):
                 self.assertEqual(wave_floor(wave), floor)
-                self.assertGreaterEqual(wave_timeout(wave), floor)
-        # -3 % par vague : 30 × 0,97^(n-1), soit ~12,4 s à la 30e (planchers
-        # non atteints).
-        self.assertAlmostEqual(wave_timeout(2), 29.1)
-        self.assertAlmostEqual(wave_timeout(30), 30.0 * 0.97 ** 29)
-        self.assertGreater(wave_timeout(30), 12.0)
+                for difficulty in ("recruit", "soldier", "veteran"):
+                    self.assertGreaterEqual(wave_timeout(wave, difficulty), floor)
+
+    def test_timeout_decay_depends_on_difficulty(self):
+        # Recrue -3 %, Soldat -6 % (défaut), Vétéran -10 % par vague.
+        self.assertAlmostEqual(wave_timeout(2, "recruit"), 29.1)
+        self.assertAlmostEqual(wave_timeout(2, "soldier"), 28.2)
+        self.assertAlmostEqual(wave_timeout(2), 28.2)
+        self.assertAlmostEqual(wave_timeout(2, "veteran"), 27.0)
+        self.assertAlmostEqual(wave_timeout(30, "recruit"), 30.0 * 0.97 ** 29)
+        self.assertAlmostEqual(wave_timeout(30, "soldier"), 30.0 * 0.94 ** 29)
+        # Vétéran : 30 × 0,9^29 ≈ 1,4 s, ramené au plancher 4 s.
+        self.assertAlmostEqual(wave_timeout(30, "veteran"), 4.0)
 
 
 class SurvivalGameTests(unittest.TestCase):
@@ -121,6 +131,13 @@ class SurvivalGameTests(unittest.TestCase):
         game._update_waves(BOSS_EXTRA_TIME)
         self.assertEqual(game.wave, 11)
         self.assertAlmostEqual(game.wave_limit, wave_timeout(11))
+
+    def test_wave_limit_follows_selected_difficulty(self):
+        game = self.game
+        for difficulty in ("recruit", "veteran"):
+            game.difficulty = get_difficulty(difficulty)
+            game._start_wave(4)
+            self.assertAlmostEqual(game.wave_limit, wave_timeout(4, difficulty))
 
     def test_enemies_spawn_at_the_portal_then_move_away(self):
         game = self.game

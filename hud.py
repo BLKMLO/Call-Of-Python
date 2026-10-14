@@ -13,12 +13,15 @@ import pygame
 
 import assets
 from mutators import MUTATORS
+from ui_style import styled_text, tracked_width
 from weapons import WEAPON_ORDER
 
 HUD_GREEN = (82, 220, 153)
 HUD_AMBER = (238, 166, 75)
 HUD_TEXT = (220, 231, 230)
 HUD_DIM = (115, 139, 143)
+ANNOUNCE_TIME = 2.2      # durée d'une grande annonce (s)
+ANNOUNCE_SLAM = 0.18     # « impact » d'entrée : le titre se pose en zoomant
 
 # Séquence mécanique commune : les suffixes désignent les assets
 # `fp_<arme><suffixe>.png`. `None` représente la pose normale.
@@ -137,6 +140,16 @@ class HUD:
             "consolas,dejavusansmono,couriernew",
             max(32, self.height // 13), bold=True,
         )
+        # Titres d'annonce et de pause : sans-serif épaisse, lettres espacées.
+        self.banner_font = pygame.font.SysFont(
+            "bahnschrift,dejavusans,arial,liberationsans",
+            max(34, self.height // 11), bold=True,
+        )
+        self.banner_small_font = pygame.font.SysFont(
+            "bahnschrift,dejavusans,arial,liberationsans",
+            max(12, self.height // 50), bold=True,
+        )
+        self._banner_cache = {}
         death_size = max(38, self.height // 10)
         self.death_font = pygame.font.SysFont(
             "georgia,cambria,timesnewroman,dejavuserif,liberationserif",
@@ -276,7 +289,7 @@ class HUD:
     def announce(self, text):
         """Grande annonce centrale (début de vague...)."""
         self.announce_text = text
-        self.announce_timer = 2.2
+        self.announce_timer = ANNOUNCE_TIME
 
     def update(self, dt, moving):
         self.time_acc += dt
@@ -756,15 +769,65 @@ class HUD:
             label = pygame.transform.smoothscale(label, (self.width - 32, label.get_height()))
         screen.blit(label, ((self.width - label.get_width()) // 2, y))
 
+    def _banner(self, text, color, glow):
+        """Bandeau d'annonce précalculé : bande sombre filetée + titre
+        espacé auréolé. Mis en cache par texte (vidé dans `resize`)."""
+        key = (text, color, glow)
+        banner = self._banner_cache.get(key)
+        if banner is not None:
+            return banner
+        spacing = max(2, self.banner_font.get_height() // 10)
+        font = self.banner_font
+        if tracked_width(font, text, spacing) > self.width - 60:
+            spacing = 0
+        title = styled_text(font, text, color, spacing, glow=glow,
+                            glow_radius=max(5, self.height // 80))
+        if title.get_width() > self.width - 20:
+            title = pygame.transform.smoothscale(
+                title, (self.width - 20, title.get_height()))
+        band_h = font.get_height() + max(18, self.height // 30)
+        banner = pygame.Surface((self.width, max(band_h, title.get_height())),
+                                pygame.SRCALPHA)
+        top = (banner.get_height() - band_h) // 2
+        for x in range(0, self.width, 4):
+            # Bande dense au centre, qui s'évanouit vers les bords.
+            edge = abs(x - self.width / 2) / (self.width / 2)
+            alpha = int(190 * (1.0 - edge ** 2))
+            pygame.draw.rect(banner, (4, 8, 10, alpha), (x, top, 4, band_h))
+        line_w = int(self.width * 0.42)
+        left = (self.width - line_w) // 2
+        pygame.draw.line(banner, (*glow, 230), (left, top), (left + line_w, top), 2)
+        pygame.draw.line(banner, (*glow, 230), (left, top + band_h - 1),
+                         (left + line_w, top + band_h - 1), 2)
+        banner.blit(title, title.get_rect(center=(self.width // 2,
+                                                  banner.get_height() // 2)))
+        if len(self._banner_cache) > 32:
+            self._banner_cache.clear()
+        self._banner_cache[key] = banner
+        return banner
+
     def _draw_announce(self, screen):
-        """Grande annonce centrale fugace ("VAGUE 12")."""
+        """Grande annonce centrale fugace ("VAGUE 12") : le bandeau claque
+        à l'écran (zoom bref) puis s'efface."""
         if self.announce_timer <= 0.0:
             return
-        alpha = min(1.0, self.announce_timer / 0.6)
-        surf = self.big_font.render(self.announce_text, True, (255, 170, 60))
-        surf.set_alpha(int(255 * alpha))
-        screen.blit(surf, ((self.width - surf.get_width()) // 2,
-                           self.height // 3 - surf.get_height() // 2))
+        boss = self.announce_text.startswith("COLOSSE")
+        banner = self._banner(self.announce_text,
+                              (255, 236, 214) if boss else (255, 240, 220),
+                              (226, 72, 64) if boss else HUD_AMBER)
+        elapsed = ANNOUNCE_TIME - self.announce_timer
+        alpha = min(1.0, self.announce_timer / 0.6, 0.35 + elapsed / ANNOUNCE_SLAM)
+        center = (self.width // 2, self.height // 3)
+        if elapsed < ANNOUNCE_SLAM:
+            # Zoom d'impact sur une fraction de seconde seulement.
+            scale = 1.0 + 0.35 * (1.0 - elapsed / ANNOUNCE_SLAM) ** 2
+            banner = pygame.transform.smoothscale(banner, (
+                int(banner.get_width() * scale), int(banner.get_height() * scale)))
+        else:
+            banner = banner.copy() if alpha < 1.0 else banner
+        if alpha < 1.0 or elapsed < ANNOUNCE_SLAM:
+            banner.set_alpha(int(255 * alpha))
+        screen.blit(banner, banner.get_rect(center=center))
 
     def _draw_boss_bar(self, screen, enemies):
         """Grande barre de vie du boss en haut de l'écran (s'il est en vie)."""
@@ -918,15 +981,33 @@ class HUD:
             ))
 
     def draw_pause(self, screen, host_paused=False):
-        """Voile + texte de pause par-dessus la scène figée."""
-        self._dark_veil.set_alpha(150)
+        """Voile + bandeau de pause par-dessus la scène figée."""
+        self._dark_veil.set_alpha(165)
         screen.blit(self._dark_veil, (0, 0))
-        title = self.big_font.render("PAUSE HÔTE" if host_paused else "PAUSE",
-                                     True, (240, 240, 240))
-        resume = "L'hôte reprendra la partie" if host_paused else "Échap / Start : reprendre"
-        hint = self.font.render(resume, True, (200, 200, 200))
-        back = self.font.render("M / B (Rond) : menu principal", True, (200, 200, 200))
-        screen.blit(title, ((self.width - title.get_width()) // 2, self.height // 2 - 60))
-        screen.blit(hint, ((self.width - hint.get_width()) // 2, self.height // 2 + 10))
-        screen.blit(back, ((self.width - back.get_width()) // 2,
-                           self.height // 2 + 14 + hint.get_height()))
+        banner = self._banner("PAUSE HÔTE" if host_paused else "PAUSE",
+                              (240, 244, 242), HUD_GREEN)
+        center_y = self.height // 2 - banner.get_height() // 3
+        screen.blit(banner, banner.get_rect(center=(self.width // 2, center_y)))
+        if host_paused:
+            hints = (("HÔTE", "REPRENDRA LA PARTIE"), ("M / B", "MENU PRINCIPAL"))
+        else:
+            hints = (("ÉCHAP / START", "REPRENDRE"), ("M / B", "MENU PRINCIPAL"))
+        font = self.banner_small_font
+        pieces = []
+        for cap, action in hints:
+            cap_surf = self._text(font, cap, HUD_TEXT)
+            pieces.append((cap_surf, self._text(font, action, HUD_DIM)))
+        gap, pad = 28, 7
+        total = sum(c.get_width() + pad * 2 + 10 + a.get_width() for c, a in pieces)
+        total += gap * (len(pieces) - 1)
+        x = (self.width - total) // 2
+        y = center_y + banner.get_height() // 2 + 18
+        for cap_surf, action_surf in pieces:
+            rect = pygame.Rect(x, y, cap_surf.get_width() + pad * 2,
+                               cap_surf.get_height() + 6)
+            pygame.draw.rect(screen, (16, 34, 30), rect, border_radius=3)
+            pygame.draw.rect(screen, HUD_GREEN, rect, 1, border_radius=3)
+            screen.blit(cap_surf, cap_surf.get_rect(center=rect.center))
+            screen.blit(action_surf, action_surf.get_rect(
+                midleft=(rect.right + 10, rect.centery)))
+            x = rect.right + 10 + action_surf.get_width() + gap

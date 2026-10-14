@@ -12,12 +12,15 @@ class DifficultyProfile:
     enemy_health: float
     enemy_damage: float
     spawn_interval: float
+    # Facteur appliqué au délai de submersion à chaque nouvelle vague du
+    # Déferlement : -3 % (Recrue), -6 % (Soldat), -10 % (Vétéran).
+    wave_timeout_decay: float
 
 
 DIFFICULTIES = {
-    "recruit": DifficultyProfile("recruit", "Recrue", 0.82, 0.72, 1.20),
-    "soldier": DifficultyProfile("soldier", "Soldat", 1.00, 1.00, 1.00),
-    "veteran": DifficultyProfile("veteran", "Veteran", 1.22, 1.28, 0.86),
+    "recruit": DifficultyProfile("recruit", "Recrue", 0.82, 0.72, 1.20, 0.97),
+    "soldier": DifficultyProfile("soldier", "Soldat", 1.00, 1.00, 1.00, 0.94),
+    "veteran": DifficultyProfile("veteran", "Veteran", 1.22, 1.28, 0.86, 0.90),
 }
 DIFFICULTY_ORDER = tuple(DIFFICULTIES)
 

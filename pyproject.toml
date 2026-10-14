@@ -38,6 +38,7 @@ py-modules = [
   "resources", "runtime", "settings", "sounds", "survival", "touch_controls", "version",
   "weapons", "objectives", "mission_marker", "upgrades", "upgrade_ui", "mutators",
   "coop_support", "support_ui", "elites", "boss_patterns", "hazards", "grenades", "scoring",
+  "ui_style",
 ]
 
 [tool.setuptools.data-files]
