@@ -9,8 +9,8 @@ Règles :
   suivante arrive après un répit fixe de 7 secondes (le temps de
   recharger), avec un petit bonus de soin ;
 - MAIS si la vague n'est pas nettoyée avant la submersion (30 secondes
-  pour la 1ère vague, puis 1 % de moins à chaque nouvelle vague, soit
-  ~22,4 s à la 30e ; planchers de sécurité 8 s pour les vagues 1-10, 6 s
+  pour la 1ère vague, puis 3 % de moins à chaque nouvelle vague, soit
+  ~12,4 s à la 30e ; planchers de sécurité 8 s pour les vagues 1-10, 6 s
   pour 11-20 et 4 s pour 21-30, non atteints à ce rythme), la suivante
   déferle quand même par-dessus : on peut être submergé ;
 - les ennemis sortent tous du portail central puis s'en écartent ;
@@ -38,7 +38,7 @@ from mutators import apply_mutator, composition, mutator_for_wave
 
 FINAL_WAVE = 30                # dernière vague
 WAVE_TIMEOUT_BASE = 30.0       # délai de submersion de la 1ère vague (s)
-WAVE_TIMEOUT_DECAY = 0.99      # -1 % de délai à chaque nouvelle vague
+WAVE_TIMEOUT_DECAY = 0.97      # -3 % de délai à chaque nouvelle vague
 WAVE_FLOOR_START = 8.0         # plancher des vagues 1-10 (s)
 WAVE_FLOOR_STEP = 2.0          # -2 s de plancher par tranche de 10 vagues
 WAVE_FLOOR_MIN = 2.0           # plancher absolu (au-delà de la vague 40)
@@ -67,7 +67,7 @@ def wave_floor(wave):
 
 def wave_timeout(wave):
     """Délai de submersion de la vague `wave` (1-indexée) : 30 s pour la
-    1ère, réduit de 1 % à chaque vague suivante, borné par `wave_floor`."""
+    1ère, réduit de 3 % à chaque vague suivante, borné par `wave_floor`."""
     return max(wave_floor(wave),
                WAVE_TIMEOUT_BASE * WAVE_TIMEOUT_DECAY ** max(0, wave - 1))
 

@@ -41,8 +41,8 @@ manifeste, alarme, puis 8 s d'extraction. Les autres missions se gagnent par
 élimination. Colosse final en trois phases.
 
 **Le Déferlement** — 30 vagues sortant d'un portail, Colosse aux vagues 10/20/30,
-Commandant aux vagues 5/15/25. Délai avant submersion : 30 s, −1 % par vague
-(~22,4 s à la vague 30 ; planchers de sécurité 8/6/4 s non atteints) ; **+10 s si un Colosse est dans
+Commandant aux vagues 5/15/25. Délai avant submersion : 30 s, −3 % par vague
+(~12,4 s à la vague 30 ; planchers de sécurité 8/6/4 s non atteints) ; **+10 s si un Colosse est dans
 la vague**. Vague nettoyée : 7 s de répit et +12 PV ; sinon la suivante arrive
 par-dessus. En coop LAN : mutateurs et élites dès la vague 4.
 

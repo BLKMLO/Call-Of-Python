@@ -300,8 +300,8 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --python 3.12 --with pygame \
   mutateur (`self.mutator = ""`), aucune élite. Conservés partout : Commandant
   vagues 5/15/25, Colosses 10/20/30, `wave_multipliers` (vie +3 %/vague,
   dégâts +2,5 %/vague). Le test de submersion force `game.SOLO = False`.
-- `wave_timeout = max(wave_floor, 30 × 0.99^(n-1))` (−1 %/vague, demande
-  utilisateur du 14/10, remplace −10 %) : 22,42 s à la vague 30. `wave_floor`
+- `wave_timeout = max(wave_floor, 30 × 0.97^(n-1))` (−3 %/vague, demande
+  utilisateur du 14/10, remplace −10 % puis −1 %) : 12,40 s à la vague 30. `wave_floor`
   = 8 s (1–10), 6 s (11–20), 4 s (21–30), minimum 2 s, n'est plus atteint. Vague avec `"boss"` :
   +`BOSS_EXTRA_TIME` (10 s, demande utilisateur). Délai effectif dans
   `self.wave_limit`.
