@@ -58,9 +58,11 @@ class WaveTimingTests(unittest.TestCase):
             for wave in range(first, first + 10):
                 self.assertEqual(wave_floor(wave), floor)
                 self.assertGreaterEqual(wave_timeout(wave), floor)
-        # Le plancher est atteint en fin de tranche : 6 s à la 20e, 4 s à la 30e.
-        self.assertEqual(wave_timeout(20), 6.0)
-        self.assertEqual(wave_timeout(30), 4.0)
+        # -1 % par vague : 30 × 0,99^(n-1), soit ~22,4 s à la 30e (planchers
+        # non atteints).
+        self.assertAlmostEqual(wave_timeout(2), 29.7)
+        self.assertAlmostEqual(wave_timeout(30), 30.0 * 0.99 ** 29)
+        self.assertGreater(wave_timeout(30), 22.0)
 
 
 class SurvivalGameTests(unittest.TestCase):

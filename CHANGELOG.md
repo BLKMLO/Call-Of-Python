@@ -1,5 +1,11 @@
 # Changelog
 
+## Non publié — Rythme des vagues (2026-10-14)
+
+- Déferlement : le délai avant submersion baisse de 1 % par vague au lieu de
+  10 % (30 × 0,99^(n-1) : 27,4 s à la vague 10, 24,8 s à la 20e, 22,4 s à la
+  30e). Les planchers 8/6/4 s restent en garde-fou mais ne sont plus atteints.
+
 ## 0.6.0 — Refonte du Déferlement (2026-10-13)
 
 - Glissade à la place de la roulade du joueur : 4,5 cases au lieu de 2,5
